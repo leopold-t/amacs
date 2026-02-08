@@ -1,12 +1,19 @@
 # AMACS Makefile
+
 CC = m68k-amigaos-gcc
-CFLAGS = -O2 -noixemul -Wall -Wno-pointer-sign -I/opt/amiga/m68k-amigaos/ndk-include
+CFLAGS = -O2 -noixemul -Wall -Wno-pointer-sign \
+         -I/opt/amiga/m68k-amigaos/ndk-include
 LFLAGS = -lamiga
 
 SRC_DIR = src
 BUILD_DIR = build
-SRC = $(SRC_DIR)/main.c
+
+# All .c files in src/
+SRC = $(wildcard $(SRC_DIR)/*.c)
+
+# Corresponding .o files in build/
 OBJ = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC))
+
 TARGET = $(BUILD_DIR)/amacs
 
 all: $(TARGET)

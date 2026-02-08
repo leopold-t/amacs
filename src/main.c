@@ -1,32 +1,50 @@
 #include <exec/types.h>
 #include <exec/memory.h>
-#include <dos/dos.h>
+#include <intuition/screens.h>
 #include <intuition/intuition.h>
 #include <graphics/gfx.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
-#include <proto/intuition.h>
 #include <proto/graphics.h>
+#include <proto/intuition.h>
 
-#define WIDTH 640
-#define HEIGHT 256
-#define DEPTH 4
-#define IMAGE_FILE "gfx/Logo.raw"
+#include "imageHandler.h"
+
+/*
+ * Main application entry point.
+ * This program displays a LOGO screen, waits for user input,
+ * then displays a TITLE screen, waits again, and exits.
+ */
 
 struct GfxBase *GfxBase = NULL;
 struct IntuitionBase *IntuitionBase = NULL;
 struct Screen *screen = NULL;
 struct Window *window = NULL;
 
-/* High Res RGB4 (0–15) color palette */
-UWORD palette[16] = {
+/* File paths for image assets */
+#define LOGO_FILE  "gfx/Logo.raw"
+#define TITLE_FILE "gfx/Title.raw"
+
+/* Palette for LOGO (16 colors, RGB4) */
+static UWORD logoPalette[16] = {
     0x000, 0xEEE, 0x569, 0xAAA,
     0x129, 0x333, 0x888, 0x555,
     0x449, 0xCCC, 0x222, 0x88A,
     0x777, 0xDDD, 0xBBB, 0x77A
 };
 
-/* --- Resource release --- */
+/* Palette for TITLE (16 colors, RGB4) */
+static UWORD titlePalette[16] = {
+    0x221, 0xC01, 0x03E, 0x259,
+    0x456, 0x653, 0xB59, 0x38E,
+    0xD83, 0x69E, 0x7AB, 0xD88,
+    0xAA8, 0xABD, 0xEDA, 0xDDD
+};
+
+/*
+ * Cleanup function closes window, screen, and libraries.
+ * It also clears any pending Intuition messages to avoid crash.
+ */
 void cleanup(void)
 {
     struct IntuiMessage *msg;
@@ -38,10 +56,10 @@ void cleanup(void)
     }
 
     if (window) {
-        window->UserPort = NULL;
+        window->UserPort = NULL; /* detach port to avoid late callbacks */
         CloseWindow(window);
         window = NULL;
-        Delay(5);
+        Delay(5); /* short delay for system to settle */
     }
 
     if (screen) {
@@ -53,128 +71,117 @@ void cleanup(void)
         CloseLibrary((struct Library *)IntuitionBase);
         IntuitionBase = NULL;
     }
+
     if (GfxBase) {
         CloseLibrary((struct Library *)GfxBase);
         GfxBase = NULL;
     }
 }
 
-/* --- Loading RAW file into temporary bitmap and copying it to screen --- */
-BOOL drawRawToWindow(const char *filename, struct Window *win)
+/*
+ * Wait for user to press left mouse button or ESC key.
+ * Blocks until one of those events is received.
+ */
+void waitForInput(struct Window *win)
 {
-    BPTR fh;
-    struct BitMap *tmp;
-    LONG bytesPerRow = WIDTH / 8;
-    LONG planeSize = bytesPerRow * HEIGHT;
+    BOOL done = FALSE;
+    struct IntuiMessage *msg;
 
-    fh = Open((STRPTR)filename, MODE_OLDFILE);
-    if (!fh) {
-        Printf("Unable to open file %s\n", (ULONG)filename);
-        return FALSE;
-    }
+    while (!done) {
+        Wait(1L << win->UserPort->mp_SigBit);
 
-    tmp = AllocBitMap(WIDTH, HEIGHT, DEPTH, BMF_CLEAR, NULL);
-
-    if (!tmp) {
-        Printf("Error: unable to allocate temporary bitmap\n");
-        Close(fh);
-        return FALSE;
-    }
-
-    for (int i = 0; i < DEPTH; i++) {
-        if (Read(fh, tmp->Planes[i], planeSize) != planeSize) {
-            Printf("Error reading bitplane %ld\n", i);
-            FreeBitMap(tmp);
-            Close(fh);
-            return FALSE;
+        while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+            if (msg->Class == IDCMP_MOUSEBUTTONS &&
+                msg->Code == SELECTDOWN) {
+                done = TRUE;
+            }
+            else if (msg->Class == IDCMP_RAWKEY &&
+                     msg->Code == 0x45) { /* ESC */
+                done = TRUE;
+            }
+            ReplyMsg((struct Message *)msg);
         }
     }
-
-    Close(fh);
-
-    /* --- Blit for window bitmap --- */
-    BltBitMap(tmp, 0, 0, win->RPort->BitMap, 0, 0, WIDTH, HEIGHT, 0xC0, 0xFF, NULL);
-    WaitBlit();
-    WaitTOF();
-
-    FreeBitMap(tmp);
-    return TRUE;
 }
 
-/* --- Main program function --- */
+/*
+ * Main program function
+ */
 int main(void)
 {
     struct IntuiMessage *msg;
     BOOL done = FALSE;
 
+    /* Open required libraries */
     IntuitionBase = (struct IntuitionBase *)OpenLibrary("intuition.library", 36);
     GfxBase = (struct GfxBase *)OpenLibrary("graphics.library", 36);
-
     if (!IntuitionBase || !GfxBase) {
-        Printf("Unable to open system libraries\n");
+        Printf("AMACS: Required libraries could not be opened\n");
         cleanup();
         return RETURN_FAIL;
     }
 
-    /* Screen opening */
-    screen = (struct Screen *)OpenScreenTags(NULL,
-        SA_Width, WIDTH,
-        SA_Height, HEIGHT,
-        SA_Depth, DEPTH,
-        SA_DisplayID, HIRES_KEY,
-        SA_ShowTitle, FALSE,
-        SA_Type, CUSTOMSCREEN,
-        SA_BackFill, LAYERS_NOBACKFILL,
-        TAG_DONE);
+    /* Open a custom screen (HiRes 640x256, 4 bitplanes) */
+    screen = OpenScreenTags(NULL,
+    SA_Width,     640,
+    SA_Height,    256,
+    SA_Depth,     4,
+    SA_DisplayID, HIRES_KEY,
+    SA_Title,     (ULONG)"AMACS",
+    TAG_DONE);
 
     if (!screen) {
-        Printf("Unable to open screen\n");
+        Printf("AMACS: Unable to open custom screen\n");
         cleanup();
         return RETURN_FAIL;
     }
 
-    /* Window opening */
+    /* Open a backdrop window to receive input events */
     window = (struct Window *)OpenWindowTags(NULL,
         WA_CustomScreen, (ULONG)screen,
-        WA_Width, WIDTH,
-        WA_Height, HEIGHT,
+        WA_Width, 640,
+        WA_Height, 256,
         WA_Borderless, TRUE,
         WA_Backdrop, TRUE,
         WA_Activate, TRUE,
         WA_RMBTrap, TRUE,
         WA_IDCMP, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS,
         TAG_DONE);
-
     if (!window) {
-        Printf("Unable to open window\n");
+        Printf("AMACS: Unable to open input window\n");
         cleanup();
         return RETURN_FAIL;
     }
 
-    /* Set up palette and display image */
-    LoadRGB4(&screen->ViewPort, palette, 16);
-    WaitTOF();
+    /*
+     * First phase: display LOGO screen
+     */
+    LoadRGB4(&screen->ViewPort, logoPalette, 16);
+    WaitTOF(); /* sync with display */
 
-    if (!drawRawToWindow(IMAGE_FILE, window)) {
-        Printf("Unable to open image\n");
+    if (!LoadRawImageToScreen(LOGO_FILE, screen)) {
+        Printf("AMACS: Failed to load logo image\n");
         cleanup();
         return RETURN_FAIL;
     }
+    /* Give user time to see logo => wait for input */
+    waitForInput(window);
 
-    /* --- Main Loop --- */
-    while (!done) {
-        ULONG sig = Wait((1L << window->UserPort->mp_SigBit) | SIGBREAKF_CTRL_C);
-        if (sig & SIGBREAKF_CTRL_C) break;
+    /*
+     * Second phase: display TITLE screen
+     */
+    LoadRGB4(&screen->ViewPort, titlePalette, 16);
+    WaitTOF(); /* sync palette change */
 
-        if (sig & (1L << window->UserPort->mp_SigBit)) {
-            while ((msg = (struct IntuiMessage *)GetMsg(window->UserPort))) {
-                if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) done = TRUE;
-                else if (msg->Class == IDCMP_RAWKEY && msg->Code == 0x45) done = TRUE;
-                ReplyMsg((struct Message *)msg);
-            }
-        }
+    if (!LoadRawImageToScreen(TITLE_FILE, screen)) {
+        Printf("AMACS: Failed to load title image\n");
+        cleanup();
+        return RETURN_FAIL;
     }
+    /* Wait for input again, then exit */
+    waitForInput(window);
 
+    /* Clean up and exit */
     cleanup();
     return RETURN_OK;
 }
