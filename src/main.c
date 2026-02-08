@@ -11,14 +11,14 @@
 #define WIDTH 640
 #define HEIGHT 256
 #define DEPTH 4
-#define IMAGE_FILE "gfx/logo.raw"
+#define IMAGE_FILE "gfx/Logo.raw"
 
 struct GfxBase *GfxBase = NULL;
 struct IntuitionBase *IntuitionBase = NULL;
 struct Screen *screen = NULL;
 struct Window *window = NULL;
 
-/* Paleta RGB4 (0–15) */
+/* High Res RGB4 (0–15) color palette */
 UWORD palette[16] = {
     0x000, 0xEEE, 0x569, 0xAAA,
     0x129, 0x333, 0x888, 0x555,
@@ -26,7 +26,7 @@ UWORD palette[16] = {
     0x777, 0xDDD, 0xBBB, 0x77A
 };
 
-/* --- Zwolnienie zasobów --- */
+/* --- Resource release --- */
 void cleanup(void)
 {
     struct IntuiMessage *msg;
@@ -59,7 +59,7 @@ void cleanup(void)
     }
 }
 
-/* --- Wczytanie pliku RAW do tymczasowej bitmapy i kopiowanie do ekranu --- */
+/* --- Loading RAW file into temporary bitmap and copying it to screen --- */
 BOOL drawRawToWindow(const char *filename, struct Window *win)
 {
     BPTR fh;
@@ -69,28 +69,30 @@ BOOL drawRawToWindow(const char *filename, struct Window *win)
 
     fh = Open((STRPTR)filename, MODE_OLDFILE);
     if (!fh) {
-        Printf("Nie można otworzyć pliku %s\n", (ULONG)filename);
+        Printf("Unable to open file %s\n", (ULONG)filename);
         return FALSE;
     }
 
     tmp = AllocBitMap(WIDTH, HEIGHT, DEPTH, BMF_CLEAR, NULL);
+
     if (!tmp) {
-        Printf("Błąd: nie można zaalokować bitmapy tymczasowej\n");
+        Printf("Error: unable to allocate temporary bitmap\n");
         Close(fh);
         return FALSE;
     }
 
     for (int i = 0; i < DEPTH; i++) {
         if (Read(fh, tmp->Planes[i], planeSize) != planeSize) {
-            Printf("Błąd odczytu płaszczyzny %ld\n", i);
+            Printf("Error reading bitplane %ld\n", i);
             FreeBitMap(tmp);
             Close(fh);
             return FALSE;
         }
     }
+
     Close(fh);
 
-    /* --- Blit do bitmapy okna --- */
+    /* --- Blit for window bitmap --- */
     BltBitMap(tmp, 0, 0, win->RPort->BitMap, 0, 0, WIDTH, HEIGHT, 0xC0, 0xFF, NULL);
     WaitBlit();
     WaitTOF();
@@ -99,7 +101,7 @@ BOOL drawRawToWindow(const char *filename, struct Window *win)
     return TRUE;
 }
 
-/* --- Główna funkcja --- */
+/* --- Main program function --- */
 int main(void)
 {
     struct IntuiMessage *msg;
@@ -107,13 +109,14 @@ int main(void)
 
     IntuitionBase = (struct IntuitionBase *)OpenLibrary("intuition.library", 36);
     GfxBase = (struct GfxBase *)OpenLibrary("graphics.library", 36);
+
     if (!IntuitionBase || !GfxBase) {
-        Printf("Nie można otworzyć bibliotek systemowych\n");
+        Printf("Unable to open system libraries\n");
         cleanup();
         return RETURN_FAIL;
     }
 
-    /* Otwórz ekran */
+    /* Screen opening */
     screen = (struct Screen *)OpenScreenTags(NULL,
         SA_Width, WIDTH,
         SA_Height, HEIGHT,
@@ -125,12 +128,12 @@ int main(void)
         TAG_DONE);
 
     if (!screen) {
-        Printf("Nie można otworzyć ekranu\n");
+        Printf("Unable to open screen\n");
         cleanup();
         return RETURN_FAIL;
     }
 
-    /* Otwórz okno */
+    /* Window opening */
     window = (struct Window *)OpenWindowTags(NULL,
         WA_CustomScreen, (ULONG)screen,
         WA_Width, WIDTH,
@@ -143,22 +146,22 @@ int main(void)
         TAG_DONE);
 
     if (!window) {
-        Printf("Nie można otworzyć okna\n");
+        Printf("Unable to open window\n");
         cleanup();
         return RETURN_FAIL;
     }
 
-    /* Ustaw paletę i wyświetl obraz */
+    /* Set up palette and display image */
     LoadRGB4(&screen->ViewPort, palette, 16);
     WaitTOF();
 
     if (!drawRawToWindow(IMAGE_FILE, window)) {
-        Printf("Nie można wczytać grafiki\n");
+        Printf("Unable to open image\n");
         cleanup();
         return RETURN_FAIL;
     }
 
-    /* --- Główna pętla --- */
+    /* --- Main Loop --- */
     while (!done) {
         ULONG sig = Wait((1L << window->UserPort->mp_SigBit) | SIGBREAKF_CTRL_C);
         if (sig & SIGBREAKF_CTRL_C) break;
