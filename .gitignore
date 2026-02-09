@@ -1,0 +1,8 @@
+# Build artifacts
+build/
+
+# Editor / OS junk
+*~
+*.log
+.vscode/
+.DS_Store
