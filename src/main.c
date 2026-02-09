@@ -1,5 +1,4 @@
 #include <exec/types.h>
-#include <exec/memory.h>
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
 #include <graphics/gfx.h>
@@ -11,14 +10,21 @@
 #include "imageHandler.h"
 #include "input.h"
 
-#define WIDTH   640
-#define HEIGHT  256
-#define DEPTH   4
+/* HiRes screens (LOGO + TITLE) */
+#define HI_WIDTH   640
+#define HI_HEIGHT  256
+#define HI_DEPTH   4
 
-#define LOGO_FILE  "gfx/LOGO.RAW"
-#define TITLE_FILE "gfx/TITLE.RAW"
+/* LoRes screen (TRNGINFO) */
+#define LO_WIDTH   320
+#define LO_HEIGHT  256
+#define LO_DEPTH   5
 
-/* LOGO palette (RGB4) */
+#define LOGO_FILE      "gfx/LOGO.RAW"
+#define TITLE_FILE     "gfx/TITLE.RAW"
+#define TRNGINFO_FILE  "gfx/TRNGINFO.RAW"
+
+/* LOGO palette (16 colors RGB4) */
 static UWORD logoPalette[16] = {
     0x000, 0xEEE, 0x569, 0xAAA,
     0x129, 0x333, 0x888, 0x555,
@@ -26,7 +32,7 @@ static UWORD logoPalette[16] = {
     0x777, 0xDDD, 0xBBB, 0x77A
 };
 
-/* TITLE palette (RGB4) */
+/* TITLE palette (16 colors RGB4) */
 static UWORD titlePalette[16] = {
     0x221, 0xC01, 0x03E, 0x259,
     0x456, 0x653, 0xB59, 0x38E,
@@ -34,27 +40,31 @@ static UWORD titlePalette[16] = {
     0xAA8, 0xABD, 0xEDA, 0xDDD
 };
 
+/* TRNGINFO palette (32 colors RGB4) */
+static UWORD trngInfoPalette[32] = {
+    0x0000,0x0775,0x0443,0x0232,0x0211,0x0333,0x0322,0x0111,
+    0x0100,0x0010,0x0000,0x0000,0x0000,0x0322,0x0332,0x0332,
+    0x0332,0x0AA9,0x0CCB,0x0555,0x0888,0x0654,0x0CCC,0x0BBB,
+    0x0999,0x0777,0x0986,0x0444,0x0EDD,0x0BAA,0x0665,0x0999
+};
+
 static struct Screen *screen = NULL;
 static struct Window *window = NULL;
 
-/* Invisible mouse pointer (1x1) */
+/* Invisible pointer (1x1) */
 static UWORD blankPointer[] = { 0x0000, 0x0000 };
 
 static void HidePointer(struct Window *win)
 {
-    if (win) {
-        SetPointer(win, blankPointer, 1, 1, 0, 0);
-    }
+    if (win) SetPointer(win, blankPointer, 1, 1, 0, 0);
 }
 
 static void ShowPointer(struct Window *win)
 {
-    if (win) {
-        ClearPointer(win);
-    }
+    if (win) ClearPointer(win);
 }
 
-static void cleanup(void)
+static void CloseScreenAndWindow(void)
 {
     /* Restore pointer before closing window */
     ShowPointer(window);
@@ -64,78 +74,20 @@ static void cleanup(void)
         window = NULL;
         Delay(2);
     }
-
     if (screen) {
         CloseScreen(screen);
         screen = NULL;
         Delay(2);
     }
-
-    Input_Shutdown();
 }
 
-/* Poll ESC/LMB/Fire. Returns TRUE when an action is detected. */
-static BOOL IsActionPressed(void)
-{
-    struct IntuiMessage *msg;
-
-    /* Check Intuition messages (ESC / LMB) */
-    while ((msg = (struct IntuiMessage *)GetMsg(window->UserPort))) {
-        BOOL hit = FALSE;
-
-        if (msg->Class == IDCMP_RAWKEY && msg->Code == 0x45) {
-            hit = TRUE; /* ESC */
-        } else if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
-            hit = TRUE; /* LMB */
-        }
-
-        ReplyMsg((struct Message *)msg);
-
-        if (hit)
-            return TRUE;
-    }
-
-    /* Check joystick fire */
-    if (IsJoystickFirePressed())
-        return TRUE;
-
-    return FALSE;
-}
-
-/* Wait until any action is pressed, then wait until it is released (debounce). */
-static void WaitForActionWithDebounce(void)
-{
-    /* Wait for press */
-    while (!IsActionPressed()) {
-        WaitTOF();
-    }
-
-    /* Small delay to avoid immediate re-trigger */
-    WaitTOF();
-    WaitTOF();
-
-    /* Wait for release (important for joystick fire) */
-    while (IsJoystickFirePressed()) {
-        WaitTOF();
-    }
-
-    /* Also flush any pending Intuition messages (e.g., mouse up) */
-    while (GetMsg(window->UserPort)) {
-        /* discard */
-    }
-
-    /* Another tiny delay after release */
-    WaitTOF();
-    WaitTOF();
-}
-
-static BOOL OpenMainScreen(void)
+static BOOL OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displayID)
 {
     screen = OpenScreenTags(NULL,
-        SA_Width, WIDTH,
-        SA_Height, HEIGHT,
-        SA_Depth, DEPTH,
-        SA_DisplayID, HIRES_KEY,
+        SA_Width, width,
+        SA_Height, height,
+        SA_Depth, depth,
+        SA_DisplayID, displayID,
         SA_Type, CUSTOMSCREEN,
         SA_ShowTitle, FALSE,
         SA_Quiet, TRUE,
@@ -149,8 +101,8 @@ static BOOL OpenMainScreen(void)
 
     window = OpenWindowTags(NULL,
         WA_CustomScreen, (ULONG)screen,
-        WA_Width, WIDTH,
-        WA_Height, HEIGHT,
+        WA_Width, width,
+        WA_Height, height,
         WA_Borderless, TRUE,
         WA_Backdrop, TRUE,
         WA_Activate, TRUE,
@@ -167,26 +119,88 @@ static BOOL OpenMainScreen(void)
     return TRUE;
 }
 
-static BOOL ShowScreenImage(const char *file, UWORD *pal)
+/* ESC / LMB / Fire */
+static BOOL IsActionPressed(void)
 {
-    /* Set palette first */
-    LoadRGB4(&screen->ViewPort, pal, 16);
+    struct IntuiMessage *msg;
 
-    /* Sync */
-    WaitTOF();
-    WaitTOF();
+    while ((msg = (struct IntuiMessage *)GetMsg(window->UserPort))) {
+        BOOL hit = FALSE;
 
-    /* Load planar RAW into screen bitmap */
+        if (msg->Class == IDCMP_RAWKEY && msg->Code == 0x45) {
+            hit = TRUE; /* ESC */
+        } else if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
+            hit = TRUE; /* LMB */
+        }
+
+        ReplyMsg((struct Message *)msg);
+        if (hit) return TRUE;
+    }
+
+    if (IsJoystickFirePressed()) return TRUE;
+    return FALSE;
+}
+
+/* Wait press, then wait release (debounce) */
+static void WaitForActionWithDebounce(void)
+{
+    while (!IsActionPressed()) WaitTOF();
+
+    /* small delay to prevent double-trigger */
+    WaitTOF(); WaitTOF();
+
+    /* wait until joystick fire is released */
+    while (IsJoystickFirePressed()) WaitTOF();
+
+    /* flush any pending Intuition messages */
+    while (GetMsg(window->UserPort)) { /* discard */ }
+
+    WaitTOF(); WaitTOF();
+}
+
+static BOOL ShowImageAndPalette(const char *file, UWORD *pal, UWORD colorCount)
+{
+    LoadRGB4(&screen->ViewPort, pal, colorCount);
+    WaitTOF(); WaitTOF();
+
     if (!LoadRawImageToScreen(file, screen)) {
         Printf("AMACS: Cannot load %s\n", (ULONG)file);
         return FALSE;
     }
 
-    /* Bring to front and refresh */
     ScreenToFront(screen);
     RemakeDisplay();
-    WaitTOF();
-    WaitTOF();
+    WaitTOF(); WaitTOF();
+    return TRUE;
+}
+
+static BOOL SwitchHiResToLoResNoWorkbenchFlash(void)
+{
+    /* Keep old handles */
+    struct Screen *oldScreen = screen;
+    struct Window *oldWindow = window;
+
+    /* Open new LoRes first */
+    screen = NULL;
+    window = NULL;
+
+    if (!OpenScreenAndWindow(LO_WIDTH, LO_HEIGHT, LO_DEPTH, LORES_KEY)) {
+        /* Restore old if we failed */
+        screen = oldScreen;
+        window = oldWindow;
+        return FALSE;
+    }
+
+    /* Bring new screen to front immediately */
+    ScreenToFront(screen);
+    RemakeDisplay();
+    WaitTOF(); WaitTOF();
+
+    /* Now it is safe to close the old HiRes screen/window */
+    ShowPointer(oldWindow);
+    CloseWindow(oldWindow);
+    CloseScreen(oldScreen);
+    Delay(2);
 
     return TRUE;
 }
@@ -194,29 +208,49 @@ static BOOL ShowScreenImage(const char *file, UWORD *pal)
 int main(void)
 {
     if (!Input_Init()) {
-        Printf("AMACS: Cannot init input (lowlevel)\n");
+        Printf("AMACS: Input init failed\n");
         return RETURN_FAIL;
     }
 
-    if (!OpenMainScreen()) {
-        cleanup();
+    /* --- LOGO (HiRes) --- */
+    if (!OpenScreenAndWindow(HI_WIDTH, HI_HEIGHT, HI_DEPTH, HIRES_KEY)) {
+        CloseScreenAndWindow();
+        Input_Shutdown();
         return RETURN_FAIL;
     }
-
-    /* LOGO */
-    if (!ShowScreenImage(LOGO_FILE, logoPalette)) {
-        cleanup();
-        return RETURN_FAIL;
-    }
-    WaitForActionWithDebounce();
-
-    /* TITLE */
-    if (!ShowScreenImage(TITLE_FILE, titlePalette)) {
-        cleanup();
+    if (!ShowImageAndPalette(LOGO_FILE, logoPalette, 16)) {
+        CloseScreenAndWindow();
+        Input_Shutdown();
         return RETURN_FAIL;
     }
     WaitForActionWithDebounce();
 
-    cleanup();
+    /* --- TITLE (HiRes, same screen) --- */
+    if (!ShowImageAndPalette(TITLE_FILE, titlePalette, 16)) {
+        CloseScreenAndWindow();
+        Input_Shutdown();
+        return RETURN_FAIL;
+    }
+    WaitForActionWithDebounce();
+
+    /* --- Switch to LoRes WITHOUT Workbench flash --- */
+    if (!SwitchHiResToLoResNoWorkbenchFlash()) {
+        /* If switching fails, close current (likely old) and exit */
+        CloseScreenAndWindow();
+        Input_Shutdown();
+        return RETURN_FAIL;
+    }
+
+    /* --- TRNGINFO (LoRes) --- */
+    if (!ShowImageAndPalette(TRNGINFO_FILE, trngInfoPalette, 32)) {
+        CloseScreenAndWindow();
+        Input_Shutdown();
+        return RETURN_FAIL;
+    }
+    WaitForActionWithDebounce();
+
+    /* Exit */
+    CloseScreenAndWindow();
+    Input_Shutdown();
     return RETURN_OK;
 }
