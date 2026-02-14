@@ -112,17 +112,31 @@ BOOL Gfx_OpenBlackScreen(UWORD width, UWORD height, UBYTE depth) {
                              {TAG_DONE, 0}};
 
     blackScreen = OpenScreenTagList(NULL, tags);
+
+    /* Clear the screen bitmap explicitly (NOBACKFILL does not clear memory). */
+    SetRast(&blackScreen->RastPort, 0);
+    WaitBlit();
+    WaitTOF();
+    WaitTOF();
+
     if (!blackScreen) {
         return FALSE;
     }
 
-    /* Ensure it's black and behind. */
+    /* Ensure it's really black: clear bitmap + black palette + sync. */
     {
         UWORD black4[4] = {0x000, 0x000, 0x000, 0x000};
+
+        SetRast(&blackScreen->RastPort, 0);
+        WaitBlit();
+
         LoadRGB4(&blackScreen->ViewPort, black4, (depth >= 2) ? 4 : 2);
+
         ScreenToBack(blackScreen);
         RemakeDisplay();
-        SettleDisplay(2);
+
+        WaitTOF();
+        WaitTOF();
     }
 
     return TRUE;
@@ -147,6 +161,11 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
                                    {SA_Interleaved, FALSE}, {TAG_DONE, 0}};
 
     screen = OpenScreenTagList(NULL, screenTags);
+
+    SetRast(&screen->RastPort, 0);
+    WaitBlit();
+    WaitTOF();
+
     if (!screen) {
         return FALSE;
     }

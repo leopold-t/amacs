@@ -1,5 +1,7 @@
 #include <exec/types.h>
 #include <intuition/intuition.h>
+#include <proto/exec.h>
+#include <proto/graphics.h>
 #include <proto/intuition.h>
 
 #include "gfx.h"
@@ -26,6 +28,16 @@
 #define FUNDAMENTALS_FILE "gfx/FUNDAMENTALS.RAW"
 #define RANGE_FILE "gfx/OAHU_RANGE.RAW"
 
+/* Timing (PAL: 50 ticks/sec). */
+#define TICKS_PER_SEC 50
+#define LOGO_SECONDS 3
+#define TITLE_SECONDS 12
+#define INFO_SECONDS 6
+
+typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
+
+/* ---------- Palettes ---------- */
+
 /* LOGO palette (16 colors RGB4) */
 static UWORD logoPalette[16] = {0x000, 0xEEE, 0x569, 0xAAA, 0x129, 0x333, 0x888, 0x555,
                                 0x449, 0xCCC, 0x222, 0x88A, 0x777, 0xDDD, 0xBBB, 0x77A};
@@ -46,64 +58,124 @@ static UWORD fundamentalsPalette[32] = {
     0x0227, 0x0009, 0x000D, 0x022A, 0x000B, 0x0444, 0x0BBC, 0x088B, 0x044A, 0x0DDE, 0x0AAA,
     0x066A, 0x0666, 0x0777, 0x0225, 0x0999, 0x0CCC, 0x0AAC, 0x0339, 0x077B, 0x0448};
 
-/* RANGE (Oahu) palette (32 colors RGB4) */
+/* RANGE palette (32 colors RGB4) */
 static UWORD oahuRangePalette[32] = {
     0x0000, 0x09BD, 0x07AD, 0x069D, 0x0110, 0x0110, 0x0220, 0x0230, 0x0341, 0x0453, 0x0563,
     0x0674, 0x0210, 0x0321, 0x0432, 0x0543, 0x0654, 0x0765, 0x0876, 0x0987, 0x0444, 0x0DDE,
     0x0FFF, 0x0FFF, 0x0000, 0x0111, 0x0222, 0x0333, 0x0444, 0x0555, 0x0888, 0x0BBB};
 
-/* Input helper: ESC / LMB / Fire */
-static BOOL IsActionPressed(void) {
+/* ---------- Helpers ---------- */
+
+static void DrainWindowMessages(void) {
     struct Window *win = Gfx_GetWindow();
     struct IntuiMessage *msg;
 
-    /* Drain window messages and detect ESC/LMB. */
+    if (!win || !win->UserPort) {
+        return;
+    }
+
     while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
-        BOOL hit = FALSE;
+        ReplyMsg((struct Message *)msg);
+    }
+}
+
+static BOOL CheckEscInPort(void) {
+    struct Window *win = Gfx_GetWindow();
+    struct IntuiMessage *msg;
+
+    if (!win || !win->UserPort) {
+        return FALSE;
+    }
+
+    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+        BOOL esc = FALSE;
 
         if (msg->Class == IDCMP_RAWKEY && msg->Code == 0x45) {
-            hit = TRUE; /* ESC */
-        }
-        if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
-            hit = TRUE; /* LMB */
+            esc = TRUE;
         }
 
+        /* Ignore other messages here; they are handled by the advance check. */
         ReplyMsg((struct Message *)msg);
 
-        if (hit) {
+        if (esc) {
             return TRUE;
         }
     }
 
-    /* Also accept joystick Fire. */
-    return IsJoystickFirePressed() ? TRUE : FALSE;
+    return FALSE;
 }
 
-static void WaitForActionWithDebounce(void) {
-    /* Wait for press. */
-    while (!IsActionPressed()) {
+static BOOL CheckAdvance(void) {
+    struct Window *win = Gfx_GetWindow();
+    struct IntuiMessage *msg;
+
+    if (!win || !win->UserPort) {
+        return FALSE;
+    }
+
+    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+        BOOL adv = FALSE;
+
+        if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
+            adv = TRUE; /* LMB */
+        }
+
+        /* Do not consume ESC here (handled in CheckEscInPort). */
+
+        ReplyMsg((struct Message *)msg);
+
+        if (adv) {
+            return TRUE;
+        }
+    }
+
+    if (IsJoystickFirePressed()) {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+/*
+ * Wait up to `seconds` for:
+ * - ESC => WAIT_ESC
+ * - Fire or LMB => WAIT_ADVANCE
+ * - timeout => WAIT_TIMEOUT
+ *
+ * Debounces Fire to prevent double-advancing.
+ */
+static WaitResult WaitForAdvanceOrTimeout(int seconds) {
+    LONG ticks = (LONG)seconds * TICKS_PER_SEC;
+
+    DrainWindowMessages();
+
+    while (ticks-- > 0) {
+        if (CheckEscInPort()) {
+            return WAIT_ESC;
+        }
+
+        if (CheckAdvance()) {
+            /* Debounce. */
+            WaitTOF();
+            WaitTOF();
+            while (IsJoystickFirePressed()) {
+                WaitTOF();
+            }
+            DrainWindowMessages();
+            return WAIT_ADVANCE;
+        }
+
         WaitTOF();
     }
 
-    /* Small debounce. */
-    WaitTOF();
-    WaitTOF();
-
-    /* If Fire is held, wait for release to avoid double-skip. */
-    while (IsJoystickFirePressed()) {
-        WaitTOF();
-    }
-
-    /* Drain any queued mouse/key events. */
-    while (GetMsg(Gfx_GetWindow()->UserPort)) {
-        /* discard */
-    }
-
-    WaitTOF();
-    WaitTOF();
+    return WAIT_TIMEOUT;
 }
 
 int main(void) {
+    BOOL engaged = FALSE;
+    UWORD currentLoPal[32];
+    UWORD nextLoPal[32];
+
     if (!Input_Init()) {
         return RETURN_FAIL;
     }
@@ -113,7 +185,7 @@ int main(void) {
         return RETURN_FAIL;
     }
 
-    /* HiRes intro: LOGO */
+    /* ---------------- HiRes: LOGO ---------------- */
     if (!Gfx_OpenScreenAndWindow(HI_WIDTH, HI_HEIGHT, HI_DEPTH, HIRES_KEY)) {
         Gfx_CloseBlackScreen();
         Input_Shutdown();
@@ -126,18 +198,34 @@ int main(void) {
         Input_Shutdown();
         return RETURN_FAIL;
     }
-    WaitForActionWithDebounce();
 
-    /* HiRes intro: TITLE (crossfade) */
+    {
+        WaitResult r = WaitForAdvanceOrTimeout(LOGO_SECONDS);
+        if (r == WAIT_ESC) {
+            goto exit_ok;
+        }
+        /* Fire/LMB skips ahead but still shows Title next. */
+    }
+
+    /* ---------------- HiRes: TITLE ---------------- */
     if (!Gfx_CrossFadeToImage(TITLE_FILE, logoPalette, 16, titlePalette, 16)) {
         Gfx_CloseScreenAndWindow();
         Gfx_CloseBlackScreen();
         Input_Shutdown();
         return RETURN_FAIL;
     }
-    WaitForActionWithDebounce();
 
-    /* Switch to LoRes */
+    {
+        WaitResult r = WaitForAdvanceOrTimeout(TITLE_SECONDS);
+        if (r == WAIT_ESC) {
+            goto exit_ok;
+        }
+        if (r == WAIT_ADVANCE) {
+            engaged = TRUE;
+        }
+    }
+
+    /* ---------------- Switch to LoRes once ---------------- */
     if (!Gfx_SwitchHiResToLoResOnBlack(titlePalette, LO_WIDTH, LO_HEIGHT, LO_DEPTH)) {
         Gfx_CloseScreenAndWindow();
         Gfx_CloseBlackScreen();
@@ -145,33 +233,82 @@ int main(void) {
         return RETURN_FAIL;
     }
 
-    /* LoRes: TRNGINFO */
+    /* Enter LoRes with TRNGINFO and its palette as the starting point. */
     if (!Gfx_ShowImageFadeInFromBlack(TRNGINFO_FILE, trngInfoPalette, 32)) {
         Gfx_CloseScreenAndWindow();
         Gfx_CloseBlackScreen();
         Input_Shutdown();
         return RETURN_FAIL;
     }
-    WaitForActionWithDebounce();
 
-    /* LoRes: FUNDAMENTALS (crossfade) */
-    if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, trngInfoPalette, 32, fundamentalsPalette, 32)) {
-        Gfx_CloseScreenAndWindow();
-        Gfx_CloseBlackScreen();
-        Input_Shutdown();
-        return RETURN_FAIL;
+    /* Track current palette for crossfades. */
+    for (int i = 0; i < 32; i++) {
+        currentLoPal[i] = trngInfoPalette[i];
     }
-    WaitForActionWithDebounce();
 
-    /* LoRes: RANGE (crossfade) */
-    if (!Gfx_CrossFadeToImage(RANGE_FILE, fundamentalsPalette, 32, oahuRangePalette, 32)) {
-        Gfx_CloseScreenAndWindow();
-        Gfx_CloseBlackScreen();
-        Input_Shutdown();
-        return RETURN_FAIL;
+    /* ---------------- Attract loop: TRNGINFO <-> FUNDAMENTALS ---------------- */
+    for (;;) {
+        WaitResult r = WaitForAdvanceOrTimeout(INFO_SECONDS);
+        if (r == WAIT_ESC) {
+            goto exit_ok;
+        }
+        if (r == WAIT_ADVANCE) {
+            engaged = TRUE;
+        }
+
+        /* Next screen in the loop. */
+        if (currentLoPal[0] == trngInfoPalette[0] && currentLoPal[1] == trngInfoPalette[1] &&
+            currentLoPal[2] == trngInfoPalette[2]) {
+            /* Heuristic: assume we are on TRNGINFO -> go to FUNDAMENTALS */
+            for (int i = 0; i < 32; i++) {
+                nextLoPal[i] = fundamentalsPalette[i];
+            }
+
+            if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                Gfx_CloseScreenAndWindow();
+                Gfx_CloseBlackScreen();
+                Input_Shutdown();
+                return RETURN_FAIL;
+            }
+        } else {
+            /* Otherwise, go back to TRNGINFO */
+            for (int i = 0; i < 32; i++) {
+                nextLoPal[i] = trngInfoPalette[i];
+            }
+
+            if (!Gfx_CrossFadeToImage(TRNGINFO_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                Gfx_CloseScreenAndWindow();
+                Gfx_CloseBlackScreen();
+                Input_Shutdown();
+                return RETURN_FAIL;
+            }
+        }
+
+        /* Commit palette change. */
+        for (int i = 0; i < 32; i++) {
+            currentLoPal[i] = nextLoPal[i];
+        }
+
+        /* If the user engaged, finish this loop step and enter the range. */
+        if (engaged) {
+            if (!Gfx_CrossFadeToImage(RANGE_FILE, currentLoPal, 32, oahuRangePalette, 32)) {
+                Gfx_CloseScreenAndWindow();
+                Gfx_CloseBlackScreen();
+                Input_Shutdown();
+                return RETURN_FAIL;
+            }
+
+            /* Range is the last screen for now: wait for ESC or Fire/LMB to exit. */
+            for (;;) {
+                WaitResult rr = WaitForAdvanceOrTimeout(3600);
+                if (rr == WAIT_ESC || rr == WAIT_ADVANCE) {
+                    goto exit_ok;
+                }
+            }
+        }
     }
-    WaitForActionWithDebounce();
 
+exit_ok:
     Gfx_CloseScreenAndWindow();
     Gfx_CloseBlackScreen();
     Input_Shutdown();
