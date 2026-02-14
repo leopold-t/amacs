@@ -1,13 +1,9 @@
 #include <exec/types.h>
-#include <graphics/gfx.h>
-#include <intuition/intuition.h>
-#include <intuition/screens.h>
-#include <proto/dos.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
 
-#include "imageHandler.h"
+#include "gfx.h"
 #include "input.h"
 
 /* HiRes screens (LOGO + TITLE) */
@@ -20,7 +16,7 @@
 #define LO_HEIGHT 256
 #define LO_DEPTH 5
 
-/* Black safety screen (always behind) */
+/* Black safety screen */
 #define BLK_WIDTH 320
 #define BLK_HEIGHT 256
 #define BLK_DEPTH 2
@@ -50,162 +46,12 @@ static UWORD fundamentalsPalette[32] = {
     0x0227, 0x0009, 0x000D, 0x022A, 0x000B, 0x0444, 0x0BBC, 0x088B, 0x044A, 0x0DDE, 0x0AAA,
     0x066A, 0x0666, 0x0777, 0x0225, 0x0999, 0x0CCC, 0x0AAC, 0x0339, 0x077B, 0x0448};
 
-static struct Screen *blackScreen = NULL; /* always behind */
-static struct Screen *screen = NULL;      /* current front screen */
-static struct Window *window = NULL;      /* current window */
-
-/* Invisible pointer */
-static UWORD blankPointer[] = {0x0000, 0x0000};
-
-static void HidePointer(struct Window *win) {
-    if (win) {
-        SetPointer(win, blankPointer, 1, 1, 0, 0);
-    }
-}
-
-static void ShowPointer(struct Window *win) {
-    if (win) {
-        ClearPointer(win);
-    }
-}
-
-/* ---------------- Fade helpers (RGB4 up to 32 colors) ---------------- */
-
-static UWORD LerpRGB4(UWORD a, UWORD b, int step, int steps) {
-    int ar = (a >> 8) & 0xF, ag = (a >> 4) & 0xF, ab = a & 0xF;
-    int br = (b >> 8) & 0xF, bg = (b >> 4) & 0xF, bb = b & 0xF;
-
-    int r = ar + (br - ar) * step / steps;
-    int g = ag + (bg - ag) * step / steps;
-    int bl = ab + (bb - ab) * step / steps;
-
-    return (UWORD)((r << 8) | (g << 4) | bl);
-}
-
-static void FadeToPalette(struct ViewPort *vp, const UWORD *from, const UWORD *to, UWORD colors,
-                          int steps, int framesPerStep) {
-    static UWORD tmp[32];
-
-    for (int s = 0; s <= steps; s++) {
-        for (UWORD i = 0; i < colors; i++) {
-            tmp[i] = LerpRGB4(from[i], to[i], s, steps);
-        }
-
-        LoadRGB4(vp, tmp, colors);
-
-        for (int f = 0; f < framesPerStep; f++) {
-            WaitTOF();
-        }
-    }
-}
-
-static void FadeOutToBlack(struct Screen *scr, const UWORD *currentPal, UWORD colors) {
-    UWORD black[32] = {0};
-    FadeToPalette(&scr->ViewPort, currentPal, black, colors, 12, 1);
-}
-
-static void FadeInFromBlack(struct Screen *scr, const UWORD *targetPal, UWORD colors) {
-    UWORD black[32] = {0};
-    FadeToPalette(&scr->ViewPort, black, targetPal, colors, 12, 1);
-}
-
-/* ---------------- Screen helpers ---------------- */
-
-static BOOL OpenBlackScreen(void) {
-    struct TagItem tags[] = {{SA_Width, BLK_WIDTH},
-                             {SA_Height, BLK_HEIGHT},
-                             {SA_Depth, BLK_DEPTH},
-                             {SA_DisplayID, LORES_KEY},
-                             {SA_Type, CUSTOMSCREEN},
-                             {SA_ShowTitle, FALSE},
-                             {SA_Quiet, TRUE},
-                             {SA_Behind, TRUE},
-                             {SA_BackFill, (ULONG)LAYERS_NOBACKFILL}, /* cast avoids warning */
-                             {SA_Interleaved, FALSE},
-                             {TAG_DONE, 0}};
-
-    blackScreen = OpenScreenTagList(NULL, tags);
-    if (!blackScreen) {
-        return FALSE;
-    }
-
-    /* Ensure it is black */
-    {
-        UWORD black4[4] = {0x000, 0x000, 0x000, 0x000};
-        LoadRGB4(&blackScreen->ViewPort, black4, 4);
-        ScreenToBack(blackScreen);
-        RemakeDisplay();
-        WaitTOF();
-        WaitTOF();
-    }
-
-    return TRUE;
-}
-
-static void CloseBlackScreen(void) {
-    if (blackScreen) {
-        CloseScreen(blackScreen);
-        blackScreen = NULL;
-        Delay(2);
-    }
-}
-
-static void CloseScreenAndWindow(void) {
-    ShowPointer(window);
-
-    if (window) {
-        CloseWindow(window);
-        window = NULL;
-        Delay(2);
-    }
-
-    if (screen) {
-        CloseScreen(screen);
-        screen = NULL;
-        Delay(2);
-    }
-}
-
-static BOOL OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displayID) {
-    struct TagItem screenTags[] = {
-        {SA_Width, width},       {SA_Height, height},
-        {SA_Depth, depth},       {SA_DisplayID, displayID},
-        {SA_Type, CUSTOMSCREEN}, {SA_ShowTitle, FALSE},
-        {SA_Quiet, TRUE},        {SA_BackFill, (ULONG)LAYERS_NOBACKFILL}, /* cast avoids warning */
-        {SA_Interleaved, FALSE}, {TAG_DONE, 0}};
-
-    screen = OpenScreenTagList(NULL, screenTags);
-    if (!screen) {
-        return FALSE;
-    }
-
-    struct TagItem windowTags[] = {{WA_CustomScreen, (ULONG)screen},
-                                   {WA_Width, width},
-                                   {WA_Height, height},
-                                   {WA_Borderless, TRUE},
-                                   {WA_Backdrop, TRUE},
-                                   {WA_Activate, TRUE},
-                                   {WA_RMBTrap, TRUE},
-                                   {WA_IDCMP, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS},
-                                   {TAG_DONE, 0}};
-
-    window = OpenWindowTagList(NULL, windowTags);
-    if (!window) {
-        CloseScreen(screen);
-        screen = NULL;
-        return FALSE;
-    }
-
-    HidePointer(window);
-    return TRUE;
-}
-
-/* ---------------- Input helpers ---------------- */
-
+/* Input helper: ESC / LMB / Fire */
 static BOOL IsActionPressed(void) {
+    struct Window *win = Gfx_GetWindow();
     struct IntuiMessage *msg;
 
-    while ((msg = (struct IntuiMessage *)GetMsg(window->UserPort))) {
+    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
         BOOL hit = FALSE;
 
         if (msg->Class == IDCMP_RAWKEY && msg->Code == 0x45) {
@@ -238,7 +84,8 @@ static void WaitForActionWithDebounce(void) {
         WaitTOF();
     }
 
-    while (GetMsg(window->UserPort)) {
+    /* Drain any queued mouse/key events */
+    while (GetMsg(Gfx_GetWindow()->UserPort)) {
         /* discard */
     }
 
@@ -246,150 +93,68 @@ static void WaitForActionWithDebounce(void) {
     WaitTOF();
 }
 
-/* ---------------- Image display helpers ---------------- */
-
-static BOOL ShowImageFadeInFromBlack(const char *file, const UWORD *targetPal, UWORD colors) {
-    UWORD black[32] = {0};
-
-    LoadRGB4(&screen->ViewPort, black, colors);
-    WaitTOF();
-    WaitTOF();
-
-    if (!LoadRawImageToScreen(file, screen)) {
-        return FALSE;
-    }
-
-    ScreenToFront(screen);
-    RemakeDisplay();
-    WaitTOF();
-    WaitTOF();
-
-    FadeInFromBlack(screen, targetPal, colors);
-    return TRUE;
-}
-
-static BOOL CrossFadeToImage(const char *file, const UWORD *fromPal, UWORD fromColors,
-                             const UWORD *toPal, UWORD toColors) {
-    FadeOutToBlack(screen, fromPal, fromColors);
-
-    {
-        UWORD black[32] = {0};
-        LoadRGB4(&screen->ViewPort, black, toColors);
-        WaitTOF();
-        WaitTOF();
-    }
-
-    if (!LoadRawImageToScreen(file, screen)) {
-        return FALSE;
-    }
-
-    ScreenToFront(screen);
-    RemakeDisplay();
-    WaitTOF();
-    WaitTOF();
-
-    FadeInFromBlack(screen, toPal, toColors);
-    return TRUE;
-}
-
-/* ---------------- HiRes -> LoRes switch ---------------- */
-
-static BOOL SwitchHiResToLoResOnBlack(const UWORD *currentHiPal16) {
-    struct Screen *oldScreen = screen;
-    struct Window *oldWindow = window;
-
-    FadeOutToBlack(oldScreen, currentHiPal16, 16);
-
-    screen = NULL;
-    window = NULL;
-
-    if (!OpenScreenAndWindow(LO_WIDTH, LO_HEIGHT, LO_DEPTH, LORES_KEY)) {
-        screen = oldScreen;
-        window = oldWindow;
-        return FALSE;
-    }
-
-    {
-        UWORD black32[32] = {0};
-        LoadRGB4(&screen->ViewPort, black32, 32);
-        ScreenToFront(screen);
-        RemakeDisplay();
-        WaitTOF();
-        WaitTOF();
-    }
-
-    ShowPointer(oldWindow);
-    CloseWindow(oldWindow);
-    CloseScreen(oldScreen);
-    Delay(2);
-
-    return TRUE;
-}
-
-/* ---------------- main ---------------- */
-
 int main(void) {
     if (!Input_Init()) {
         return RETURN_FAIL;
     }
 
-    if (!OpenBlackScreen()) {
+    if (!Gfx_OpenBlackScreen(BLK_WIDTH, BLK_HEIGHT, BLK_DEPTH)) {
         Input_Shutdown();
         return RETURN_FAIL;
     }
 
     /* HiRes intro: LOGO */
-    if (!OpenScreenAndWindow(HI_WIDTH, HI_HEIGHT, HI_DEPTH, HIRES_KEY)) {
-        CloseBlackScreen();
+    if (!Gfx_OpenScreenAndWindow(HI_WIDTH, HI_HEIGHT, HI_DEPTH, HIRES_KEY)) {
+        Gfx_CloseBlackScreen();
         Input_Shutdown();
         return RETURN_FAIL;
     }
 
-    if (!ShowImageFadeInFromBlack(LOGO_FILE, logoPalette, 16)) {
-        CloseScreenAndWindow();
-        CloseBlackScreen();
+    if (!Gfx_ShowImageFadeInFromBlack(LOGO_FILE, logoPalette, 16)) {
+        Gfx_CloseScreenAndWindow();
+        Gfx_CloseBlackScreen();
         Input_Shutdown();
         return RETURN_FAIL;
     }
     WaitForActionWithDebounce();
 
     /* HiRes intro: TITLE (crossfade) */
-    if (!CrossFadeToImage(TITLE_FILE, logoPalette, 16, titlePalette, 16)) {
-        CloseScreenAndWindow();
-        CloseBlackScreen();
+    if (!Gfx_CrossFadeToImage(TITLE_FILE, logoPalette, 16, titlePalette, 16)) {
+        Gfx_CloseScreenAndWindow();
+        Gfx_CloseBlackScreen();
         Input_Shutdown();
         return RETURN_FAIL;
     }
     WaitForActionWithDebounce();
 
     /* Switch to LoRes */
-    if (!SwitchHiResToLoResOnBlack(titlePalette)) {
-        CloseScreenAndWindow();
-        CloseBlackScreen();
+    if (!Gfx_SwitchHiResToLoResOnBlack(titlePalette, LO_WIDTH, LO_HEIGHT, LO_DEPTH)) {
+        Gfx_CloseScreenAndWindow();
+        Gfx_CloseBlackScreen();
         Input_Shutdown();
         return RETURN_FAIL;
     }
 
     /* LoRes: TRNGINFO */
-    if (!ShowImageFadeInFromBlack(TRNGINFO_FILE, trngInfoPalette, 32)) {
-        CloseScreenAndWindow();
-        CloseBlackScreen();
+    if (!Gfx_ShowImageFadeInFromBlack(TRNGINFO_FILE, trngInfoPalette, 32)) {
+        Gfx_CloseScreenAndWindow();
+        Gfx_CloseBlackScreen();
         Input_Shutdown();
         return RETURN_FAIL;
     }
     WaitForActionWithDebounce();
 
     /* LoRes: FUNDAMENTALS (crossfade) */
-    if (!CrossFadeToImage(FUNDAMENTALS_FILE, trngInfoPalette, 32, fundamentalsPalette, 32)) {
-        CloseScreenAndWindow();
-        CloseBlackScreen();
+    if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, trngInfoPalette, 32, fundamentalsPalette, 32)) {
+        Gfx_CloseScreenAndWindow();
+        Gfx_CloseBlackScreen();
         Input_Shutdown();
         return RETURN_FAIL;
     }
     WaitForActionWithDebounce();
 
-    CloseScreenAndWindow();
-    CloseBlackScreen();
+    Gfx_CloseScreenAndWindow();
+    Gfx_CloseBlackScreen();
     Input_Shutdown();
     return RETURN_OK;
 }
