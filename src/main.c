@@ -1,6 +1,5 @@
 #include <exec/types.h>
-#include <proto/exec.h>
-#include <proto/graphics.h>
+#include <intuition/intuition.h>
 #include <proto/intuition.h>
 
 #include "gfx.h"
@@ -11,7 +10,7 @@
 #define HI_HEIGHT 256
 #define HI_DEPTH 4
 
-/* LoRes screens (TRNGINFO + FUNDAMENTALS) */
+/* LoRes screens (TRNGINFO + FUNDAMENTALS + RANGE) */
 #define LO_WIDTH 320
 #define LO_HEIGHT 256
 #define LO_DEPTH 5
@@ -25,6 +24,7 @@
 #define TITLE_FILE "gfx/TITLE.RAW"
 #define TRNGINFO_FILE "gfx/TRNGINFO.RAW"
 #define FUNDAMENTALS_FILE "gfx/FUNDAMENTALS.RAW"
+#define RANGE_FILE "gfx/OAHU_RANGE.RAW"
 
 /* LOGO palette (16 colors RGB4) */
 static UWORD logoPalette[16] = {0x000, 0xEEE, 0x569, 0xAAA, 0x129, 0x333, 0x888, 0x555,
@@ -46,18 +46,24 @@ static UWORD fundamentalsPalette[32] = {
     0x0227, 0x0009, 0x000D, 0x022A, 0x000B, 0x0444, 0x0BBC, 0x088B, 0x044A, 0x0DDE, 0x0AAA,
     0x066A, 0x0666, 0x0777, 0x0225, 0x0999, 0x0CCC, 0x0AAC, 0x0339, 0x077B, 0x0448};
 
+/* RANGE (Oahu) palette (32 colors RGB4) */
+static UWORD oahuRangePalette[32] = {
+    0x0000, 0x09BD, 0x07AD, 0x069D, 0x0110, 0x0110, 0x0220, 0x0230, 0x0341, 0x0453, 0x0563,
+    0x0674, 0x0210, 0x0321, 0x0432, 0x0543, 0x0654, 0x0765, 0x0876, 0x0987, 0x0444, 0x0DDE,
+    0x0FFF, 0x0FFF, 0x0000, 0x0111, 0x0222, 0x0333, 0x0444, 0x0555, 0x0888, 0x0BBB};
+
 /* Input helper: ESC / LMB / Fire */
 static BOOL IsActionPressed(void) {
     struct Window *win = Gfx_GetWindow();
     struct IntuiMessage *msg;
 
+    /* Drain window messages and detect ESC/LMB. */
     while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
         BOOL hit = FALSE;
 
         if (msg->Class == IDCMP_RAWKEY && msg->Code == 0x45) {
             hit = TRUE; /* ESC */
         }
-
         if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
             hit = TRUE; /* LMB */
         }
@@ -69,22 +75,26 @@ static BOOL IsActionPressed(void) {
         }
     }
 
+    /* Also accept joystick Fire. */
     return IsJoystickFirePressed() ? TRUE : FALSE;
 }
 
 static void WaitForActionWithDebounce(void) {
+    /* Wait for press. */
     while (!IsActionPressed()) {
         WaitTOF();
     }
 
+    /* Small debounce. */
     WaitTOF();
     WaitTOF();
 
+    /* If Fire is held, wait for release to avoid double-skip. */
     while (IsJoystickFirePressed()) {
         WaitTOF();
     }
 
-    /* Drain any queued mouse/key events */
+    /* Drain any queued mouse/key events. */
     while (GetMsg(Gfx_GetWindow()->UserPort)) {
         /* discard */
     }
@@ -146,6 +156,15 @@ int main(void) {
 
     /* LoRes: FUNDAMENTALS (crossfade) */
     if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, trngInfoPalette, 32, fundamentalsPalette, 32)) {
+        Gfx_CloseScreenAndWindow();
+        Gfx_CloseBlackScreen();
+        Input_Shutdown();
+        return RETURN_FAIL;
+    }
+    WaitForActionWithDebounce();
+
+    /* LoRes: RANGE (crossfade) */
+    if (!Gfx_CrossFadeToImage(RANGE_FILE, fundamentalsPalette, 32, oahuRangePalette, 32)) {
         Gfx_CloseScreenAndWindow();
         Gfx_CloseBlackScreen();
         Input_Shutdown();
