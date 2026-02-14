@@ -26,6 +26,25 @@ static void ShowPointer(struct Window *win) {
     }
 }
 
+/* ---- Stability helpers (safe: TOF only, no OwnBlitter/WaitBlit) ---- */
+
+static void SettleDisplay(int frames) {
+    for (int i = 0; i < frames; i++) {
+        WaitTOF();
+    }
+}
+
+static void DrainIDCMP(struct Window *win) {
+    if (!win || !win->UserPort) {
+        return;
+    }
+
+    struct IntuiMessage *msg;
+    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+        ReplyMsg((struct Message *)msg);
+    }
+}
+
 /* ---------------- Fade helpers (RGB4 up to 32 colors) ---------------- */
 
 static UWORD LerpRGB4(UWORD a, UWORD b, int step, int steps) {
@@ -54,6 +73,9 @@ static void FadeToPalette(struct ViewPort *vp, const UWORD *from, const UWORD *t
             WaitTOF();
         }
     }
+
+    /* One extra settle at the end helps under WB */
+    SettleDisplay(1);
 }
 
 static void FadeOutToBlack(struct Screen *scr, const UWORD *currentPal, UWORD colors) {
@@ -100,8 +122,7 @@ BOOL Gfx_OpenBlackScreen(UWORD width, UWORD height, UBYTE depth) {
         LoadRGB4(&blackScreen->ViewPort, black4, (depth >= 2) ? 4 : 2);
         ScreenToBack(blackScreen);
         RemakeDisplay();
-        WaitTOF();
-        WaitTOF();
+        SettleDisplay(2);
     }
 
     return TRUE;
@@ -109,9 +130,12 @@ BOOL Gfx_OpenBlackScreen(UWORD width, UWORD height, UBYTE depth) {
 
 void Gfx_CloseBlackScreen(void) {
     if (blackScreen) {
+        /* settle a bit before tearing down */
+        SettleDisplay(2);
         CloseScreen(blackScreen);
         blackScreen = NULL;
         Delay(2);
+        SettleDisplay(2);
     }
 }
 
@@ -145,22 +169,34 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
     }
 
     HidePointer(window);
+
+    /* small settle right after opening helps under WB */
+    SettleDisplay(1);
+
     return TRUE;
 }
 
 void Gfx_CloseScreenAndWindow(void) {
+    /* If we have a window, flush messages first (important under WB) */
+    DrainIDCMP(window);
+
+    /* settle before closing */
+    SettleDisplay(2);
+
     ShowPointer(window);
 
     if (window) {
         CloseWindow(window);
         window = NULL;
         Delay(2);
+        SettleDisplay(2);
     }
 
     if (screen) {
         CloseScreen(screen);
         screen = NULL;
         Delay(2);
+        SettleDisplay(2);
     }
 }
 
@@ -172,8 +208,7 @@ BOOL Gfx_ShowImageFadeInFromBlack(const char *file, const UWORD *targetPal, UWOR
     }
 
     LoadRGB4(&screen->ViewPort, black, colors);
-    WaitTOF();
-    WaitTOF();
+    SettleDisplay(2);
 
     if (!LoadRawImageToScreen(file, screen)) {
         return FALSE;
@@ -181,8 +216,7 @@ BOOL Gfx_ShowImageFadeInFromBlack(const char *file, const UWORD *targetPal, UWOR
 
     ScreenToFront(screen);
     RemakeDisplay();
-    WaitTOF();
-    WaitTOF();
+    SettleDisplay(2);
 
     FadeInFromBlack(screen, targetPal, colors);
     return TRUE;
@@ -199,8 +233,7 @@ BOOL Gfx_CrossFadeToImage(const char *file, const UWORD *fromPal, UWORD fromColo
     {
         UWORD black[32] = {0};
         LoadRGB4(&screen->ViewPort, black, toColors);
-        WaitTOF();
-        WaitTOF();
+        SettleDisplay(2);
     }
 
     if (!LoadRawImageToScreen(file, screen)) {
@@ -209,8 +242,7 @@ BOOL Gfx_CrossFadeToImage(const char *file, const UWORD *fromPal, UWORD fromColo
 
     ScreenToFront(screen);
     RemakeDisplay();
-    WaitTOF();
-    WaitTOF();
+    SettleDisplay(2);
 
     FadeInFromBlack(screen, toPal, toColors);
     return TRUE;
@@ -226,6 +258,7 @@ BOOL Gfx_SwitchHiResToLoResOnBlack(const UWORD *currentHiPal16, UWORD loWidth, U
     }
 
     FadeOutToBlack(oldScreen, currentHiPal16, 16);
+    SettleDisplay(2);
 
     screen = NULL;
     window = NULL;
@@ -241,14 +274,22 @@ BOOL Gfx_SwitchHiResToLoResOnBlack(const UWORD *currentHiPal16, UWORD loWidth, U
         LoadRGB4(&screen->ViewPort, black32, 32);
         ScreenToFront(screen);
         RemakeDisplay();
-        WaitTOF();
-        WaitTOF();
+        SettleDisplay(2);
     }
 
+    /* Close old HiRes safely */
+    DrainIDCMP(oldWindow);
     ShowPointer(oldWindow);
+
+    /* settle just before teardown */
+    SettleDisplay(2);
+
     CloseWindow(oldWindow);
+    SettleDisplay(1);
     CloseScreen(oldScreen);
+
     Delay(2);
+    SettleDisplay(2);
 
     return TRUE;
 }
