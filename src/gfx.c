@@ -26,7 +26,7 @@ static void ShowPointer(struct Window *win) {
     }
 }
 
-/* ---- Stability helpers (safe: TOF only, no OwnBlitter/WaitBlit) ---- */
+/* ---- Stability helpers ---- */
 
 static void SettleDisplay(int frames) {
     for (int i = 0; i < frames; i++) {
@@ -112,23 +112,19 @@ BOOL Gfx_OpenBlackScreen(UWORD width, UWORD height, UBYTE depth) {
                              {TAG_DONE, 0}};
 
     blackScreen = OpenScreenTagList(NULL, tags);
+    if (!blackScreen) {
+        return FALSE;
+    }
 
-    /* Clear the screen bitmap explicitly (NOBACKFILL does not clear memory). */
+    /* NOBACKFILL does not clear memory: explicitly clear bitmap */
     SetRast(&blackScreen->RastPort, 0);
     WaitBlit();
     WaitTOF();
     WaitTOF();
 
-    if (!blackScreen) {
-        return FALSE;
-    }
-
-    /* Ensure it's really black: clear bitmap + black palette + sync. */
+    /* Ensure it's really black and behind. */
     {
         UWORD black4[4] = {0x000, 0x000, 0x000, 0x000};
-
-        SetRast(&blackScreen->RastPort, 0);
-        WaitBlit();
 
         LoadRGB4(&blackScreen->ViewPort, black4, (depth >= 2) ? 4 : 2);
 
@@ -144,11 +140,13 @@ BOOL Gfx_OpenBlackScreen(UWORD width, UWORD height, UBYTE depth) {
 
 void Gfx_CloseBlackScreen(void) {
     if (blackScreen) {
-        /* settle a bit before tearing down */
-        SettleDisplay(2);
+        /* Ensure no pending blits before teardown */
+        WaitBlit();
+        SettleDisplay(1);
+
         CloseScreen(blackScreen);
         blackScreen = NULL;
-        Delay(2);
+
         SettleDisplay(2);
     }
 }
@@ -161,14 +159,15 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
                                    {SA_Interleaved, FALSE}, {TAG_DONE, 0}};
 
     screen = OpenScreenTagList(NULL, screenTags);
-
-    SetRast(&screen->RastPort, 0);
-    WaitBlit();
-    WaitTOF();
-
     if (!screen) {
         return FALSE;
     }
+
+    /* NOBACKFILL does not clear memory: explicitly clear bitmap */
+    SetRast(&screen->RastPort, 0);
+    WaitBlit();
+    WaitTOF();
+    WaitTOF();
 
     struct TagItem windowTags[] = {{WA_CustomScreen, (ULONG)screen},
                                    {WA_Width, width},
@@ -182,6 +181,10 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
 
     window = OpenWindowTagList(NULL, windowTags);
     if (!window) {
+        /* Ensure no blits are touching the screen bitmap before closing */
+        WaitBlit();
+        SettleDisplay(1);
+
         CloseScreen(screen);
         screen = NULL;
         return FALSE;
@@ -189,7 +192,7 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
 
     HidePointer(window);
 
-    /* small settle right after opening helps under WB */
+    /* Small settle right after opening helps under WB */
     SettleDisplay(1);
 
     return TRUE;
@@ -199,22 +202,25 @@ void Gfx_CloseScreenAndWindow(void) {
     /* If we have a window, flush messages first (important under WB) */
     DrainIDCMP(window);
 
-    /* settle before closing */
-    SettleDisplay(2);
+    /* Ensure no pending blits before teardown */
+    WaitBlit();
+    SettleDisplay(1);
 
     ShowPointer(window);
 
     if (window) {
         CloseWindow(window);
         window = NULL;
-        Delay(2);
         SettleDisplay(2);
     }
+
+    /* Extra barrier before closing the screen */
+    WaitBlit();
+    SettleDisplay(1);
 
     if (screen) {
         CloseScreen(screen);
         screen = NULL;
-        Delay(2);
         SettleDisplay(2);
     }
 }
@@ -232,6 +238,10 @@ BOOL Gfx_ShowImageFadeInFromBlack(const char *file, const UWORD *targetPal, UWOR
     if (!LoadRawImageToScreen(file, screen)) {
         return FALSE;
     }
+
+    /* Safety barrier before bringing screen to front */
+    WaitBlit();
+    SettleDisplay(1);
 
     ScreenToFront(screen);
     RemakeDisplay();
@@ -258,6 +268,10 @@ BOOL Gfx_CrossFadeToImage(const char *file, const UWORD *fromPal, UWORD fromColo
     if (!LoadRawImageToScreen(file, screen)) {
         return FALSE;
     }
+
+    /* Safety barrier before bringing screen to front */
+    WaitBlit();
+    SettleDisplay(1);
 
     ScreenToFront(screen);
     RemakeDisplay();
@@ -291,6 +305,11 @@ BOOL Gfx_SwitchHiResToLoResOnBlack(const UWORD *currentHiPal16, UWORD loWidth, U
     {
         UWORD black32[32] = {0};
         LoadRGB4(&screen->ViewPort, black32, 32);
+
+        /* Barrier before bringing new screen to front */
+        WaitBlit();
+        SettleDisplay(1);
+
         ScreenToFront(screen);
         RemakeDisplay();
         SettleDisplay(2);
@@ -300,14 +319,18 @@ BOOL Gfx_SwitchHiResToLoResOnBlack(const UWORD *currentHiPal16, UWORD loWidth, U
     DrainIDCMP(oldWindow);
     ShowPointer(oldWindow);
 
-    /* settle just before teardown */
-    SettleDisplay(2);
+    /* Ensure no pending blits before tearing down old screen */
+    WaitBlit();
+    SettleDisplay(1);
 
     CloseWindow(oldWindow);
+
+    /* Barrier before closing the old screen (window close may trigger blits) */
+    WaitBlit();
     SettleDisplay(1);
+
     CloseScreen(oldScreen);
 
-    Delay(2);
     SettleDisplay(2);
 
     return TRUE;
