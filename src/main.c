@@ -5,6 +5,7 @@
 #include <proto/intuition.h>
 
 #include "assets.h"
+#include "bob.h"
 #include "gfx.h"
 #include "input.h"
 
@@ -28,6 +29,8 @@
 #define TRNGINFO_FILE "gfx/TRNGINFO.RAW"
 #define FUNDAMENTALS_FILE "gfx/FUNDAMENTALS.RAW"
 #define RANGE_FILE "gfx/OAHU_RANGE.RAW"
+#define FRONTSIGHT_RAW "gfx/FrontSight.raw"
+#define FRONTSIGHT_MASK "gfx/FrontSight.mask"
 
 /* Timing (PAL: 50 ticks/sec). */
 #define TICKS_PER_SEC 50
@@ -269,6 +272,17 @@ int main(void) {
                 Gfx_CloseBlackScreen();
                 Input_Shutdown();
                 return RETURN_FAIL;
+            }
+
+            {
+                AmacsBob frontSight;
+                if (Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, 85, 88, 5)) {
+                    /* draw near center */
+                    WORD x = (320 - 85) / 2;
+                    WORD y = (256 - 88) / 2;
+                    Bob_DrawMaskedToScreen(&frontSight, Gfx_GetScreen(), x, y);
+                    Bob_Free(&frontSight);
+                }
             }
 
             /* Range is the last screen for now: wait for ESC or Fire/LMB to exit. */
