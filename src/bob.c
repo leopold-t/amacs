@@ -103,13 +103,21 @@ void Bob_Free(AmacsBob *b) {
     b->depth = 0;
 }
 
-void Bob_DrawMaskedToScreen(const AmacsBob *b, struct Screen *screen, WORD x, WORD y) {
-    if (!b || !screen || !screen->RastPort.BitMap || !b->mask) {
+void Bob_DrawMaskedToRastPort(const AmacsBob *b, struct RastPort *rp, WORD x, WORD y) {
+    if (!b || !rp || !rp->BitMap || !b->mask) {
         return;
     }
 
-    BltMaskBitMapRastPort((struct BitMap *)&b->bm, 0, 0, &screen->RastPort, x, y, b->width,
-                          b->height, 0xE0, /* minterm: typical masked copy */
+    BltMaskBitMapRastPort((struct BitMap *)&b->bm, 0, 0, rp, x, y, b->width, b->height,
+                          0xE0, /* masked copy */
                           b->mask);
     WaitBlit();
+}
+
+void Bob_DrawMaskedToScreen(const AmacsBob *b, struct Screen *screen, WORD x, WORD y) {
+    if (!b || !screen) {
+        return;
+    }
+
+    Bob_DrawMaskedToRastPort(b, &screen->RastPort, x, y);
 }

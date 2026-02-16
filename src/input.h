@@ -8,4 +8,10 @@ void Input_Shutdown(void);
 
 BOOL IsJoystickFirePressed(void);
 
+/* Direction helpers */
+BOOL Input_Left(void);
+BOOL Input_Right(void);
+BOOL Input_Up(void);
+BOOL Input_Down(void);
+
 #endif

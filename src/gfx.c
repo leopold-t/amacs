@@ -1,5 +1,6 @@
 #include "gfx.h"
 
+#include <exec/ports.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
@@ -10,6 +11,17 @@
 static struct Screen *blackScreen = NULL;
 static struct Screen *screen = NULL;
 static struct Window *window = NULL;
+
+/* Double buffering */
+static BOOL dbufEnabled = FALSE;
+static struct ScreenBuffer *screenBuffers[2] = {NULL, NULL};
+/* sbIndex = index aktualnie WYŚWIETLANEGO bufora */
+static WORD sbIndex = 0;
+static struct RastPort drawRP; /* RastPort podpięty pod back buffer */
+
+/* DBufInfo messages */
+static struct MsgPort *dbufPort = NULL;
+static BOOL dbufPrimed = FALSE;
 
 /* Invisible pointer */
 static UWORD blankPointer[] = {0x0000, 0x0000};
@@ -74,7 +86,6 @@ static void FadeToPalette(struct ViewPort *vp, const UWORD *from, const UWORD *t
         }
     }
 
-    /* One extra settle at the end helps under WB */
     SettleDisplay(1);
 }
 
@@ -88,12 +99,150 @@ static void FadeInFromBlack(struct Screen *scr, const UWORD *targetPal, UWORD co
     FadeToPalette(&scr->ViewPort, black, targetPal, colors, 12, 1);
 }
 
+/* ---------------- Double buffering helpers ---------------- */
+
+static void WaitSafe(struct ScreenBuffer *sb) {
+    if (!sb || !sb->sb_DBufInfo) {
+        return;
+    }
+
+    struct MsgPort *port = sb->sb_DBufInfo->dbi_SafeMessage.mn_ReplyPort;
+    if (!port) {
+        return;
+    }
+
+    while (!GetMsg(port)) {
+        WaitPort(port);
+    }
+}
+
+BOOL Gfx_EnableDoubleBuffering(void) {
+    if (dbufEnabled) {
+        return TRUE;
+    }
+    if (!screen) {
+        return FALSE;
+    }
+
+    if (!dbufPort) {
+        dbufPort = CreateMsgPort();
+        if (!dbufPort) {
+            return FALSE;
+        }
+    }
+
+    /* buffer 0 = bitmap ekranu */
+    screenBuffers[0] = AllocScreenBuffer(screen, NULL, SB_SCREEN_BITMAP);
+    if (!screenBuffers[0]) {
+        Gfx_DisableDoubleBuffering();
+        return FALSE;
+    }
+
+    /* buffer 1 = NOWY dodatkowy bitmap (to jest klucz!) */
+    screenBuffers[1] = AllocScreenBuffer(screen, NULL, 0);
+    if (!screenBuffers[1]) {
+        Gfx_DisableDoubleBuffering();
+        return FALSE;
+    }
+
+    /* Podpinamy MsgPort do DBufInfo */
+    for (int i = 0; i < 2; i++) {
+        if (screenBuffers[i] && screenBuffers[i]->sb_DBufInfo) {
+            screenBuffers[i]->sb_DBufInfo->dbi_SafeMessage.mn_ReplyPort = dbufPort;
+            screenBuffers[i]->sb_DBufInfo->dbi_DispMessage.mn_ReplyPort = dbufPort;
+        }
+    }
+
+    sbIndex = 0; /* pokazujemy buffer 0 */
+    dbufPrimed = FALSE;
+
+    InitRastPort(&drawRP);
+    drawRP.BitMap = screenBuffers[1]->sb_BitMap; /* rysujemy do back buffera */
+
+    /* wyczyść back buffer */
+    SetRast(&drawRP, 0);
+    WaitBlit();
+
+    dbufEnabled = TRUE;
+    return TRUE;
+}
+
+void Gfx_DisableDoubleBuffering(void) {
+    if (!dbufEnabled && !screenBuffers[0] && !screenBuffers[1] && !dbufPort) {
+        return;
+    }
+
+    /* Wróć na buffer 0 (bitmap ekranu) */
+    if (screen && screenBuffers[0]) {
+        ChangeScreenBuffer(screen, screenBuffers[0]);
+        WaitTOF();
+        WaitTOF();
+    }
+
+    if (screenBuffers[1]) {
+        FreeScreenBuffer(screen, screenBuffers[1]);
+        screenBuffers[1] = NULL;
+    }
+    if (screenBuffers[0]) {
+        FreeScreenBuffer(screen, screenBuffers[0]);
+        screenBuffers[0] = NULL;
+    }
+
+    dbufEnabled = FALSE;
+    dbufPrimed = FALSE;
+
+    if (dbufPort) {
+        DeleteMsgPort(dbufPort);
+        dbufPort = NULL;
+    }
+}
+
+BOOL Gfx_IsDoubleBufferingEnabled(void) {
+    return dbufEnabled;
+}
+
+struct RastPort *Gfx_GetDrawRastPort(void) {
+    if (dbufEnabled) {
+        return &drawRP;
+    }
+    if (screen) {
+        return &screen->RastPort;
+    }
+    return NULL;
+}
+
+void Gfx_SwapBuffers(void) {
+    if (!dbufEnabled || !screen) {
+        return;
+    }
+
+    WORD newShow = 1 - sbIndex; /* ten, który chcemy pokazać */
+    struct ScreenBuffer *showBuf = screenBuffers[newShow];
+
+    /* Flip */
+    if (!ChangeScreenBuffer(screen, showBuf)) {
+        return;
+    }
+
+    /* Po flipie: ten bufor staje się wyświetlany */
+    sbIndex = newShow;
+
+    /* NOWY back buffer = przeciwny do wyświetlanego */
+    drawRP.BitMap = screenBuffers[1 - sbIndex]->sb_BitMap;
+
+    /* I dopiero TERAZ czekamy aż back buffer będzie „safe” do rysowania */
+    if (dbufPrimed) {
+        WaitSafe(screenBuffers[1 - sbIndex]);
+    } else {
+        dbufPrimed = TRUE;
+    }
+}
+
 /* ---------------- Public API ---------------- */
 
 struct Screen *Gfx_GetScreen(void) {
     return screen;
 }
-
 struct Window *Gfx_GetWindow(void) {
     return window;
 }
@@ -116,21 +265,17 @@ BOOL Gfx_OpenBlackScreen(UWORD width, UWORD height, UBYTE depth) {
         return FALSE;
     }
 
-    /* NOBACKFILL does not clear memory: explicitly clear bitmap */
     SetRast(&blackScreen->RastPort, 0);
     WaitBlit();
     WaitTOF();
     WaitTOF();
 
-    /* Ensure it's really black and behind. */
     {
         UWORD black4[4] = {0x000, 0x000, 0x000, 0x000};
 
         LoadRGB4(&blackScreen->ViewPort, black4, (depth >= 2) ? 4 : 2);
-
         ScreenToBack(blackScreen);
         RemakeDisplay();
-
         WaitTOF();
         WaitTOF();
     }
@@ -140,13 +285,10 @@ BOOL Gfx_OpenBlackScreen(UWORD width, UWORD height, UBYTE depth) {
 
 void Gfx_CloseBlackScreen(void) {
     if (blackScreen) {
-        /* Ensure no pending blits before teardown */
         WaitBlit();
         SettleDisplay(1);
-
         CloseScreen(blackScreen);
         blackScreen = NULL;
-
         SettleDisplay(2);
     }
 }
@@ -163,7 +305,6 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
         return FALSE;
     }
 
-    /* NOBACKFILL does not clear memory: explicitly clear bitmap */
     SetRast(&screen->RastPort, 0);
     WaitBlit();
     WaitTOF();
@@ -181,30 +322,27 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
 
     window = OpenWindowTagList(NULL, windowTags);
     if (!window) {
-        /* Ensure no blits are touching the screen bitmap before closing */
         WaitBlit();
         SettleDisplay(1);
-
         CloseScreen(screen);
         screen = NULL;
         return FALSE;
     }
 
     HidePointer(window);
-
-    /* Small settle right after opening helps under WB */
     SettleDisplay(1);
-
     return TRUE;
 }
 
 void Gfx_CloseScreenAndWindow(void) {
-    /* If we have a window, flush messages first (important under WB) */
     DrainIDCMP(window);
 
-    /* Ensure no pending blits before teardown */
     WaitBlit();
     SettleDisplay(1);
+
+    if (dbufEnabled) {
+        Gfx_DisableDoubleBuffering();
+    }
 
     ShowPointer(window);
 
@@ -214,7 +352,6 @@ void Gfx_CloseScreenAndWindow(void) {
         SettleDisplay(2);
     }
 
-    /* Extra barrier before closing the screen */
     WaitBlit();
     SettleDisplay(1);
 
@@ -239,7 +376,6 @@ BOOL Gfx_ShowImageFadeInFromBlack(const char *file, const UWORD *targetPal, UWOR
         return FALSE;
     }
 
-    /* Safety barrier before bringing screen to front */
     WaitBlit();
     SettleDisplay(1);
 
@@ -269,7 +405,6 @@ BOOL Gfx_CrossFadeToImage(const char *file, const UWORD *fromPal, UWORD fromColo
         return FALSE;
     }
 
-    /* Safety barrier before bringing screen to front */
     WaitBlit();
     SettleDisplay(1);
 
@@ -306,7 +441,6 @@ BOOL Gfx_SwitchHiResToLoResOnBlack(const UWORD *currentHiPal16, UWORD loWidth, U
         UWORD black32[32] = {0};
         LoadRGB4(&screen->ViewPort, black32, 32);
 
-        /* Barrier before bringing new screen to front */
         WaitBlit();
         SettleDisplay(1);
 
@@ -315,22 +449,18 @@ BOOL Gfx_SwitchHiResToLoResOnBlack(const UWORD *currentHiPal16, UWORD loWidth, U
         SettleDisplay(2);
     }
 
-    /* Close old HiRes safely */
     DrainIDCMP(oldWindow);
     ShowPointer(oldWindow);
 
-    /* Ensure no pending blits before tearing down old screen */
     WaitBlit();
     SettleDisplay(1);
 
     CloseWindow(oldWindow);
 
-    /* Barrier before closing the old screen (window close may trigger blits) */
     WaitBlit();
     SettleDisplay(1);
 
     CloseScreen(oldScreen);
-
     SettleDisplay(2);
 
     return TRUE;

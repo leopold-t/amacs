@@ -32,4 +32,19 @@ BOOL Gfx_CrossFadeToImage(const char *file, const UWORD *fromPal, UWORD fromColo
 BOOL Gfx_SwitchHiResToLoResOnBlack(const UWORD *currentHiPal16, UWORD loWidth, UWORD loHeight,
                                    UBYTE loDepth);
 
+/* Enable double buffering on current screen (LoRes range). */
+BOOL Gfx_EnableDoubleBuffering(void);
+
+/* Disable double buffering (safe teardown). */
+void Gfx_DisableDoubleBuffering(void);
+
+/* Returns the RastPort you should draw into (back buffer if DBuf enabled, otherwise screen RP). */
+struct RastPort *Gfx_GetDrawRastPort(void);
+
+/* Swap DBuf buffers (present back buffer, switch draw buffer). */
+void Gfx_SwapBuffers(void);
+
+/* Returns TRUE if DBuf is currently active. */
+BOOL Gfx_IsDoubleBufferingEnabled(void);
+
 #endif /* GFX_H */
