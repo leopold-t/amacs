@@ -9,6 +9,13 @@
 #include "gfx.h"
 #include "input.h"
 
+/* If your input.h doesn't expose directions yet, keep these externs here.
+   They must exist in input.c (or you'll get linker errors). */
+extern BOOL Input_Left(void);
+extern BOOL Input_Right(void);
+extern BOOL Input_Up(void);
+extern BOOL Input_Down(void);
+
 /* HiRes screens (LOGO + TITLE) */
 #define HI_WIDTH 640
 #define HI_HEIGHT 256
@@ -56,6 +63,13 @@ static void DrainWindowMessages(void) {
     }
 }
 
+/*
+ * IMPORTANT:
+ * Do not poll IDCMP in two separate functions (ESC + ADVANCE), because the first reader
+ * drains messages and the second sees nothing.
+ *
+ * This function consumes IDCMP once per call and returns both flags.
+ */
 static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
     struct Window *win = Gfx_GetWindow();
     struct IntuiMessage *msg;
@@ -78,11 +92,20 @@ static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
         }
     }
 
+    /* Joystick fire (port handling is inside input.c) */
     if (IsJoystickFirePressed()) {
         *outAdvance = TRUE;
     }
 }
 
+/*
+ * Wait up to `seconds` for:
+ * - ESC => WAIT_ESC
+ * - Fire or LMB => WAIT_ADVANCE
+ * - timeout => WAIT_TIMEOUT
+ *
+ * Debounces Fire to prevent double-advancing.
+ */
 static WaitResult WaitForAdvanceOrTimeout(int seconds) {
     LONG ticks = (LONG)seconds * TICKS_PER_SEC;
 
@@ -98,11 +121,13 @@ static WaitResult WaitForAdvanceOrTimeout(int seconds) {
         }
 
         if (adv) {
+            /* Debounce Fire (mouse click is one-shot anyway). */
             WaitTOF();
             WaitTOF();
             while (IsJoystickFirePressed()) {
                 WaitTOF();
             }
+
             DrainWindowMessages();
             return WAIT_ADVANCE;
         }
@@ -116,73 +141,84 @@ static WaitResult WaitForAdvanceOrTimeout(int seconds) {
 /* ------------------------------------------------------------------ */
 /* Range screen: DBuf + moving front sight                              */
 /* ------------------------------------------------------------------ */
-
 static void RunRangeWithFrontSight(void) {
     AmacsBob frontSight;
-
-    /* full-screen background snapshot bitmap */
-    struct BitMap bg;
-    BOOL haveBg = FALSE;
 
     WORD x = (320 - 85) / 2;
     WORD y = (256 - 88) / 2;
 
-    UWORD ax = 0, ay = 0;
-    UWORD vx = 0, vy = 0;
+    /* Fixed-point accumulators (1/256 px units) and signed velocities */
+    LONG ax = 0, ay = 0;
+    LONG vx = 0, vy = 0;
 
-    const UWORD V_MIN = 64;   /* 0.25 px/frame */
-    const UWORD V_MAX = 4094; /* 16 px/frame */
-    const UWORD V_RAMP = 512; /* ramp per frame while held */
+    /* --- Tuning --- */
+    const LONG V_MAX = 8192;    /* 32.0 px/frame */
+    const LONG V_MIN = 128;     /* 0.5 px/frame once ramp starts */
+    const LONG V_STOP = 32;     /* snap to 0 when slower than this */
+    const LONG ACCEL_DIV = 6;   /* bigger = gentler acceleration */
+    const LONG DECAY_NUM = 200; /* 200/256 ~= 0.78 per frame */
+    const LONG DECAY_DEN = 256;
+
+    /* Tap/precision handling */
+    const UWORD START_DELAY = 3; /* frames held before inertia/ramp starts */
+
+    /* Per-axis state */
+    static int prevDirX = 0, prevDirY = 0;
+    static UWORD holdX = 0, holdY = 0;
+
+    /* Background copy for DBuf (keep both buffers consistent) */
+    struct BitMap bg;
+    BOOL haveBg = FALSE;
 
     if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, 85, 88, 5)) {
         return;
     }
 
-    /* ---- VERY IMPORTANT: zero-init bg + planes ---- */
-    bg.BytesPerRow = 0;
-    bg.Rows = 0;
-    bg.Flags = 0;
-    bg.Depth = 0;
-    for (int i = 0; i < 8; i++) {
-        bg.Planes[i] = NULL;
-    }
-
-    /* Snapshot the static background into a full-screen bitmap so we can redraw it each frame. */
-    {
-        InitBitMap(&bg, 5, 320, 256);
-
-        haveBg = TRUE;
-        for (UWORD p = 0; p < 5; p++) {
-            bg.Planes[p] = (PLANEPTR)AllocRaster(320, 256);
-            if (!bg.Planes[p]) {
-                haveBg = FALSE;
-                break;
+    /* Capture background from current front buffer */
+    InitBitMap(&bg, 5, 320, 256);
+    for (UWORD p = 0; p < 5; p++) {
+        bg.Planes[p] = (PLANEPTR)AllocRaster(320, 256);
+        if (!bg.Planes[p]) {
+            for (UWORD q = 0; q < p; q++) {
+                if (bg.Planes[q]) {
+                    FreeRaster(bg.Planes[q], 320, 256);
+                    bg.Planes[q] = NULL;
+                }
             }
-        }
-
-        if (haveBg) {
-            WaitBlit();
-            BltBitMap(Gfx_GetScreen()->RastPort.BitMap, 0, 0, &bg, 0, 0, 320, 256, 0xC0, 0xFF,
-                      NULL);
-            WaitBlit();
+            Bob_Free(&frontSight);
+            return;
         }
     }
 
-    /* Draw first frame */
+    {
+        struct Screen *scr = Gfx_GetScreen();
+        if (scr && scr->RastPort.BitMap) {
+            WaitBlit();
+            BltBitMap(scr->RastPort.BitMap, 0, 0, &bg, 0, 0, 320, 256, 0xC0, 0xFF, NULL);
+            WaitBlit();
+            haveBg = TRUE;
+        }
+    }
+
+    /* First frame */
     {
         struct RastPort *rp = Gfx_GetDrawRastPort();
-
         if (haveBg) {
             WaitBlit();
             BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, 320, 256, 0xC0, 0xFF, NULL);
             WaitBlit();
         }
-
         Bob_DrawMaskedToRastPort(&frontSight, rp, x, y);
         Gfx_SwapBuffers();
     }
 
     DrainWindowMessages();
+
+    /* Reset axis state on entry */
+    prevDirX = prevDirY = 0;
+    holdX = holdY = 0;
+    ax = ay = 0;
+    vx = vy = 0;
 
     for (;;) {
         BOOL adv = FALSE, esc = FALSE;
@@ -192,47 +228,144 @@ static void RunRangeWithFrontSight(void) {
             break;
         }
 
-        /* Horizontal movement with ramp */
-        if (Input_Left() ^ Input_Right()) {
-            if (vx < V_MIN)
-                vx = V_MIN;
-            else if (vx < V_MAX)
-                vx = (UWORD)(((vx + V_RAMP) > V_MAX) ? V_MAX : (vx + V_RAMP));
+        int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
+        int dirY = (Input_Down() ? 1 : 0) - (Input_Up() ? 1 : 0);
 
-            ax = (UWORD)(ax + vx);
+        /* ---- X axis: tap=1px + delayed ramp ---- */
+        if (dirX != 0) {
+            if (prevDirX == 0) {
+                /* fresh tap -> exactly 1px */
+                x += (WORD)dirX;
+                holdX = 1;
+
+                /* kill inertia on tap start */
+                vx = 0;
+                ax = 0;
+            } else if (dirX != prevDirX) {
+                /* direction changed -> hard reset then 1px */
+                x += (WORD)dirX;
+                holdX = 1;
+                vx = 0;
+                ax = 0;
+            } else {
+                /* still held */
+                if (holdX < 0xFFFF)
+                    holdX++;
+
+                if (holdX >= START_DELAY) {
+                    LONG target = (LONG)dirX * V_MAX;
+                    LONG dv = target - vx;
+
+                    vx += dv / ACCEL_DIV;
+
+                    /* ensure minimum motion once ramp is active */
+                    {
+                        LONG avx = (vx < 0) ? -vx : vx;
+                        if (avx < V_MIN)
+                            vx = (LONG)dirX * V_MIN;
+                    }
+
+                    ax += vx;
+                    while (ax >= 256) {
+                        ax -= 256;
+                        x++;
+                    }
+                    while (ax <= -256) {
+                        ax += 256;
+                        x--;
+                    }
+                }
+                /* else: within START_DELAY -> no extra movement (prevents multi-px on short tap) */
+            }
+        } else {
+            holdX = 0;
+            prevDirX = 0;
+
+            /* exponential decay */
+            vx = (vx * DECAY_NUM) / DECAY_DEN;
+            if (vx < V_STOP && vx > -V_STOP)
+                vx = 0;
+
+            ax += vx;
             while (ax >= 256) {
                 ax -= 256;
-                if (Input_Left())
-                    x--;
-                else
-                    x++;
+                x++;
             }
-        } else {
-            vx = 0;
-            ax = 0;
+            while (ax <= -256) {
+                ax += 256;
+                x--;
+            }
+
+            /* optional: if nearly stopped, clear accumulator to avoid “creep” */
+            if (vx == 0)
+                ax = 0;
         }
 
-        /* Vertical movement with ramp */
-        if (Input_Up() ^ Input_Down()) {
-            if (vy < V_MIN)
-                vy = V_MIN;
-            else if (vy < V_MAX)
-                vy = (UWORD)(((vy + V_RAMP) > V_MAX) ? V_MAX : (vy + V_RAMP));
+        /* ---- Y axis: tap=1px + delayed ramp ---- */
+        if (dirY != 0) {
+            if (prevDirY == 0) {
+                y += (WORD)dirY;
+                holdY = 1;
+                vy = 0;
+                ay = 0;
+            } else if (dirY != prevDirY) {
+                y += (WORD)dirY;
+                holdY = 1;
+                vy = 0;
+                ay = 0;
+            } else {
+                if (holdY < 0xFFFF)
+                    holdY++;
 
-            ay = (UWORD)(ay + vy);
+                if (holdY >= START_DELAY) {
+                    LONG target = (LONG)dirY * V_MAX;
+                    LONG dv = target - vy;
+
+                    vy += dv / ACCEL_DIV;
+
+                    {
+                        LONG avy = (vy < 0) ? -vy : vy;
+                        if (avy < V_MIN)
+                            vy = (LONG)dirY * V_MIN;
+                    }
+
+                    ay += vy;
+                    while (ay >= 256) {
+                        ay -= 256;
+                        y++;
+                    }
+                    while (ay <= -256) {
+                        ay += 256;
+                        y--;
+                    }
+                }
+            }
+        } else {
+            holdY = 0;
+            prevDirY = 0;
+
+            vy = (vy * DECAY_NUM) / DECAY_DEN;
+            if (vy < V_STOP && vy > -V_STOP)
+                vy = 0;
+
+            ay += vy;
             while (ay >= 256) {
                 ay -= 256;
-                if (Input_Up())
-                    y--;
-                else
-                    y++;
+                y++;
             }
-        } else {
-            vy = 0;
-            ay = 0;
+            while (ay <= -256) {
+                ay += 256;
+                y--;
+            }
+
+            if (vy == 0)
+                ay = 0;
         }
 
-        /* Clamp to screen */
+        prevDirX = dirX;
+        prevDirY = dirY;
+
+        /* Clamp */
         if (x < 0)
             x = 0;
         if (y < 0)
@@ -242,7 +375,7 @@ static void RunRangeWithFrontSight(void) {
         if (y > (256 - 88))
             y = (256 - 88);
 
-        /* Draw on back buffer, then swap */
+        /* Draw */
         {
             struct RastPort *rp = Gfx_GetDrawRastPort();
 
@@ -259,7 +392,6 @@ static void RunRangeWithFrontSight(void) {
         WaitTOF();
     }
 
-    /* cleanup */
     Bob_Free(&frontSight);
 
     for (UWORD p = 0; p < 5; p++) {
@@ -387,11 +519,14 @@ int main(void) {
                 goto fail;
             }
 
+            /* Enable DBuf only on the range screen */
             if (!Gfx_EnableDoubleBuffering()) {
                 goto fail;
             }
 
+            /* Run range loop with moving front sight */
             RunRangeWithFrontSight();
+
             goto exit_ok;
         }
     }
