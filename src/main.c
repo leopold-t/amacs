@@ -138,10 +138,22 @@ static WaitResult WaitForAdvanceOrTimeout(int seconds) {
     return WAIT_TIMEOUT;
 }
 
+/* Check if double buffering is safe on this system (graphics.library >= 39, Kick 3.0+) */
+static BOOL UseDoubleBuffering(void) {
+    struct Library *GfxBase = OpenLibrary("graphics.library", 0);
+    if (!GfxBase)
+        return FALSE;
+
+    BOOL safe = (GfxBase->lib_Version >= 39);
+
+    CloseLibrary(GfxBase);
+    return safe;
+}
+
 /* ------------------------------------------------------------------ */
-/* Range screen: DBuf + moving front sight                              */
+/* Range screen: optional DBuf + moving front sight                     */
 /* ------------------------------------------------------------------ */
-static void RunRangeWithFrontSight(void) {
+static void RunRangeWithFrontSight(BOOL useDBuf) {
     AmacsBob frontSight;
 
     WORD x = (320 - 85) / 2;
@@ -166,7 +178,7 @@ static void RunRangeWithFrontSight(void) {
     static int prevDirX = 0, prevDirY = 0;
     static UWORD holdX = 0, holdY = 0;
 
-    /* Background copy for DBuf (keep both buffers consistent) */
+    /* Background copy for restore (keep both buffers consistent if DBuf) */
     struct BitMap bg;
     BOOL haveBg = FALSE;
 
@@ -202,14 +214,15 @@ static void RunRangeWithFrontSight(void) {
 
     /* First frame */
     {
-        struct RastPort *rp = Gfx_GetDrawRastPort();
+        struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
         if (haveBg) {
             WaitBlit();
             BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, 320, 256, 0xC0, 0xFF, NULL);
             WaitBlit();
         }
         Bob_DrawMaskedToRastPort(&frontSight, rp, x, y);
-        Gfx_SwapBuffers();
+        if (useDBuf)
+            Gfx_SwapBuffers();
     }
 
     DrainWindowMessages();
@@ -377,7 +390,7 @@ static void RunRangeWithFrontSight(void) {
 
         /* Draw */
         {
-            struct RastPort *rp = Gfx_GetDrawRastPort();
+            struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
 
             if (haveBg) {
                 WaitBlit();
@@ -386,7 +399,8 @@ static void RunRangeWithFrontSight(void) {
             }
 
             Bob_DrawMaskedToRastPort(&frontSight, rp, x, y);
-            Gfx_SwapBuffers();
+            if (useDBuf)
+                Gfx_SwapBuffers();
         }
 
         WaitTOF();
@@ -519,13 +533,16 @@ int main(void) {
                 goto fail;
             }
 
-            /* Enable DBuf only on the range screen */
-            if (!Gfx_EnableDoubleBuffering()) {
-                goto fail;
+            BOOL useDBuf = UseDoubleBuffering();
+
+            if (useDBuf) {
+                if (!Gfx_EnableDoubleBuffering()) {
+                    goto fail;
+                }
             }
 
             /* Run range loop with moving front sight */
-            RunRangeWithFrontSight();
+            RunRangeWithFrontSight(useDBuf);
 
             goto exit_ok;
         }
