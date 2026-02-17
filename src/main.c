@@ -40,6 +40,10 @@ extern BOOL Input_Down(void);
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
 #define FRONTSIGHT_MASK "gfx/FrontSight.mask"
 
+/* Front sight (muszka) dimensions (planar RAW + 1-bit MASK) */
+#define FRONTSIGHT_W 83
+#define FRONTSIGHT_H 87
+
 /* Timing (PAL: 50 ticks/sec). */
 #define TICKS_PER_SEC 50
 #define LOGO_SECONDS 3
@@ -156,8 +160,8 @@ static BOOL UseDoubleBuffering(void) {
 static void RunRangeWithFrontSight(BOOL useDBuf) {
     AmacsBob frontSight;
 
-    WORD x = (320 - 85) / 2;
-    WORD y = (256 - 88) / 2;
+    WORD x = (320 - FRONTSIGHT_W) / 2;
+    WORD y = (256 - FRONTSIGHT_H) / 2;
 
     /* Fixed-point accumulators (1/256 px units) and signed velocities */
     LONG ax = 0, ay = 0;
@@ -182,7 +186,8 @@ static void RunRangeWithFrontSight(BOOL useDBuf) {
     struct BitMap bg;
     BOOL haveBg = FALSE;
 
-    if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, 85, 88, 5)) {
+    if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, FRONTSIGHT_W,
+                            FRONTSIGHT_H, 5)) {
         return;
     }
 
@@ -288,7 +293,6 @@ static void RunRangeWithFrontSight(BOOL useDBuf) {
                         x--;
                     }
                 }
-                /* else: within START_DELAY -> no extra movement (prevents multi-px on short tap) */
             }
         } else {
             holdX = 0;
@@ -309,7 +313,6 @@ static void RunRangeWithFrontSight(BOOL useDBuf) {
                 x--;
             }
 
-            /* optional: if nearly stopped, clear accumulator to avoid “creep” */
             if (vx == 0)
                 ax = 0;
         }
@@ -383,10 +386,10 @@ static void RunRangeWithFrontSight(BOOL useDBuf) {
             x = 0;
         if (y < 0)
             y = 0;
-        if (x > (320 - 85))
-            x = (320 - 85);
-        if (y > (256 - 88))
-            y = (256 - 88);
+        if (x > (320 - FRONTSIGHT_W))
+            x = (320 - FRONTSIGHT_W);
+        if (y > (256 - FRONTSIGHT_H))
+            y = (256 - FRONTSIGHT_H);
 
         /* Draw */
         {
