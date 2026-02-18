@@ -1,8 +1,42 @@
+# =========================
 # Build artifacts
+# =========================
 build/
+*.o
+*.elf
+*.map
 
-# Editor / OS junk
-*~
+# Optional debug outputs
 *.log
+make_debug.log
+
+# =========================
+# Editor / IDE
+# =========================
 .vscode/
+.idea/
+*.code-workspace
+
+# Vim / Emacs temp
+*~
+*.swp
+*.swo
+
+# =========================
+# OS junk
+# =========================
 .DS_Store
+Thumbs.db
+
+# =========================
+# Temporary test assets
+# =========================
+*.ppm
+*.png
+*.bmp
+
+# =========================
+# Backup / export junk
+# =========================
+*.bak
+*.orig
