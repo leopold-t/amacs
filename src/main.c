@@ -21,7 +21,7 @@ extern BOOL Input_Down(void);
 #define HI_HEIGHT 256
 #define HI_DEPTH 4
 
-/* LoRes screens (TRNGINFO + FUNDAMENTALS + RANGE) */
+/* LoRes screens (TRNGINFO + FUNDAMENTALS + TARGETRANGES + RANGE) */
 #define LO_WIDTH 320
 #define LO_HEIGHT 256
 #define LO_DEPTH 5
@@ -35,6 +35,7 @@ extern BOOL Input_Down(void);
 #define TITLE_FILE "gfx/TITLE.RAW"
 #define TRNGINFO_FILE "gfx/TRNGINFO.RAW"
 #define FUNDAMENTALS_FILE "gfx/FUNDAMENTALS.RAW"
+#define TARGETRANGES_FILE "gfx/TARGETRANGES.RAW"
 #define RANGE_FILE "gfx/OAHU_RANGE.RAW"
 
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
@@ -156,6 +157,7 @@ static BOOL UseDoubleBuffering(void) {
 
 /* ------------------------------------------------------------------ */
 /* Range screen: optional DBuf + moving front sight                     */
+/* (unchanged from your repo version)                                   */
 /* ------------------------------------------------------------------ */
 static void RunRangeWithFrontSight(BOOL useDBuf) {
     AmacsBob frontSight;
@@ -252,21 +254,16 @@ static void RunRangeWithFrontSight(BOOL useDBuf) {
         /* ---- X axis: tap=1px + delayed ramp ---- */
         if (dirX != 0) {
             if (prevDirX == 0) {
-                /* fresh tap -> exactly 1px */
                 x += (WORD)dirX;
                 holdX = 1;
-
-                /* kill inertia on tap start */
                 vx = 0;
                 ax = 0;
             } else if (dirX != prevDirX) {
-                /* direction changed -> hard reset then 1px */
                 x += (WORD)dirX;
                 holdX = 1;
                 vx = 0;
                 ax = 0;
             } else {
-                /* still held */
                 if (holdX < 0xFFFF)
                     holdX++;
 
@@ -276,7 +273,6 @@ static void RunRangeWithFrontSight(BOOL useDBuf) {
 
                     vx += dv / ACCEL_DIV;
 
-                    /* ensure minimum motion once ramp is active */
                     {
                         LONG avx = (vx < 0) ? -vx : vx;
                         if (avx < V_MIN)
@@ -298,7 +294,6 @@ static void RunRangeWithFrontSight(BOOL useDBuf) {
             holdX = 0;
             prevDirX = 0;
 
-            /* exponential decay */
             vx = (vx * DECAY_NUM) / DECAY_DEN;
             if (vx < V_STOP && vx > -V_STOP)
                 vx = 0;
@@ -423,6 +418,8 @@ static void RunRangeWithFrontSight(BOOL useDBuf) {
 /* MAIN                                                               */
 /* ------------------------------------------------------------------ */
 
+typedef enum { ATTR_TRNGINFO = 0, ATTR_FUNDAMENTALS, ATTR_TARGETRANGES } AttractScreen;
+
 int main(void) {
     BOOL engaged = FALSE;
     UWORD currentLoPal[32];
@@ -495,7 +492,9 @@ int main(void) {
         currentLoPal[i] = trngInfoPalette[i];
     }
 
-    /* ---------------- Attract loop: TRNGINFO <-> FUNDAMENTALS ---------------- */
+    AttractScreen attr = ATTR_TRNGINFO;
+
+    /* ---------------- Attract loop: TRNGINFO -> FUNDAMENTALS -> TARGETRANGES ---------------- */
     for (;;) {
         WaitResult r = WaitForAdvanceOrTimeout(INFO_SECONDS);
         if (r == WAIT_ESC) {
@@ -505,33 +504,43 @@ int main(void) {
             engaged = TRUE;
         }
 
-        if (currentLoPal[0] == trngInfoPalette[0] && currentLoPal[1] == trngInfoPalette[1] &&
-            currentLoPal[2] == trngInfoPalette[2]) {
-
-            for (int i = 0; i < 32; i++) {
-                nextLoPal[i] = fundamentalsPalette[i];
-            }
-
-            if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, currentLoPal, 32, nextLoPal, 32)) {
-                goto fail;
-            }
-
-        } else {
-
-            for (int i = 0; i < 32; i++) {
-                nextLoPal[i] = trngInfoPalette[i];
-            }
-
-            if (!Gfx_CrossFadeToImage(TRNGINFO_FILE, currentLoPal, 32, nextLoPal, 32)) {
-                goto fail;
-            }
-        }
-
-        for (int i = 0; i < 32; i++) {
-            currentLoPal[i] = nextLoPal[i];
-        }
-
         if (engaged) {
+            /* Engaged path: ensure order FUNDAMENTALS -> TARGETRANGES -> RANGE */
+            if (attr == ATTR_TRNGINFO) {
+                for (int i = 0; i < 32; i++) {
+                    nextLoPal[i] = fundamentalsPalette[i];
+                }
+                if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                    goto fail;
+                }
+                for (int i = 0; i < 32; i++) {
+                    currentLoPal[i] = nextLoPal[i];
+                }
+                attr = ATTR_FUNDAMENTALS;
+            }
+
+            if (attr == ATTR_FUNDAMENTALS) {
+                for (int i = 0; i < 32; i++) {
+                    nextLoPal[i] = targetRangesPalette[i];
+                }
+                if (!Gfx_CrossFadeToImage(TARGETRANGES_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                    goto fail;
+                }
+                for (int i = 0; i < 32; i++) {
+                    currentLoPal[i] = nextLoPal[i];
+                }
+                attr = ATTR_TARGETRANGES;
+
+                /* TargetRanges behaves like Fundamentals: time + LMB/Fire/ESC */
+                {
+                    WaitResult rr = WaitForAdvanceOrTimeout(INFO_SECONDS);
+                    if (rr == WAIT_ESC) {
+                        goto exit_ok;
+                    }
+                }
+            }
+
+            /* Enter RANGE */
             if (!Gfx_CrossFadeToImage(RANGE_FILE, currentLoPal, 32, oahuRangePalette, 32)) {
                 goto fail;
             }
@@ -544,10 +553,42 @@ int main(void) {
                 }
             }
 
-            /* Run range loop with moving front sight */
             RunRangeWithFrontSight(useDBuf);
 
             goto exit_ok;
+        }
+
+        /* Not engaged: carousel advance */
+        if (attr == ATTR_TRNGINFO) {
+            attr = ATTR_FUNDAMENTALS;
+            for (int i = 0; i < 32; i++) {
+                nextLoPal[i] = fundamentalsPalette[i];
+            }
+            if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                goto fail;
+            }
+
+        } else if (attr == ATTR_FUNDAMENTALS) {
+            attr = ATTR_TARGETRANGES;
+            for (int i = 0; i < 32; i++) {
+                nextLoPal[i] = targetRangesPalette[i];
+            }
+            if (!Gfx_CrossFadeToImage(TARGETRANGES_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                goto fail;
+            }
+
+        } else { /* ATTR_TARGETRANGES */
+            attr = ATTR_TRNGINFO;
+            for (int i = 0; i < 32; i++) {
+                nextLoPal[i] = trngInfoPalette[i];
+            }
+            if (!Gfx_CrossFadeToImage(TRNGINFO_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                goto fail;
+            }
+        }
+
+        for (int i = 0; i < 32; i++) {
+            currentLoPal[i] = nextLoPal[i];
         }
     }
 
