@@ -288,13 +288,27 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         prevDirX = dirX;
         prevDirY = dirY;
 
-        /* Clamp to screen */
-        if (x < 0)
-            x = 0;
+        /*
+         * Clamp:
+         * - Vertical stays within the visible playfield.
+         * - Horizontal may go off-screen by 41px left/right (allows "peeking" past edges).
+         *
+         * NOTE: Because x can be negative or beyond the right edge, Bob_DrawMaskedToRastPort()
+         * must clip the blit (it does in our current bob.c).
+         */
+        {
+            const WORD X_OVERSCAN = 41;
+            const WORD X_MIN = (WORD)(-X_OVERSCAN);
+            const WORD X_MAX = (WORD)((320 - FRONTSIGHT_W) + X_OVERSCAN);
+
+            if (x < X_MIN)
+                x = X_MIN;
+            if (x > X_MAX)
+                x = X_MAX;
+        }
+
         if (y < 0)
             y = 0;
-        if (x > (320 - FRONTSIGHT_W))
-            x = (320 - FRONTSIGHT_W);
         if (y > (256 - FRONTSIGHT_H))
             y = (256 - FRONTSIGHT_H);
 

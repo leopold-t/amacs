@@ -108,7 +108,53 @@ void Bob_DrawMaskedToRastPort(const AmacsBob *b, struct RastPort *rp, WORD x, WO
         return;
     }
 
-    BltMaskBitMapRastPort((struct BitMap *)&b->bm, 0, 0, rp, x, y, b->width, b->height,
+    /*
+     * IMPORTANT:
+     * BltMaskBitMapRastPort() does NOT clip for negative destination coords.
+     * If we allow the sight to move partially off-screen (x<0 or x+w>screenW),
+     * we must clip manually, otherwise the blitter may read/write out of bounds
+     * (which can crash on real hardware).
+     */
+
+    struct BitMap *dst = rp->BitMap;
+
+    /* Destination dimensions in pixels */
+    const WORD dstW = (WORD)(dst->BytesPerRow * 8);
+    const WORD dstH = (WORD)(dst->Rows);
+
+    WORD srcX = 0;
+    WORD srcY = 0;
+    WORD dstX = x;
+    WORD dstY = y;
+    WORD w = (WORD)b->width;
+    WORD h = (WORD)b->height;
+
+    /* Clip left/top */
+    if (dstX < 0) {
+        srcX = (WORD)(-dstX);
+        w = (WORD)(w - srcX);
+        dstX = 0;
+    }
+    if (dstY < 0) {
+        srcY = (WORD)(-dstY);
+        h = (WORD)(h - srcY);
+        dstY = 0;
+    }
+
+    /* Clip right/bottom */
+    if (dstX + w > dstW) {
+        w = (WORD)(dstW - dstX);
+    }
+    if (dstY + h > dstH) {
+        h = (WORD)(dstH - dstY);
+    }
+
+    if (w <= 0 || h <= 0) {
+        return;
+    }
+
+    BltMaskBitMapRastPort((struct BitMap *)&b->bm, srcX, srcY, rp, dstX, dstY, (UWORD)w,
+                          (UWORD)h,
                           0xE0, /* masked copy */
                           b->mask);
     WaitBlit();
