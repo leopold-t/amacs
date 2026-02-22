@@ -42,9 +42,11 @@ extern BOOL Input_Down(void);
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
 #define FRONTSIGHT_MASK "gfx/FrontSight.mask"
 
-/* Front sight (muszka) dimensions (planar RAW + 1-bit MASK) */
+/* Front sight (muszka) dimensions (planar RAW + 1-bit MASK)
+ * Updated: trimmed sprite to save memory.
+ */
 #define FRONTSIGHT_W 83
-#define FRONTSIGHT_H 87
+#define FRONTSIGHT_H 79
 
 /* Timing (PAL: 50 ticks/sec). */
 #define TICKS_PER_SEC 50

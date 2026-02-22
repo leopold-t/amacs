@@ -1,6 +1,5 @@
 #include "sightHandler.h"
 
-#include <exec/types.h>
 #include <intuition/intuition.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
@@ -17,20 +16,24 @@ extern BOOL Input_Right(void);
 extern BOOL Input_Up(void);
 extern BOOL Input_Down(void);
 
-/* Timing (PAL: 50 ticks/sec). */
-#define TICKS_PER_SEC 50
-
-/* Front sight (muszka) dimensions (planar RAW + 1-bit MASK) */
-#define FRONTSIGHT_W 83
-#define FRONTSIGHT_H 87
-
+/* Asset paths (keep in sync with main.c) */
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
 #define FRONTSIGHT_MASK "gfx/FrontSight.mask"
 
-/* Overscan allowance (allow leaving screen by this amount horizontally) */
+/* Current front sight (muszka) dimensions */
+#define FRONTSIGHT_W 83
+#define FRONTSIGHT_H 79
+
+/* Screen size (range is LoRes 320x256) */
+#define SCR_W 320
+#define SCR_H 256
+
+/* Allow front sight to move outside the visible screen horizontally by N pixels.
+ * This widens usable FOV for targets near edges.
+ */
 #define OVERSCAN_X 41
 
-/* ---------- Helpers ---------- */
+/* ---------- Local helpers ---------- */
 
 static void DrainWindowMessages(void) {
     struct Window *win = Gfx_GetWindow();
@@ -46,8 +49,11 @@ static void DrainWindowMessages(void) {
 }
 
 /*
- * Poll IDCMP once and return both flags (advance + esc).
- * IMPORTANT: do not drain IDCMP in multiple places per frame.
+ * IMPORTANT:
+ * Do not poll IDCMP in two separate functions (ESC + ADVANCE),
+ * because the first reader drains messages and the second sees nothing.
+ *
+ * This function consumes IDCMP once per call and returns both flags.
  */
 static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
     struct Window *win = Gfx_GetWindow();
@@ -77,6 +83,15 @@ static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
     }
 }
 
+/* Clamp helper for WORD */
+static WORD ClampW(WORD v, WORD lo, WORD hi) {
+    if (v < lo)
+        return lo;
+    if (v > hi)
+        return hi;
+    return v;
+}
+
 /* ------------------------------------------------------------------ */
 /* Range screen: optional DBuf + moving front sight                     */
 /* ------------------------------------------------------------------ */
@@ -84,22 +99,20 @@ static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
 void RunRangeWithFrontSight(BOOL useDBuf) {
     AmacsBob frontSight;
 
-    /* Start centered */
-    WORD x = (320 - FRONTSIGHT_W) / 2;
-    WORD y = (256 - FRONTSIGHT_H) / 2;
+    WORD x = (SCR_W - FRONTSIGHT_W) / 2;
+    WORD y = (SCR_H - FRONTSIGHT_H) / 2;
 
     /* Fixed-point accumulators (1/256 px units) and signed velocities */
     LONG ax = 0, ay = 0;
     LONG vx = 0, vy = 0;
 
     /* --- Tuning --- */
-    const LONG V_MAX = 8192;   /* 32.0 px/frame */
-    const LONG V_MIN = 128;    /* 0.5 px/frame once ramp starts */
-    const LONG V_STOP = 256;   /* snap to 0 earlier (easier to stop precisely) */
-    const LONG ACCEL_DIV = 6;  /* bigger = gentler acceleration */
-    const LONG DECAY_NUM = 64; /* 64/256 = 0.25 per frame */
+    const LONG V_MAX = 8192;    /* 32.0 px/frame */
+    const LONG V_MIN = 128;     /* 0.5 px/frame once ramp starts */
+    const LONG V_STOP = 32;     /* snap to 0 when slower than this */
+    const LONG ACCEL_DIV = 6;   /* bigger = gentler acceleration */
+    const LONG DECAY_NUM = 200; /* 200/256 ~= 0.78 per frame */
     const LONG DECAY_DEN = 256;
-    const LONG BRAKE_STEP = 384; /* constant friction: 1.5 px/frame (in 1/256 units) */
 
     /* Tap/precision handling */
     const UWORD START_DELAY = 3; /* frames held before inertia/ramp starts */
@@ -118,13 +131,13 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     }
 
     /* Capture background from current front buffer */
-    InitBitMap(&bg, 5, 320, 256);
+    InitBitMap(&bg, 5, SCR_W, SCR_H);
     for (UWORD p = 0; p < 5; p++) {
-        bg.Planes[p] = (PLANEPTR)AllocRaster(320, 256);
+        bg.Planes[p] = (PLANEPTR)AllocRaster(SCR_W, SCR_H);
         if (!bg.Planes[p]) {
             for (UWORD q = 0; q < p; q++) {
                 if (bg.Planes[q]) {
-                    FreeRaster(bg.Planes[q], 320, 256);
+                    FreeRaster(bg.Planes[q], SCR_W, SCR_H);
                     bg.Planes[q] = NULL;
                 }
             }
@@ -137,7 +150,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         struct Screen *scr = Gfx_GetScreen();
         if (scr && scr->RastPort.BitMap) {
             WaitBlit();
-            BltBitMap(scr->RastPort.BitMap, 0, 0, &bg, 0, 0, 320, 256, 0xC0, 0xFF, NULL);
+            BltBitMap(scr->RastPort.BitMap, 0, 0, &bg, 0, 0, SCR_W, SCR_H, 0xC0, 0xFF, NULL);
             WaitBlit();
             haveBg = TRUE;
         }
@@ -146,15 +159,12 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     /* First frame */
     {
         struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
-
         if (haveBg) {
             WaitBlit();
-            BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, 320, 256, 0xC0, 0xFF, NULL);
+            BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, SCR_W, SCR_H, 0xC0, 0xFF, NULL);
             WaitBlit();
         }
-
         Bob_DrawMaskedToRastPort(&frontSight, rp, x, y);
-
         if (useDBuf) {
             Gfx_SwapBuffers();
         }
@@ -173,7 +183,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
         PollAdvanceAndEsc(&adv, &esc);
         if (esc || adv) {
-            break; /* ESC or Fire/LMB exits range for now */
+            break;
         }
 
         int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
@@ -182,23 +192,16 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         /* ---- X axis: tap=1px + delayed ramp ---- */
         if (dirX != 0) {
             if (prevDirX == 0) {
-                /* fresh tap -> exactly 1px */
                 x += (WORD)dirX;
                 holdX = 1;
-
-                /* kill inertia on tap start */
                 vx = 0;
                 ax = 0;
-
             } else if (dirX != prevDirX) {
-                /* direction changed -> hard reset then 1px */
                 x += (WORD)dirX;
                 holdX = 1;
                 vx = 0;
                 ax = 0;
-
             } else {
-                /* still held */
                 if (holdX < 0xFFFF)
                     holdX++;
 
@@ -208,7 +211,6 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
                     vx += dv / ACCEL_DIV;
 
-                    /* ensure minimum motion once ramp is active */
                     {
                         LONG avx = (vx < 0) ? -vx : vx;
                         if (avx < V_MIN)
@@ -226,24 +228,11 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                     }
                 }
             }
-
         } else {
             holdX = 0;
             prevDirX = 0;
 
-            /* release braking = exponential decay + constant friction */
             vx = (vx * DECAY_NUM) / DECAY_DEN;
-
-            if (vx > 0) {
-                vx -= BRAKE_STEP;
-                if (vx < 0)
-                    vx = 0;
-            } else if (vx < 0) {
-                vx += BRAKE_STEP;
-                if (vx > 0)
-                    vx = 0;
-            }
-
             if (vx < V_STOP && vx > -V_STOP)
                 vx = 0;
 
@@ -268,13 +257,11 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 holdY = 1;
                 vy = 0;
                 ay = 0;
-
             } else if (dirY != prevDirY) {
                 y += (WORD)dirY;
                 holdY = 1;
                 vy = 0;
                 ay = 0;
-
             } else {
                 if (holdY < 0xFFFF)
                     holdY++;
@@ -302,24 +289,11 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                     }
                 }
             }
-
         } else {
             holdY = 0;
             prevDirY = 0;
 
-            /* release braking = exponential decay + constant friction */
             vy = (vy * DECAY_NUM) / DECAY_DEN;
-
-            if (vy > 0) {
-                vy -= BRAKE_STEP;
-                if (vy < 0)
-                    vy = 0;
-            } else if (vy < 0) {
-                vy += BRAKE_STEP;
-                if (vy > 0)
-                    vy = 0;
-            }
-
             if (vy < V_STOP && vy > -V_STOP)
                 vy = 0;
 
@@ -341,21 +315,11 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         prevDirY = dirY;
 
         /* Clamp:
-           - allow horizontal overscan so the front sight can move off-screen */
-        {
-            const WORD minX = (WORD)(-OVERSCAN_X);
-            const WORD maxX = (WORD)((320 - FRONTSIGHT_W) + OVERSCAN_X);
-
-            if (x < minX)
-                x = minX;
-            if (x > maxX)
-                x = maxX;
-
-            if (y < 0)
-                y = 0;
-            if (y > (256 - FRONTSIGHT_H))
-                y = (256 - FRONTSIGHT_H);
-        }
+         * - Y stays within the visible screen.
+         * - X can go beyond screen edges by OVERSCAN_X pixels (both sides).
+         */
+        x = ClampW(x, (WORD)(-OVERSCAN_X), (WORD)(SCR_W - FRONTSIGHT_W + OVERSCAN_X));
+        y = ClampW(y, 0, (WORD)(SCR_H - FRONTSIGHT_H));
 
         /* Draw */
         {
@@ -363,12 +327,11 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
             if (haveBg) {
                 WaitBlit();
-                BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, 320, 256, 0xC0, 0xFF, NULL);
+                BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, SCR_W, SCR_H, 0xC0, 0xFF, NULL);
                 WaitBlit();
             }
 
             Bob_DrawMaskedToRastPort(&frontSight, rp, x, y);
-
             if (useDBuf) {
                 Gfx_SwapBuffers();
             }
@@ -381,7 +344,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
     for (UWORD p = 0; p < 5; p++) {
         if (bg.Planes[p]) {
-            FreeRaster(bg.Planes[p], 320, 256);
+            FreeRaster(bg.Planes[p], SCR_W, SCR_H);
             bg.Planes[p] = NULL;
         }
     }
