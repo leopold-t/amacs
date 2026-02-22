@@ -1,35 +1,53 @@
 #include "sightHandler.h"
 
+#include <exec/types.h>
 #include <intuition/intuition.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
+#include <proto/intuition.h>
 
 #include "bob.h"
 #include "gfx.h"
 #include "input.h"
 
-/* If your input.h doesn't expose directions yet, keep these externs here. */
+/* If your input.h doesn't expose directions yet, keep these externs here.
+   They must exist in input.c (or you'll get linker errors). */
 extern BOOL Input_Left(void);
 extern BOOL Input_Right(void);
 extern BOOL Input_Up(void);
 extern BOOL Input_Down(void);
 
-/* Front sight (muszka) assets */
-#define FRONTSIGHT_RAW "gfx/FrontSight.raw"
-#define FRONTSIGHT_MASK "gfx/FrontSight.mask"
+/* Timing (PAL: 50 ticks/sec). */
+#define TICKS_PER_SEC 50
+
+/* Front sight (muszka) dimensions (planar RAW + 1-bit MASK) */
 #define FRONTSIGHT_W 83
 #define FRONTSIGHT_H 87
 
-/* ------------------------------------------------------------------ */
-/* Local input polling helpers                                         */
-/* ------------------------------------------------------------------ */
+#define FRONTSIGHT_RAW "gfx/FrontSight.raw"
+#define FRONTSIGHT_MASK "gfx/FrontSight.mask"
+
+/* Overscan allowance (allow leaving screen by this amount horizontally) */
+#define OVERSCAN_X 41
+
+/* ---------- Helpers ---------- */
+
+static void DrainWindowMessages(void) {
+    struct Window *win = Gfx_GetWindow();
+    struct IntuiMessage *msg;
+
+    if (!win || !win->UserPort) {
+        return;
+    }
+
+    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+        ReplyMsg((struct Message *)msg);
+    }
+}
 
 /*
- * IMPORTANT:
- * Do not poll IDCMP in two separate functions (ESC + ADVANCE),
- * because the first reader drains messages and the second sees nothing.
- *
- * This function consumes IDCMP once per call and returns both flags.
+ * Poll IDCMP once and return both flags (advance + esc).
+ * IMPORTANT: do not drain IDCMP in multiple places per frame.
  */
 static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
     struct Window *win = Gfx_GetWindow();
@@ -59,26 +77,14 @@ static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
     }
 }
 
-static void DrainWindowMessages(void) {
-    struct Window *win = Gfx_GetWindow();
-    struct IntuiMessage *msg;
-
-    if (!win || !win->UserPort) {
-        return;
-    }
-
-    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
-        ReplyMsg((struct Message *)msg);
-    }
-}
-
 /* ------------------------------------------------------------------ */
-/* Public API                                                         */
+/* Range screen: optional DBuf + moving front sight                     */
 /* ------------------------------------------------------------------ */
 
 void RunRangeWithFrontSight(BOOL useDBuf) {
     AmacsBob frontSight;
 
+    /* Start centered */
     WORD x = (320 - FRONTSIGHT_W) / 2;
     WORD y = (256 - FRONTSIGHT_H) / 2;
 
@@ -87,12 +93,13 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     LONG vx = 0, vy = 0;
 
     /* --- Tuning --- */
-    const LONG V_MAX = 8192;    /* 32.0 px/frame */
-    const LONG V_MIN = 128;     /* 0.5 px/frame once ramp starts */
-    const LONG V_STOP = 32;     /* snap to 0 when slower than this */
-    const LONG ACCEL_DIV = 6;   /* bigger = gentler acceleration */
-    const LONG DECAY_NUM = 200; /* 200/256 ~= 0.78 per frame */
+    const LONG V_MAX = 8192;   /* 32.0 px/frame */
+    const LONG V_MIN = 128;    /* 0.5 px/frame once ramp starts */
+    const LONG V_STOP = 256;   /* snap to 0 earlier (easier to stop precisely) */
+    const LONG ACCEL_DIV = 6;  /* bigger = gentler acceleration */
+    const LONG DECAY_NUM = 64; /* 64/256 = 0.25 per frame */
     const LONG DECAY_DEN = 256;
+    const LONG BRAKE_STEP = 384; /* constant friction: 1.5 px/frame (in 1/256 units) */
 
     /* Tap/precision handling */
     const UWORD START_DELAY = 3; /* frames held before inertia/ramp starts */
@@ -166,7 +173,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
         PollAdvanceAndEsc(&adv, &esc);
         if (esc || adv) {
-            break; /* ESC or Fire/LMB exits range */
+            break; /* ESC or Fire/LMB exits range for now */
         }
 
         int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
@@ -174,12 +181,24 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
         /* ---- X axis: tap=1px + delayed ramp ---- */
         if (dirX != 0) {
-            if (prevDirX == 0 || dirX != prevDirX) {
+            if (prevDirX == 0) {
+                /* fresh tap -> exactly 1px */
+                x += (WORD)dirX;
+                holdX = 1;
+
+                /* kill inertia on tap start */
+                vx = 0;
+                ax = 0;
+
+            } else if (dirX != prevDirX) {
+                /* direction changed -> hard reset then 1px */
                 x += (WORD)dirX;
                 holdX = 1;
                 vx = 0;
                 ax = 0;
+
             } else {
+                /* still held */
                 if (holdX < 0xFFFF)
                     holdX++;
 
@@ -207,11 +226,24 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                     }
                 }
             }
+
         } else {
             holdX = 0;
             prevDirX = 0;
 
+            /* release braking = exponential decay + constant friction */
             vx = (vx * DECAY_NUM) / DECAY_DEN;
+
+            if (vx > 0) {
+                vx -= BRAKE_STEP;
+                if (vx < 0)
+                    vx = 0;
+            } else if (vx < 0) {
+                vx += BRAKE_STEP;
+                if (vx > 0)
+                    vx = 0;
+            }
+
             if (vx < V_STOP && vx > -V_STOP)
                 vx = 0;
 
@@ -231,11 +263,18 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
         /* ---- Y axis: tap=1px + delayed ramp ---- */
         if (dirY != 0) {
-            if (prevDirY == 0 || dirY != prevDirY) {
+            if (prevDirY == 0) {
                 y += (WORD)dirY;
                 holdY = 1;
                 vy = 0;
                 ay = 0;
+
+            } else if (dirY != prevDirY) {
+                y += (WORD)dirY;
+                holdY = 1;
+                vy = 0;
+                ay = 0;
+
             } else {
                 if (holdY < 0xFFFF)
                     holdY++;
@@ -263,11 +302,24 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                     }
                 }
             }
+
         } else {
             holdY = 0;
             prevDirY = 0;
 
+            /* release braking = exponential decay + constant friction */
             vy = (vy * DECAY_NUM) / DECAY_DEN;
+
+            if (vy > 0) {
+                vy -= BRAKE_STEP;
+                if (vy < 0)
+                    vy = 0;
+            } else if (vy < 0) {
+                vy += BRAKE_STEP;
+                if (vy > 0)
+                    vy = 0;
+            }
+
             if (vy < V_STOP && vy > -V_STOP)
                 vy = 0;
 
@@ -288,29 +340,22 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         prevDirX = dirX;
         prevDirY = dirY;
 
-        /*
-         * Clamp:
-         * - Vertical stays within the visible playfield.
-         * - Horizontal may go off-screen by 41px left/right (allows "peeking" past edges).
-         *
-         * NOTE: Because x can be negative or beyond the right edge, Bob_DrawMaskedToRastPort()
-         * must clip the blit (it does in our current bob.c).
-         */
+        /* Clamp:
+           - allow horizontal overscan so the front sight can move off-screen */
         {
-            const WORD X_OVERSCAN = 41;
-            const WORD X_MIN = (WORD)(-X_OVERSCAN);
-            const WORD X_MAX = (WORD)((320 - FRONTSIGHT_W) + X_OVERSCAN);
+            const WORD minX = (WORD)(-OVERSCAN_X);
+            const WORD maxX = (WORD)((320 - FRONTSIGHT_W) + OVERSCAN_X);
 
-            if (x < X_MIN)
-                x = X_MIN;
-            if (x > X_MAX)
-                x = X_MAX;
+            if (x < minX)
+                x = minX;
+            if (x > maxX)
+                x = maxX;
+
+            if (y < 0)
+                y = 0;
+            if (y > (256 - FRONTSIGHT_H))
+                y = (256 - FRONTSIGHT_H);
         }
-
-        if (y < 0)
-            y = 0;
-        if (y > (256 - FRONTSIGHT_H))
-            y = (256 - FRONTSIGHT_H);
 
         /* Draw */
         {
