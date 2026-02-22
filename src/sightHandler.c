@@ -9,52 +9,62 @@
 #include "gfx.h"
 #include "input.h"
 
-/* If your input.h doesn't expose directions yet, keep these externs here.
-   They must exist in input.c (or you'll get linker errors). */
+/* External input directions */
 extern BOOL Input_Left(void);
 extern BOOL Input_Right(void);
 extern BOOL Input_Up(void);
 extern BOOL Input_Down(void);
 
-/* Asset paths (keep in sync with main.c) */
+/* ---- Assets ---- */
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
 #define FRONTSIGHT_MASK "gfx/FrontSight.mask"
 
-/* Current front sight (muszka) dimensions */
+#define REARSIGHT_RAW "gfx/RearSight.raw"
+#define REARSIGHT_MASK "gfx/RearSight.mask"
+
+/* ---- Dimensions ---- */
 #define FRONTSIGHT_W 83
 #define FRONTSIGHT_H 79
 
-/* Screen size (range is LoRes 320x256) */
+#define REARSIGHT_W 115
+#define REARSIGHT_H 115
+
 #define SCR_W 320
 #define SCR_H 256
 
-/* Allow front sight to move outside the visible screen horizontally by N pixels.
- * This widens usable FOV for targets near edges.
- */
+/* Allow moving slightly off-screen (horizontal) */
 #define OVERSCAN_X 41
 
-/* ---------- Local helpers ---------- */
+/* Extra movement down */
+#define OVERSCAN_Y 16
+
+/* Ring offset relative to front sight (ring follows front sight for now) */
+#define RING_OFFSET_X -16
+#define RING_OFFSET_Y -51
+
+/* ---- "Occlusion" rectangle under the ring ----
+   Coordinates are relative to ring top-left (ringX, ringY):
+   - 1 px left
+   - 115 px down (i.e. directly under the ring)
+*/
+#define OCCL_REL_X (-1)
+#define OCCL_REL_Y (REARSIGHT_H) /* 115 */
+#define OCCL_W 119
+#define OCCL_H 39
+
+/* -------------------------------------------------------------- */
 
 static void DrainWindowMessages(void) {
     struct Window *win = Gfx_GetWindow();
     struct IntuiMessage *msg;
 
-    if (!win || !win->UserPort) {
+    if (!win || !win->UserPort)
         return;
-    }
 
-    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort)))
         ReplyMsg((struct Message *)msg);
-    }
 }
 
-/*
- * IMPORTANT:
- * Do not poll IDCMP in two separate functions (ESC + ADVANCE),
- * because the first reader drains messages and the second sees nothing.
- *
- * This function consumes IDCMP once per call and returns both flags.
- */
 static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
     struct Window *win = Gfx_GetWindow();
     struct IntuiMessage *msg;
@@ -64,84 +74,169 @@ static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
 
     if (win && win->UserPort) {
         while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+            if (msg->Class == IDCMP_RAWKEY && msg->Code == 0x45)
+                *outEsc = TRUE;
 
-            if (msg->Class == IDCMP_RAWKEY && msg->Code == 0x45) {
-                *outEsc = TRUE; /* ESC */
-            }
-
-            if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
-                *outAdvance = TRUE; /* LMB */
-            }
+            if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN)
+                *outAdvance = TRUE;
 
             ReplyMsg((struct Message *)msg);
         }
     }
 
-    /* Joystick fire (port handling is inside input.c) */
-    if (IsJoystickFirePressed()) {
+    if (IsJoystickFirePressed())
         *outAdvance = TRUE;
+}
+
+/* Helper: rectangle intersection (returns FALSE if empty) */
+static BOOL IntersectRect(WORD ax, WORD ay, WORD aw, WORD ah, WORD bx, WORD by, WORD bw, WORD bh,
+                          WORD *outX, WORD *outY, WORD *outW, WORD *outH) {
+    WORD x1 = (ax > bx) ? ax : bx;
+    WORD y1 = (ay > by) ? ay : by;
+    WORD x2 = ((ax + aw) < (bx + bw)) ? (ax + aw) : (bx + bw);
+    WORD y2 = ((ay + ah) < (by + bh)) ? (ay + ah) : (by + bh);
+
+    WORD w = (WORD)(x2 - x1);
+    WORD h = (WORD)(y2 - y1);
+
+    if (w <= 0 || h <= 0)
+        return FALSE;
+
+    *outX = x1;
+    *outY = y1;
+    *outW = w;
+    *outH = h;
+    return TRUE;
+}
+
+/*
+ * CRITICAL FIX:
+ * Manual clipping for BltMaskBitMapRastPort().
+ * Blitter does NOT clip when dstx/dsty are negative or exceed screen.
+ * Without this, you'll get wraparound artifacts (ghost halves, flicker bands).
+ */
+static void DrawMaskedClipped(const struct BitMap *srcBm, PLANEPTR maskPlane,
+                              struct RastPort *dstRP, WORD dstX, WORD dstY, WORD srcW, WORD srcH) {
+    /* Clip destination to visible screen area [0..SCR_W-1, 0..SCR_H-1] */
+    WORD sx = 0;
+    WORD sy = 0;
+    WORD w = srcW;
+    WORD h = srcH;
+    WORD dx = dstX;
+    WORD dy = dstY;
+
+    if (!srcBm || !maskPlane || !dstRP || !dstRP->BitMap)
+        return;
+
+    /* Left clip */
+    if (dx < 0) {
+        sx = (WORD)(-dx);
+        w = (WORD)(w - sx);
+        dx = 0;
     }
+    /* Top clip */
+    if (dy < 0) {
+        sy = (WORD)(-dy);
+        h = (WORD)(h - sy);
+        dy = 0;
+    }
+    /* Right clip */
+    if ((dx + w) > SCR_W) {
+        w = (WORD)(SCR_W - dx);
+    }
+    /* Bottom clip */
+    if ((dy + h) > SCR_H) {
+        h = (WORD)(SCR_H - dy);
+    }
+
+    if (w <= 0 || h <= 0)
+        return;
+
+    /* Perform masked blit using clipped rect and src offsets */
+    BltMaskBitMapRastPort((struct BitMap *)srcBm, sx, sy, dstRP, dx, dy, w, h, 0xE0, maskPlane);
+    WaitBlit();
 }
 
-/* Clamp helper for WORD */
-static WORD ClampW(WORD v, WORD lo, WORD hi) {
-    if (v < lo)
-        return lo;
-    if (v > hi)
-        return hi;
-    return v;
-}
-
-/* ------------------------------------------------------------------ */
-/* Range screen: optional DBuf + moving front sight                     */
-/* ------------------------------------------------------------------ */
+/* -------------------------------------------------------------- */
 
 void RunRangeWithFrontSight(BOOL useDBuf) {
     AmacsBob frontSight;
+    AmacsBob rearSight;
 
     WORD x = (SCR_W - FRONTSIGHT_W) / 2;
     WORD y = (SCR_H - FRONTSIGHT_H) / 2;
 
-    /* Fixed-point accumulators (1/256 px units) and signed velocities */
     LONG ax = 0, ay = 0;
     LONG vx = 0, vy = 0;
 
-    /* --- Tuning --- */
-    const LONG V_MAX = 8192;    /* 32.0 px/frame */
-    const LONG V_MIN = 128;     /* 0.5 px/frame once ramp starts */
-    const LONG V_STOP = 32;     /* snap to 0 when slower than this */
-    const LONG ACCEL_DIV = 6;   /* bigger = gentler acceleration */
-    const LONG DECAY_NUM = 200; /* 200/256 ~= 0.78 per frame */
+    const LONG V_MAX = 8192;
+    const LONG V_MIN = 128;
+    const LONG V_STOP = 32;
+    const LONG ACCEL_DIV = 6;
+    const LONG DECAY_NUM = 200;
     const LONG DECAY_DEN = 256;
 
-    /* Tap/precision handling */
-    const UWORD START_DELAY = 3; /* frames held before inertia/ramp starts */
+    const UWORD START_DELAY = 3;
 
-    /* Per-axis state */
     static int prevDirX = 0, prevDirY = 0;
     static UWORD holdX = 0, holdY = 0;
 
-    /* Background copy for restore (keep both buffers consistent if DBuf) */
     struct BitMap bg;
     BOOL haveBg = FALSE;
 
+    /* ---- Temporary 1-bit mask for per-frame occlusion ---- */
+    PLANEPTR tempMaskPlane = NULL;
+    struct BitMap maskSrcBm; /* wraps frontSight.mask */
+    struct BitMap maskTmpBm; /* wraps tempMaskPlane */
+    struct RastPort maskTmpRP;
+
+    /* ---- Load BOBs ---- */
+
     if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, FRONTSIGHT_W,
-                            FRONTSIGHT_H, 5)) {
+                            FRONTSIGHT_H, 5))
+        return;
+
+    if (!Bob_LoadRawAndMask(&rearSight, REARSIGHT_RAW, REARSIGHT_MASK, REARSIGHT_W, REARSIGHT_H,
+                            5)) {
+        Bob_Free(&frontSight);
         return;
     }
 
-    /* Capture background from current front buffer */
+    /* Allocate temp mask (1-bit plane) */
+    tempMaskPlane = (PLANEPTR)AllocRaster(FRONTSIGHT_W, FRONTSIGHT_H);
+    if (!tempMaskPlane) {
+        Bob_Free(&frontSight);
+        Bob_Free(&rearSight);
+        return;
+    }
+
+    /* Wrap mask planes into 1-bit bitmaps */
+    InitBitMap(&maskSrcBm, 1, FRONTSIGHT_W, FRONTSIGHT_H);
+    maskSrcBm.Planes[0] = frontSight.mask;
+
+    InitBitMap(&maskTmpBm, 1, FRONTSIGHT_W, FRONTSIGHT_H);
+    maskTmpBm.Planes[0] = tempMaskPlane;
+
+    InitRastPort(&maskTmpRP);
+    maskTmpRP.BitMap = &maskTmpBm;
+
+    /* ---- Capture background ---- */
+
     InitBitMap(&bg, 5, SCR_W, SCR_H);
+
     for (UWORD p = 0; p < 5; p++) {
         bg.Planes[p] = (PLANEPTR)AllocRaster(SCR_W, SCR_H);
         if (!bg.Planes[p]) {
-            for (UWORD q = 0; q < p; q++) {
+            for (UWORD q = 0; q < 5; q++) {
                 if (bg.Planes[q]) {
                     FreeRaster(bg.Planes[q], SCR_W, SCR_H);
                     bg.Planes[q] = NULL;
                 }
             }
+            FreeRaster(tempMaskPlane, FRONTSIGHT_W, FRONTSIGHT_H);
+            tempMaskPlane = NULL;
             Bob_Free(&frontSight);
+            Bob_Free(&rearSight);
             return;
         }
     }
@@ -156,47 +251,29 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         }
     }
 
-    /* First frame */
-    {
-        struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
-        if (haveBg) {
-            WaitBlit();
-            BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, SCR_W, SCR_H, 0xC0, 0xFF, NULL);
-            WaitBlit();
-        }
-        Bob_DrawMaskedToRastPort(&frontSight, rp, x, y);
-        if (useDBuf) {
-            Gfx_SwapBuffers();
-        }
-    }
-
     DrainWindowMessages();
 
-    /* Reset axis state on entry */
     prevDirX = prevDirY = 0;
     holdX = holdY = 0;
     ax = ay = 0;
     vx = vy = 0;
 
+    /* ========================================================== */
+
     for (;;) {
         BOOL adv = FALSE, esc = FALSE;
 
         PollAdvanceAndEsc(&adv, &esc);
-        if (esc || adv) {
+        if (esc || adv)
             break;
-        }
 
         int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
         int dirY = (Input_Down() ? 1 : 0) - (Input_Up() ? 1 : 0);
 
-        /* ---- X axis: tap=1px + delayed ramp ---- */
+        /* ---------------- X axis ---------------- */
+
         if (dirX != 0) {
             if (prevDirX == 0) {
-                x += (WORD)dirX;
-                holdX = 1;
-                vx = 0;
-                ax = 0;
-            } else if (dirX != prevDirX) {
                 x += (WORD)dirX;
                 holdX = 1;
                 vx = 0;
@@ -211,13 +288,11 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
                     vx += dv / ACCEL_DIV;
 
-                    {
-                        LONG avx = (vx < 0) ? -vx : vx;
-                        if (avx < V_MIN)
-                            vx = (LONG)dirX * V_MIN;
-                    }
+                    if (vx < V_MIN && vx > -V_MIN)
+                        vx = (LONG)dirX * V_MIN;
 
                     ax += vx;
+
                     while (ax >= 256) {
                         ax -= 256;
                         x++;
@@ -233,10 +308,12 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             prevDirX = 0;
 
             vx = (vx * DECAY_NUM) / DECAY_DEN;
+
             if (vx < V_STOP && vx > -V_STOP)
                 vx = 0;
 
             ax += vx;
+
             while (ax >= 256) {
                 ax -= 256;
                 x++;
@@ -250,14 +327,10 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 ax = 0;
         }
 
-        /* ---- Y axis: tap=1px + delayed ramp ---- */
+        /* ---------------- Y axis ---------------- */
+
         if (dirY != 0) {
             if (prevDirY == 0) {
-                y += (WORD)dirY;
-                holdY = 1;
-                vy = 0;
-                ay = 0;
-            } else if (dirY != prevDirY) {
                 y += (WORD)dirY;
                 holdY = 1;
                 vy = 0;
@@ -272,13 +345,11 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
                     vy += dv / ACCEL_DIV;
 
-                    {
-                        LONG avy = (vy < 0) ? -vy : vy;
-                        if (avy < V_MIN)
-                            vy = (LONG)dirY * V_MIN;
-                    }
+                    if (vy < V_MIN && vy > -V_MIN)
+                        vy = (LONG)dirY * V_MIN;
 
                     ay += vy;
+
                     while (ay >= 256) {
                         ay -= 256;
                         y++;
@@ -294,10 +365,12 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             prevDirY = 0;
 
             vy = (vy * DECAY_NUM) / DECAY_DEN;
+
             if (vy < V_STOP && vy > -V_STOP)
                 vy = 0;
 
             ay += vy;
+
             while (ay >= 256) {
                 ay -= 256;
                 y++;
@@ -314,14 +387,22 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         prevDirX = dirX;
         prevDirY = dirY;
 
-        /* Clamp:
-         * - Y stays within the visible screen.
-         * - X can go beyond screen edges by OVERSCAN_X pixels (both sides).
-         */
-        x = ClampW(x, (WORD)(-OVERSCAN_X), (WORD)(SCR_W - FRONTSIGHT_W + OVERSCAN_X));
-        y = ClampW(y, 0, (WORD)(SCR_H - FRONTSIGHT_H));
+        /* ---------------- Clamp (movement logic stays) ---------------- */
 
-        /* Draw */
+        if (x < -OVERSCAN_X)
+            x = -OVERSCAN_X;
+
+        if (x > SCR_W - FRONTSIGHT_W + OVERSCAN_X)
+            x = SCR_W - FRONTSIGHT_W + OVERSCAN_X;
+
+        if (y < 0)
+            y = 0;
+
+        if (y > SCR_H - FRONTSIGHT_H + OVERSCAN_Y)
+            y = SCR_H - FRONTSIGHT_H + OVERSCAN_Y;
+
+        /* ---------------- Draw frame ---------------- */
+
         {
             struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
 
@@ -331,16 +412,58 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 WaitBlit();
             }
 
-            Bob_DrawMaskedToRastPort(&frontSight, rp, x, y);
-            if (useDBuf) {
-                Gfx_SwapBuffers();
+            /* Ring position (follows front sight for now) */
+            WORD ringX = (WORD)(x + RING_OFFSET_X);
+            WORD ringY = (WORD)(y + RING_OFFSET_Y);
+
+            /* 1) Copy original front mask -> temp mask */
+            WaitBlit();
+            BltBitMap(&maskSrcBm, 0, 0, &maskTmpBm, 0, 0, FRONTSIGHT_W, FRONTSIGHT_H, 0xC0, 0xFF,
+                      NULL);
+            WaitBlit();
+
+            /* 2) Compute occlusion rect in SCREEN coords */
+            WORD occX = (WORD)(ringX + OCCL_REL_X);
+            WORD occY = (WORD)(ringY + OCCL_REL_Y);
+
+            /* Intersect occlusion rect with front sight rect */
+            WORD ix, iy, iw, ih;
+            if (IntersectRect(x, y, FRONTSIGHT_W, FRONTSIGHT_H, occX, occY, OCCL_W, OCCL_H, &ix,
+                              &iy, &iw, &ih)) {
+                /* Convert to front-sight-local coords */
+                WORD localX1 = (WORD)(ix - x);
+                WORD localY1 = (WORD)(iy - y);
+                WORD localX2 = (WORD)(localX1 + iw - 1);
+                WORD localY2 = (WORD)(localY1 + ih - 1);
+
+                SetAPen(&maskTmpRP, 0);
+                RectFill(&maskTmpRP, localX1, localY1, localX2, localY2);
+                WaitBlit();
             }
+
+            /* 3) Draw front sight with clipped masked blit (FIX) */
+            DrawMaskedClipped(&frontSight.bm, tempMaskPlane, rp, x, y, FRONTSIGHT_W, FRONTSIGHT_H);
+
+            /* 4) Draw ring on top, also clipped (FIX) */
+            DrawMaskedClipped(&rearSight.bm, rearSight.mask, rp, ringX, ringY, REARSIGHT_W,
+                              REARSIGHT_H);
+
+            if (useDBuf)
+                Gfx_SwapBuffers();
         }
 
         WaitTOF();
     }
 
+    /* ---- Cleanup ---- */
+
     Bob_Free(&frontSight);
+    Bob_Free(&rearSight);
+
+    if (tempMaskPlane) {
+        FreeRaster(tempMaskPlane, FRONTSIGHT_W, FRONTSIGHT_H);
+        tempMaskPlane = NULL;
+    }
 
     for (UWORD p = 0; p < 5; p++) {
         if (bg.Planes[p]) {
