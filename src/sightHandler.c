@@ -35,13 +35,16 @@ extern BOOL Input_Down(void);
 /* Allow moving slightly off-screen (horizontal) */
 #define OVERSCAN_X 41
 
+/* Extra horizontal overscan requested for the whole optic (ring + front sight) */
+#define OVERSCAN_X_EXTRA 16
+#define OVERSCAN_X_TOTAL (OVERSCAN_X + OVERSCAN_X_EXTRA)
+
 /* Extra movement down */
 #define OVERSCAN_Y 16
 
-/*
-    Ring offset relative to front sight at REST:
-    ringX = frontX + RING_OFFSET_X
-    ringY = frontY + RING_OFFSET_Y
+/* Ring offset relative to front sight at REST:
+   ringX = frontX + RING_OFFSET_X
+   ringY = frontY + RING_OFFSET_Y
 */
 #define RING_OFFSET_X (-16)
 #define RING_OFFSET_Y (-51)
@@ -56,15 +59,9 @@ extern BOOL Input_Down(void);
 #define OCCL_W 119
 #define OCCL_H 39
 
-/* ---- Parallax lead (front sight relative to ring) ----
-   AXIS max: allow +1 px compared to the old ±34 so the sights can visually "touch".
-   DIAGONAL max: keep the existing ±24/±24 constraint.
-*/
-#define LEAD_MAX_AXIS_PX 35
-#define LEAD_MAX_DIAG_PX 24
-
-#define LEAD_MAX_AXIS_FP (LEAD_MAX_AXIS_PX * 256)
-#define LEAD_MAX_DIAG_FP (LEAD_MAX_DIAG_PX * 256)
+/* ---- Parallax lead (front sight relative to ring) ---- */
+#define LEAD_MAX_PX 34
+#define LEAD_MAX_FP (LEAD_MAX_PX * 256)
 
 /* Smoothing: smaller = snappier, bigger = more floaty */
 #define LEAD_FOLLOW_DIV 4  /* how fast lead follows current velocity */
@@ -85,27 +82,57 @@ static void DrainWindowMessages(void) {
         ReplyMsg((struct Message *)msg);
 }
 
-static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
+/*
+ * Range controls:
+ * - ESC exits the range.
+ * - P toggles pause.
+ * - Fire / LMB are reported as "fire" but do NOT exit (used later for shooting).
+ */
+static void PollRangeControls(BOOL *outFire, BOOL *outPauseToggle, BOOL *outEsc) {
     struct Window *win = Gfx_GetWindow();
     struct IntuiMessage *msg;
 
-    *outAdvance = FALSE;
+    static BOOL pHeld = FALSE;
+
+    *outFire = FALSE;
+    *outPauseToggle = FALSE;
     *outEsc = FALSE;
 
     if (win && win->UserPort) {
         while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
-            if (msg->Class == IDCMP_RAWKEY && msg->Code == 0x45)
-                *outEsc = TRUE;
 
-            if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN)
-                *outAdvance = TRUE;
+            if (msg->Class == IDCMP_RAWKEY) {
+                UBYTE code = (UBYTE)msg->Code;
+
+                /* ESC (key down only) */
+                if (code == 0x45) {
+                    *outEsc = TRUE;
+                }
+
+                /* P pause toggle with key-down debounce */
+                if (code == 0x19) { /* 'P' down */
+                    if (!pHeld) {
+                        *outPauseToggle = TRUE;
+                        pHeld = TRUE;
+                    }
+                } else if (code == (0x19 | 0x80)) { /* 'P' up */
+                    pHeld = FALSE;
+                }
+            }
+
+            /* LMB = fire (but not exit) */
+            if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
+                *outFire = TRUE;
+            }
 
             ReplyMsg((struct Message *)msg);
         }
     }
 
-    if (IsJoystickFirePressed())
-        *outAdvance = TRUE;
+    /* Joystick fire = fire (but not exit) */
+    if (IsJoystickFirePressed()) {
+        *outFire = TRUE;
+    }
 }
 
 /* Helper: rectangle intersection (returns FALSE if empty) */
@@ -113,7 +140,6 @@ static BOOL IntersectRect(WORD ax, WORD ay, WORD aw, WORD ah, WORD bx, WORD by, 
                           WORD *outX, WORD *outY, WORD *outW, WORD *outH) {
     WORD x1 = (ax > bx) ? ax : bx;
     WORD y1 = (ay > by) ? ay : by;
-
     WORD x2 = ((ax + aw) < (bx + bw)) ? (ax + aw) : (bx + bw);
     WORD y2 = ((ay + ah) < (by + bh)) ? (ay + ah) : (by + bh);
 
@@ -143,22 +169,18 @@ static void DrawMaskedClipped(const struct BitMap *srcBm, PLANEPTR maskPlane,
     if (!srcBm || !maskPlane || !dstRP || !dstRP->BitMap)
         return;
 
-    /* Left clip */
     if (dx < 0) {
         sx = (WORD)(-dx);
         w = (WORD)(w - sx);
         dx = 0;
     }
-    /* Top clip */
     if (dy < 0) {
         sy = (WORD)(-dy);
         h = (WORD)(h - sy);
         dy = 0;
     }
-    /* Right clip */
     if ((dx + w) > SCR_W)
         w = (WORD)(SCR_W - dx);
-    /* Bottom clip */
     if ((dy + h) > SCR_H)
         h = (WORD)(SCR_H - dy);
 
@@ -169,53 +191,13 @@ static void DrawMaskedClipped(const struct BitMap *srcBm, PLANEPTR maskPlane,
     WaitBlit();
 }
 
-static LONG AbsL(LONG v) {
-    return (v < 0) ? -v : v;
-}
-
-/* Clamp lead (fixed-point) with separate limits for axis vs diagonal movement */
-static void ClampLead2DFP(LONG *ioX, LONG *ioY) {
-    LONG x = *ioX;
-    LONG y = *ioY;
-
-    LONG ax = AbsL(x);
-    LONG ay = AbsL(y);
-
-    /* Pure axis movement: allow the slightly larger ±35 px */
-    if (ax == 0 || ay == 0) {
-        if (x > LEAD_MAX_AXIS_FP)
-            x = LEAD_MAX_AXIS_FP;
-        if (x < -LEAD_MAX_AXIS_FP)
-            x = -LEAD_MAX_AXIS_FP;
-
-        if (y > LEAD_MAX_AXIS_FP)
-            y = LEAD_MAX_AXIS_FP;
-        if (y < -LEAD_MAX_AXIS_FP)
-            y = -LEAD_MAX_AXIS_FP;
-    } else {
-        /* Diagonal movement: keep tighter ±24/±24 */
-        if (x > LEAD_MAX_DIAG_FP)
-            x = LEAD_MAX_DIAG_FP;
-        if (x < -LEAD_MAX_DIAG_FP)
-            x = -LEAD_MAX_DIAG_FP;
-
-        if (y > LEAD_MAX_DIAG_FP)
-            y = LEAD_MAX_DIAG_FP;
-        if (y < -LEAD_MAX_DIAG_FP)
-            y = -LEAD_MAX_DIAG_FP;
-    }
-
-    *ioX = x;
-    *ioY = y;
-}
-
-/* Signed rounded division: (num/den) with rounding to nearest */
-static LONG DivRoundSigned(LONG num, LONG den) {
-    if (den == 0)
-        return 0;
-    if (num >= 0)
-        return (num + (den / 2)) / den;
-    return (num - (den / 2)) / den;
+/* Clamp fixed-point lead to [-LEAD_MAX_FP..+LEAD_MAX_FP] */
+static LONG ClampLeadFP(LONG v) {
+    if (v > LEAD_MAX_FP)
+        return LEAD_MAX_FP;
+    if (v < -LEAD_MAX_FP)
+        return -LEAD_MAX_FP;
+    return v;
 }
 
 /* -------------------------------------------------------------- */
@@ -259,9 +241,8 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
     /* ---- Load BOBs ---- */
     if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, FRONTSIGHT_W,
-                            FRONTSIGHT_H, 5)) {
+                            FRONTSIGHT_H, 5))
         return;
-    }
 
     if (!Bob_LoadRawAndMask(&rearSight, REARSIGHT_RAW, REARSIGHT_MASK, REARSIGHT_W, REARSIGHT_H,
                             5)) {
@@ -324,12 +305,27 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     vx = vy = 0;
     leadX = leadY = 0;
 
-    for (;;) {
-        BOOL adv = FALSE, esc = FALSE;
+    BOOL paused = FALSE;
 
-        PollAdvanceAndEsc(&adv, &esc);
-        if (esc || adv)
+    for (;;) {
+        BOOL fire = FALSE, esc = FALSE, pauseToggle = FALSE;
+
+        PollRangeControls(&fire, &pauseToggle, &esc);
+
+        (void)fire; /* fire is intentionally unused for now (reserved for shooting) */
+
+        if (esc)
             break;
+
+        if (pauseToggle) {
+            paused = (BOOL)!paused;
+        }
+
+        /* While paused we keep the last frame displayed, but still poll for ESC/P. */
+        if (paused) {
+            WaitTOF();
+            continue;
+        }
 
         int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
         int dirY = (Input_Down() ? 1 : 0) - (Input_Up() ? 1 : 0);
@@ -351,18 +347,14 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             } else {
                 if (holdX < 0xFFFF)
                     holdX++;
-
                 if (holdX >= START_DELAY) {
                     LONG target = (LONG)dirX * V_MAX;
                     LONG dv = target - vx;
-
                     vx += dv / ACCEL_DIV;
-
                     if (vx < V_MIN && vx > -V_MIN)
                         vx = (LONG)dirX * V_MIN;
 
                     ax += vx;
-
                     while (ax >= 256) {
                         ax -= 256;
                         ringX++;
@@ -382,7 +374,6 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 vx = 0;
 
             ax += vx;
-
             while (ax >= 256) {
                 ax -= 256;
                 ringX++;
@@ -411,18 +402,14 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             } else {
                 if (holdY < 0xFFFF)
                     holdY++;
-
                 if (holdY >= START_DELAY) {
                     LONG target = (LONG)dirY * V_MAX;
                     LONG dv = target - vy;
-
                     vy += dv / ACCEL_DIV;
-
                     if (vy < V_MIN && vy > -V_MIN)
                         vy = (LONG)dirY * V_MIN;
 
                     ay += vy;
-
                     while (ay >= 256) {
                         ay -= 256;
                         ringY++;
@@ -442,7 +429,6 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 vy = 0;
 
             ay += vy;
-
             while (ay >= 256) {
                 ay -= 256;
                 ringY++;
@@ -460,34 +446,27 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         prevDirY = dirY;
 
         /* Clamp ring position (ring is the base now) */
-        if (ringX < -OVERSCAN_X)
-            ringX = -OVERSCAN_X;
-        if (ringX > SCR_W - REARSIGHT_W + OVERSCAN_X)
-            ringX = (SCR_W - REARSIGHT_W + OVERSCAN_X);
+        if (ringX < -OVERSCAN_X_TOTAL)
+            ringX = -OVERSCAN_X_TOTAL;
+        if (ringX > SCR_W - REARSIGHT_W + OVERSCAN_X_TOTAL)
+            ringX = (SCR_W - REARSIGHT_W + OVERSCAN_X_TOTAL);
 
         if (ringY < 0)
             ringY = 0;
         if (ringY > SCR_H - REARSIGHT_H + OVERSCAN_Y)
             ringY = (SCR_H - REARSIGHT_H + OVERSCAN_Y);
 
-        /* ---------------- FRONT lead from ring velocity ----------------
-           Map vx/vy (fixed-point velocity) -> lead (fixed-point pixels)
-
-           NOTE:
-           - We round the division so "almost max" doesn't get stuck at 33.
-           - Then we clamp with axis vs diagonal limits.
-        */
+        /* ---------------- FRONT lead from ring velocity ---------------- */
         {
-            LONG targetLeadX = DivRoundSigned(vx * LEAD_MAX_AXIS_FP, V_MAX);
-            LONG targetLeadY = DivRoundSigned(vy * LEAD_MAX_AXIS_FP, V_MAX);
+            LONG targetLeadX = (vx * LEAD_MAX_FP) / V_MAX;
+            LONG targetLeadY = (vy * LEAD_MAX_FP) / V_MAX;
 
-            ClampLead2DFP(&targetLeadX, &targetLeadY);
+            targetLeadX = ClampLeadFP(targetLeadX);
+            targetLeadY = ClampLeadFP(targetLeadY);
 
-            /* Smooth follow */
             leadX += (targetLeadX - leadX) / LEAD_FOLLOW_DIV;
             leadY += (targetLeadY - leadY) / LEAD_FOLLOW_DIV;
 
-            /* When basically stopped, decay residual lead to zero */
             if (vx == 0 && vy == 0) {
                 leadX = (leadX * LEAD_DECAY_NUM) / LEAD_DECAY_DEN;
                 leadY = (leadY * LEAD_DECAY_NUM) / LEAD_DECAY_DEN;
@@ -526,6 +505,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             WORD ix, iy, iw, ih;
             if (IntersectRect(frontX, frontY, FRONTSIGHT_W, FRONTSIGHT_H, occX, occY, OCCL_W,
                               OCCL_H, &ix, &iy, &iw, &ih)) {
+
                 WORD localX1 = (WORD)(ix - frontX);
                 WORD localY1 = (WORD)(iy - frontY);
                 WORD localX2 = (WORD)(localX1 + iw - 1);
