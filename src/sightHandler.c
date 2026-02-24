@@ -50,13 +50,13 @@ extern BOOL Input_Down(void);
 #define RING_OFFSET_Y (-51)
 
 /* ---- "Occlusion" rectangle under the ring ----
-   Coordinates are relative to ring top-left (ringX, ringY):
-   - 1 px left
-   - 115 px down (i.e. directly under the ring)
+   Coordinates are relative to ring top-left (ringX, ringY).
+   This hides the part of the front sight that can appear below the ring.
+   FIX: extend further left to cover the 3x14px strip at extreme bottom-left.
 */
-#define OCCL_REL_X (-1)
+#define OCCL_REL_X (-6)          /* was -1 */
 #define OCCL_REL_Y (REARSIGHT_H) /* 115 */
-#define OCCL_W 119
+#define OCCL_W 124               /* was 119 (add 5px to the left) */
 #define OCCL_H 39
 
 /* ---- Parallax lead (front sight relative to ring) ---- */
@@ -219,7 +219,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     const LONG V_MIN = 128;
     const LONG V_STOP = 32;
     const LONG ACCEL_DIV = 6;
-    const LONG DECAY_NUM = 200;
+    const LONG DECAY_NUM = 128;
     const LONG DECAY_DEN = 256;
 
     const UWORD START_DELAY = 3;
@@ -478,9 +478,11 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             }
         }
 
-        /* Compute front top-left from ring top-left + inverse REST offset + lead */
+        /* Compute front top-left from ring top-left + inverse REST offset + lead
+           Also apply the 1px upward tweak.
+        */
         WORD frontX = (WORD)(ringX - RING_OFFSET_X + (leadX / 256));
-        WORD frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256));
+        WORD frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) - 1);
 
         /* ---------------- Draw frame ---------------- */
         {
