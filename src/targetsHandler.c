@@ -28,18 +28,24 @@ static const WORD gSlotY[SLOT_COUNT] = {215, 215, 215, 215, 215};
 
 /*
  * Timing:
- * We use DateStamp(), which gives:
+ * DateStamp() gives:
  * - ds_Days
  * - ds_Minute (minutes since midnight)
- * - ds_Tick   (ticks since last minute; tick rate is 50 Hz in DOS timebase)
+ * - ds_Tick   (ticks since last minute; DOS timebase uses 50 Hz here)
  *
- * So:
- * 5 seconds  = 250 ticks
- * 0.30 sec   = 15 ticks
+ * 5 seconds = 250 ticks
+ * 0.30 sec  = 15 ticks
  */
 #define TICKS_PER_SEC 50
-#define SLOT_VISIBLE_TICKS (5 * TICKS_PER_SEC) /* 5s */
-#define RISE_TICKS 15                          /* 0.30s at 50Hz */
+
+/* Phase 1: rise animation */
+#define RISE_TICKS 15 /* 0.30s at 50Hz */
+
+/* Phase 2: stay fully visible for 5 seconds AFTER it fully rises */
+#define HOLD_TICKS (5 * TICKS_PER_SEC) /* 5s */
+
+/* Total slot time */
+#define SLOT_TOTAL_TICKS (RISE_TICKS + HOLD_TICKS)
 
 /* ------------------------------------------------------------------ */
 
@@ -74,7 +80,6 @@ static ULONG ElapsedTicks(void) {
     LONG dm = (LONG)now.ds_Minute - (LONG)gStartStamp.ds_Minute;
     LONG dt = (LONG)now.ds_Tick - (LONG)gStartStamp.ds_Tick;
 
-    /* total ticks = days + minutes + ticks */
     LONG total =
         dd * (24L * 60L * 60L * (LONG)TICKS_PER_SEC) + dm * (60L * (LONG)TICKS_PER_SEC) + dt;
 
@@ -145,7 +150,6 @@ BOOL TargetsHandler_Init(void) {
     gInited = TRUE;
     gReady = FALSE;
 
-    /* Load the target bob */
     if (!Bob_LoadRawAndMask(&gTarget050, TARGET050_RAW, TARGET050_MASK, T050_W, T050_H, 5)) {
         /* Non-fatal: keep range running, just disable targets */
         return TRUE;
@@ -174,8 +178,7 @@ void TargetsHandler_Tick(void) {
 
     ULONG ticks = ElapsedTicks();
 
-    /* After 5 seconds, move to next slot */
-    if (ticks >= (ULONG)SLOT_VISIBLE_TICKS) {
+    if (ticks >= (ULONG)SLOT_TOTAL_TICKS) {
         WORD next = (WORD)(gActiveSlot + 1);
         if (next >= SLOT_COUNT)
             next = 0;
@@ -186,6 +189,10 @@ void TargetsHandler_Tick(void) {
 /*
  * Draw current target with "rise from ground" animation.
  * Slot coordinates are LEFT-BOTTOM corner.
+ *
+ * IMPORTANT:
+ * We want "moves up from ground", not "fills line by line".
+ * So we animate dstY upward, and clip anything below the ground line (bottom).
  */
 void TargetsHandler_Draw(struct RastPort *rp) {
     if (!gInited || !gReady || !rp)
@@ -193,12 +200,17 @@ void TargetsHandler_Draw(struct RastPort *rp) {
 
     ULONG ticks = ElapsedTicks();
 
-    /* Rise progress 0..T050_H */
+    if (ticks >= (ULONG)SLOT_TOTAL_TICKS)
+        return;
+
+    WORD left = gSlotX[gActiveSlot];
+    WORD bottom = gSlotY[gActiveSlot];
+
+    /* how many pixels of upward travel have we completed? 0..T050_H */
     WORD risePx;
     if (ticks >= (ULONG)RISE_TICKS) {
         risePx = T050_H;
     } else {
-        /* linear rise over RISE_TICKS */
         risePx = (WORD)((ticks * (ULONG)T050_H) / (ULONG)RISE_TICKS);
         if (risePx < 0)
             risePx = 0;
@@ -206,19 +218,31 @@ void TargetsHandler_Draw(struct RastPort *rp) {
             risePx = T050_H;
     }
 
+    /* If not risen at all, sprite is fully underground -> nothing to draw */
     if (risePx <= 0)
         return;
 
-    WORD left = gSlotX[gActiveSlot];
-    WORD bottom = gSlotY[gActiveSlot];
+    /*
+     * When fully visible:
+     *   top = bottom - T050_H + 1
+     *
+     * When just starting (risePx small), we place the sprite lower:
+     *   dstY = (bottom + 1) - risePx
+     * This makes the sprite move upward as risePx grows.
+     */
+    WORD dstY = (WORD)((bottom + 1) - risePx);
 
-    /* We draw only the bottom 'risePx' lines */
-    WORD drawH = risePx;
-    WORD srcY = (WORD)(T050_H - drawH);
+    /*
+     * Clip against ground: only draw the portion above (<= bottom).
+     * Visible height is from dstY up to bottom, inclusive:
+     *   visibleH = bottom - dstY + 1
+     */
+    WORD visibleH = (WORD)(bottom - dstY + 1);
+    if (visibleH <= 0)
+        return;
+    if (visibleH > T050_H)
+        visibleH = T050_H;
 
-    /* Convert LEFT-BOTTOM to TOP-LEFT destination */
-    WORD dstY = (WORD)(bottom - drawH + 1);
-
-    /* Blit subset: src (0, srcY, T050_W, drawH) -> dst (left, dstY) */
-    BltMaskClippedSrc(&gTarget050.bm, gTarget050.mask, rp, 0, srcY, left, dstY, T050_W, drawH);
+    /* Draw the TOP part (srcY=0) with height visibleH at (left, dstY) */
+    BltMaskClippedSrc(&gTarget050.bm, gTarget050.mask, rp, 0, 0, left, dstY, T050_W, visibleH);
 }
