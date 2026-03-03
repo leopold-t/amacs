@@ -1,15 +1,15 @@
 #include "sightHandler.h"
 
+#include <exec/types.h>
 #include <intuition/intuition.h>
-#include <proto/exec.h>
 #include <proto/graphics.h>
-#include <proto/intuition.h>
 
 #include "bob.h"
 #include "gfx.h"
 #include "input.h"
+#include "targetsHandler.h"
 
-/* External input directions */
+/* External input directions (joystick) */
 extern BOOL Input_Left(void);
 extern BOOL Input_Right(void);
 extern BOOL Input_Up(void);
@@ -71,70 +71,6 @@ extern BOOL Input_Down(void);
 
 /* -------------------------------------------------------------- */
 
-static void DrainWindowMessages(void) {
-    struct Window *win = Gfx_GetWindow();
-    struct IntuiMessage *msg;
-
-    if (!win || !win->UserPort)
-        return;
-
-    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort)))
-        ReplyMsg((struct Message *)msg);
-}
-
-/*
- * Range controls:
- * - ESC exits the range.
- * - P toggles pause.
- * - Fire / LMB are reported as "fire" but do NOT exit (used later for shooting).
- */
-static void PollRangeControls(BOOL *outFire, BOOL *outPauseToggle, BOOL *outEsc) {
-    struct Window *win = Gfx_GetWindow();
-    struct IntuiMessage *msg;
-
-    static BOOL pHeld = FALSE;
-
-    *outFire = FALSE;
-    *outPauseToggle = FALSE;
-    *outEsc = FALSE;
-
-    if (win && win->UserPort) {
-        while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
-
-            if (msg->Class == IDCMP_RAWKEY) {
-                UBYTE code = (UBYTE)msg->Code;
-
-                /* ESC (key down only) */
-                if (code == 0x45) {
-                    *outEsc = TRUE;
-                }
-
-                /* P pause toggle with key-down debounce */
-                if (code == 0x19) { /* 'P' down */
-                    if (!pHeld) {
-                        *outPauseToggle = TRUE;
-                        pHeld = TRUE;
-                    }
-                } else if (code == (0x19 | 0x80)) { /* 'P' up */
-                    pHeld = FALSE;
-                }
-            }
-
-            /* LMB = fire (but not exit) */
-            if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
-                *outFire = TRUE;
-            }
-
-            ReplyMsg((struct Message *)msg);
-        }
-    }
-
-    /* Joystick fire = fire (but not exit) */
-    if (IsJoystickFirePressed()) {
-        *outFire = TRUE;
-    }
-}
-
 /* Helper: rectangle intersection (returns FALSE if empty) */
 static BOOL IntersectRect(WORD ax, WORD ay, WORD aw, WORD ah, WORD bx, WORD by, WORD bw, WORD bh,
                           WORD *outX, WORD *outY, WORD *outW, WORD *outH) {
@@ -169,18 +105,22 @@ static void DrawMaskedClipped(const struct BitMap *srcBm, PLANEPTR maskPlane,
     if (!srcBm || !maskPlane || !dstRP || !dstRP->BitMap)
         return;
 
+    /* Left */
     if (dx < 0) {
         sx = (WORD)(-dx);
         w = (WORD)(w - sx);
         dx = 0;
     }
+    /* Top */
     if (dy < 0) {
         sy = (WORD)(-dy);
         h = (WORD)(h - sy);
         dy = 0;
     }
+    /* Right */
     if ((dx + w) > SCR_W)
         w = (WORD)(SCR_W - dx);
+    /* Bottom */
     if ((dy + h) > SCR_H)
         h = (WORD)(SCR_H - dy);
 
@@ -219,7 +159,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     const LONG V_MIN = 128;
     const LONG V_STOP = 32;
     const LONG ACCEL_DIV = 6;
-    const LONG DECAY_NUM = 128;
+    const LONG DECAY_NUM = 64;
     const LONG DECAY_DEN = 256;
 
     const UWORD START_DELAY = 3;
@@ -250,14 +190,23 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         return;
     }
 
-    /* Allocate temp mask (1-bit plane) */
-    tempMaskPlane = (PLANEPTR)AllocRaster(FRONTSIGHT_W, FRONTSIGHT_H);
-    if (!tempMaskPlane) {
+    /* Targets (demo cycle). Drawn between background and optic. */
+    if (!TargetsHandler_Init()) {
         Bob_Free(&frontSight);
         Bob_Free(&rearSight);
         return;
     }
 
+    /* Allocate temp mask (1-bit plane) */
+    tempMaskPlane = (PLANEPTR)AllocRaster(FRONTSIGHT_W, FRONTSIGHT_H);
+    if (!tempMaskPlane) {
+        TargetsHandler_Shutdown();
+        Bob_Free(&frontSight);
+        Bob_Free(&rearSight);
+        return;
+    }
+
+    /* Wrap mask planes into 1-bit bitmaps */
     InitBitMap(&maskSrcBm, 1, FRONTSIGHT_W, FRONTSIGHT_H);
     maskSrcBm.Planes[0] = frontSight.mask;
 
@@ -281,6 +230,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             }
             FreeRaster(tempMaskPlane, FRONTSIGHT_W, FRONTSIGHT_H);
             tempMaskPlane = NULL;
+            TargetsHandler_Shutdown();
             Bob_Free(&frontSight);
             Bob_Free(&rearSight);
             return;
@@ -297,8 +247,6 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         }
     }
 
-    DrainWindowMessages();
-
     prevDirX = prevDirY = 0;
     holdX = holdY = 0;
     ax = ay = 0;
@@ -308,24 +256,28 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     BOOL paused = FALSE;
 
     for (;;) {
-        BOOL fire = FALSE, esc = FALSE, pauseToggle = FALSE;
+        /* IMPORTANT: only Input_PollWindow() drains IDCMP now */
+        Input_PollWindow(Gfx_GetWindow());
 
-        PollRangeControls(&fire, &pauseToggle, &esc);
-
-        (void)fire; /* fire is intentionally unused for now (reserved for shooting) */
-
-        if (esc)
+        /* Controls */
+        if (Input_KeyPressed(0x45)) { /* ESC */
             break;
+        }
 
-        if (pauseToggle) {
+        if (Input_KeyPressed(0x19)) { /* P */
             paused = (BOOL)!paused;
         }
 
-        /* While paused we keep the last frame displayed, but still poll for ESC/P. */
+        /* Fire is reserved for shooting (do not exit range) */
+        (void)Input_FirePressed();
+
         if (paused) {
             WaitTOF();
             continue;
         }
+
+        /* Advance targets once per frame (only when not paused). */
+        TargetsHandler_Tick();
 
         int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
         int dirY = (Input_Down() ? 1 : 0) - (Input_Up() ? 1 : 0);
@@ -347,14 +299,18 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             } else {
                 if (holdX < 0xFFFF)
                     holdX++;
+
                 if (holdX >= START_DELAY) {
                     LONG target = (LONG)dirX * V_MAX;
                     LONG dv = target - vx;
+
                     vx += dv / ACCEL_DIV;
+
                     if (vx < V_MIN && vx > -V_MIN)
                         vx = (LONG)dirX * V_MIN;
 
                     ax += vx;
+
                     while (ax >= 256) {
                         ax -= 256;
                         ringX++;
@@ -370,10 +326,12 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             prevDirX = 0;
 
             vx = (vx * DECAY_NUM) / DECAY_DEN;
+
             if (vx < V_STOP && vx > -V_STOP)
                 vx = 0;
 
             ax += vx;
+
             while (ax >= 256) {
                 ax -= 256;
                 ringX++;
@@ -402,14 +360,18 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             } else {
                 if (holdY < 0xFFFF)
                     holdY++;
+
                 if (holdY >= START_DELAY) {
                     LONG target = (LONG)dirY * V_MAX;
                     LONG dv = target - vy;
+
                     vy += dv / ACCEL_DIV;
+
                     if (vy < V_MIN && vy > -V_MIN)
                         vy = (LONG)dirY * V_MIN;
 
                     ay += vy;
+
                     while (ay >= 256) {
                         ay -= 256;
                         ringY++;
@@ -425,10 +387,12 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             prevDirY = 0;
 
             vy = (vy * DECAY_NUM) / DECAY_DEN;
+
             if (vy < V_STOP && vy > -V_STOP)
                 vy = 0;
 
             ay += vy;
+
             while (ay >= 256) {
                 ay -= 256;
                 ringY++;
@@ -494,6 +458,9 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 WaitBlit();
             }
 
+            /* Targets are rendered on top of background, below the optic. */
+            TargetsHandler_Draw(rp);
+
             /* 1) Copy original front mask -> temp mask */
             WaitBlit();
             BltBitMap(&maskSrcBm, 0, 0, &maskTmpBm, 0, 0, FRONTSIGHT_W, FRONTSIGHT_H, 0xC0, 0xFF,
@@ -534,6 +501,8 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     }
 
     /* ---- Cleanup ---- */
+    TargetsHandler_Shutdown();
+
     Bob_Free(&frontSight);
     Bob_Free(&rearSight);
 

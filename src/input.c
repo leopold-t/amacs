@@ -1,6 +1,9 @@
 #include <exec/libraries.h>
 #include <exec/types.h>
 
+#include <intuition/intuition.h>
+#include <intuition/screens.h>
+
 #include <libraries/lowlevel.h> /* JPF_* masks */
 #include <proto/exec.h>
 #include <proto/lowlevel.h>
@@ -24,8 +27,21 @@ static ULONG ReadJoyPort2(void) {
     return ReadJoyPort(1);
 }
 
+/* ---------------- IDCMP key/mouse state ---------------- */
+
+static UBYTE keyDown[256];
+static UBYTE keyPressed[256]; /* edge: set on key-down transition */
+static BOOL firePressedEdge = FALSE;
+
 BOOL Input_Init(void) {
     LowLevelBase = OpenLibrary("lowlevel.library", 0);
+
+    for (int i = 0; i < 256; i++) {
+        keyDown[i] = 0;
+        keyPressed[i] = 0;
+    }
+    firePressedEdge = FALSE;
+
     return (LowLevelBase != NULL);
 }
 
@@ -38,10 +54,7 @@ void Input_Shutdown(void) {
 
 BOOL IsJoystickFirePressed(void) {
     ULONG p = ReadJoyPort2();
-    if (p & JPF_BUTTON_RED) {
-        return TRUE;
-    }
-    return FALSE;
+    return (p & JPF_BUTTON_RED) ? TRUE : FALSE;
 }
 
 BOOL Input_Left(void) {
@@ -62,4 +75,62 @@ BOOL Input_Up(void) {
 BOOL Input_Down(void) {
     ULONG p = ReadJoyPort2();
     return (p & JPF_JOY_DOWN) ? TRUE : FALSE;
+}
+
+/*
+ * Consume IDCMP messages and update edge states.
+ * Must be called from the active loop (e.g. sightHandler) once per frame.
+ */
+void Input_PollWindow(struct Window *win) {
+    struct IntuiMessage *msg;
+
+    /* Fire edge from joystick (treat as "pressed") */
+    if (IsJoystickFirePressed()) {
+        firePressedEdge = TRUE;
+    }
+
+    if (!win || !win->UserPort) {
+        return;
+    }
+
+    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+
+        if (msg->Class == IDCMP_RAWKEY) {
+            UBYTE code = (UBYTE)msg->Code;
+
+            /* key up events are code | 0x80 */
+            if (code & 0x80) {
+                UBYTE downCode = (UBYTE)(code & 0x7F);
+                keyDown[downCode] = 0;
+            } else {
+                /* key-down */
+                if (!keyDown[code]) {
+                    keyPressed[code] = 1; /* rising edge */
+                }
+                keyDown[code] = 1;
+            }
+        }
+
+        if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
+            firePressedEdge = TRUE;
+        }
+
+        ReplyMsg((struct Message *)msg);
+    }
+}
+
+BOOL Input_KeyPressed(UBYTE rawCode) {
+    if (keyPressed[rawCode]) {
+        keyPressed[rawCode] = 0;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+BOOL Input_FirePressed(void) {
+    if (firePressedEdge) {
+        firePressedEdge = FALSE;
+        return TRUE;
+    }
+    return FALSE;
 }
