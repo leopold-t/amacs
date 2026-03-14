@@ -158,7 +158,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     const LONG V_MAX = 8192;
     const LONG V_MIN = 128;
     const LONG V_STOP = 32;
-    const LONG ACCEL_DIV = 6;
+    const LONG ACCEL_DIV = 18;
     const LONG DECAY_NUM = 64;
     const LONG DECAY_DEN = 256;
 
