@@ -13,150 +13,263 @@
 #define TARGET050_RAW "gfx/Target050.raw"
 #define TARGET050_MASK "gfx/Target050.mask"
 
-/* ---- Target050 dimensions ---- */
+#define TARGET100_RAW "gfx/Target100.raw"
+#define TARGET100_MASK "gfx/Target100.mask"
+
+#define TARGET150_RAW "gfx/Target150.raw"
+#define TARGET150_MASK "gfx/Target150.mask"
+
+#define TARGET200_RAW "gfx/Target200.raw"
+#define TARGET200_MASK "gfx/Target200.mask"
+
+#define TARGET250_RAW "gfx/Target250.raw"
+#define TARGET250_MASK "gfx/Target250.mask"
+
+#define TARGET300_RAW "gfx/Target300.raw"
+#define TARGET300_MASK "gfx/Target300.mask"
+
+/* ---- Dimensions ---- */
 #define T050_W 48
 #define T050_H 23
+
+#define T100_W 24
+#define T100_H 11
+
+#define T150_W 9
+#define T150_H 17
+
+#define T200_W 8
+#define T200_H 15
+
+#define T250_W 7
+#define T250_H 14
+
+#define T300_W 5
+#define T300_H 10
 
 /* Screen */
 #define SCR_W 320
 #define SCR_H 256
 
-/* Slots (left-bottom corner positions) */
-#define SLOT_COUNT 5
-static const WORD gSlotX[SLOT_COUNT] = {17, 77, 136, 195, 255};
-static const WORD gSlotY[SLOT_COUNT] = {215, 215, 215, 215, 215};
-
-/*
- * Timing:
- * DateStamp() gives:
- * - ds_Days
- * - ds_Minute (minutes since midnight)
- * - ds_Tick   (ticks since last minute; DOS timebase uses 50 Hz here)
- *
- * 5 seconds = 250 ticks
- * 0.30 sec  = 15 ticks
- */
 #define TICKS_PER_SEC 50
 
-/* Phase 1: rise animation */
-#define RISE_TICKS 15 /* 0.30s at 50Hz */
-
-/* Phase 2: stay fully visible for 5 seconds AFTER it fully rises */
-#define HOLD_TICKS (5 * TICKS_PER_SEC) /* 5s */
-
-/* Total slot time */
+#define RISE_TICKS 15
+#define HOLD_TICKS (5 * TICKS_PER_SEC)
 #define SLOT_TOTAL_TICKS (RISE_TICKS + HOLD_TICKS)
 
+/* Delays */
+#define SERIES100_DELAY (3 * TICKS_PER_SEC)
+#define SERIES150_DELAY (6 * TICKS_PER_SEC)
+#define SERIES200_DELAY (9 * TICKS_PER_SEC)
+#define SERIES250_DELAY (12 * TICKS_PER_SEC)
+#define SERIES300_DELAY (15 * TICKS_PER_SEC)
+
+/* ---- Slots ---- */
+#define SLOT050_COUNT 5
+static const WORD gSlot050X[SLOT050_COUNT] = {17, 77, 136, 195, 255};
+static const WORD gSlot050Y[SLOT050_COUNT] = {215, 215, 215, 215, 215};
+
+#define SLOT100_COUNT 9
+static const WORD gSlot100X[SLOT100_COUNT] = {0, 36, 73, 110, 147, 184, 221, 258, 295};
+static const WORD gSlot100Y[SLOT100_COUNT] = {167, 167, 167, 167, 167, 167, 167, 167, 167};
+
+#define SLOT150_COUNT 9
+static const WORD gSlot150X[SLOT150_COUNT] = {49, 75, 101, 128, 155, 181, 208, 234, 260};
+static const WORD gSlot150Y[SLOT150_COUNT] = {145, 145, 145, 145, 145, 145, 145, 145, 145};
+
+#define SLOT200_COUNT 9
+static const WORD gSlot200X[SLOT200_COUNT] = {71, 92, 113, 134, 155, 176, 197, 218, 239};
+static const WORD gSlot200Y[SLOT200_COUNT] = {133, 133, 133, 133, 133, 133, 133, 133, 133};
+
+#define SLOT250_COUNT 9
+static const WORD gSlot250X[SLOT250_COUNT] = {87, 104, 121, 138, 155, 173, 190, 207, 224};
+static const WORD gSlot250Y[SLOT250_COUNT] = {125, 125, 125, 125, 125, 125, 125, 125, 125};
+
+#define SLOT300_COUNT 9
+static const WORD gSlot300X[SLOT300_COUNT] = {99, 114, 128, 142, 156, 171, 185, 199, 214};
+static const WORD gSlot300Y[SLOT300_COUNT] = {119, 119, 119, 119, 119, 119, 119, 119, 119};
+
 /* ------------------------------------------------------------------ */
+
+typedef struct TargetSeries {
+    AmacsBob bob;
+    BOOL loaded;
+
+    const WORD *slotX;
+    const WORD *slotY;
+    WORD slotCount;
+
+    WORD width;
+    WORD height;
+
+    WORD activeSlot;
+
+    struct DateStamp startStamp;
+    ULONG startDelayTicks;
+} TargetSeries;
 
 static BOOL gInited = FALSE;
 static BOOL gReady = FALSE;
 
-static AmacsBob gTarget050;
-
-static WORD gActiveSlot = 0;
-
-/* Start time of current slot */
-static struct DateStamp gStartStamp;
+static TargetSeries gSeries050;
+static TargetSeries gSeries100;
+static TargetSeries gSeries150;
+static TargetSeries gSeries200;
+static TargetSeries gSeries250;
+static TargetSeries gSeries300;
 
 /* ------------------------------------------------------------------ */
 
-static void StartSlot(WORD slot) {
-    if (slot < 0)
-        slot = 0;
-    if (slot >= SLOT_COUNT)
-        slot = 0;
-
-    gActiveSlot = slot;
-    DateStamp(&gStartStamp);
-}
-
-/* returns elapsed ticks since gStartStamp (clamped to >= 0) */
-static ULONG ElapsedTicks(void) {
+static ULONG ElapsedTicks(const struct DateStamp *start) {
     struct DateStamp now;
     DateStamp(&now);
 
-    LONG dd = (LONG)now.ds_Days - (LONG)gStartStamp.ds_Days;
-    LONG dm = (LONG)now.ds_Minute - (LONG)gStartStamp.ds_Minute;
-    LONG dt = (LONG)now.ds_Tick - (LONG)gStartStamp.ds_Tick;
+    LONG dd = now.ds_Days - start->ds_Days;
+    LONG dm = now.ds_Minute - start->ds_Minute;
+    LONG dt = now.ds_Tick - start->ds_Tick;
 
-    LONG total =
-        dd * (24L * 60L * 60L * (LONG)TICKS_PER_SEC) + dm * (60L * (LONG)TICKS_PER_SEC) + dt;
+    LONG total = dd * (24L * 60L * 60L * TICKS_PER_SEC) + dm * (60L * TICKS_PER_SEC) + dt;
 
     if (total < 0)
         total = 0;
-
     return (ULONG)total;
 }
 
-/*
- * Masked blit with:
- * - source offsets (srcX, srcY)
- * - destination coords (dstX, dstY)
- * - width/height (w,h)
- * - manual clipping against screen to avoid wraparound artifacts
- */
-static void BltMaskClippedSrc(const struct BitMap *srcBm, PLANEPTR maskPlane,
-                              struct RastPort *dstRP, WORD srcX, WORD srcY, WORD dstX, WORD dstY,
-                              WORD w, WORD h) {
-    WORD sx = srcX;
-    WORD sy = srcY;
-    WORD dx = dstX;
-    WORD dy = dstY;
-    WORD cw = w;
-    WORD ch = h;
+static void StartSlot(TargetSeries *s, WORD slot) {
+    if (slot >= s->slotCount)
+        slot = 0;
+    s->activeSlot = slot;
+    DateStamp(&s->startStamp);
+}
 
-    if (!srcBm || !maskPlane || !dstRP || !dstRP->BitMap)
+static void InitSeries(TargetSeries *s, const WORD *x, const WORD *y, WORD count, WORD w, WORD h,
+                       ULONG delay) {
+    s->loaded = FALSE;
+    s->slotX = x;
+    s->slotY = y;
+    s->slotCount = count;
+    s->width = w;
+    s->height = h;
+    s->startDelayTicks = delay;
+    s->activeSlot = 0;
+    DateStamp(&s->startStamp);
+}
+
+static void BltMaskClipped(const struct BitMap *bm, PLANEPTR mask, struct RastPort *rp, WORD sx,
+                           WORD sy, WORD dx, WORD dy, WORD w, WORD h) {
+    if (!bm || !mask || !rp || !rp->BitMap)
         return;
 
-    /* Clip left */
     if (dx < 0) {
-        WORD cut = (WORD)(-dx);
-        sx = (WORD)(sx + cut);
-        cw = (WORD)(cw - cut);
+        sx -= dx;
+        w += dx;
         dx = 0;
     }
-    /* Clip top */
     if (dy < 0) {
-        WORD cut = (WORD)(-dy);
-        sy = (WORD)(sy + cut);
-        ch = (WORD)(ch - cut);
+        sy -= dy;
+        h += dy;
         dy = 0;
     }
-    /* Clip right */
-    if ((dx + cw) > SCR_W) {
-        cw = (WORD)(SCR_W - dx);
-    }
-    /* Clip bottom */
-    if ((dy + ch) > SCR_H) {
-        ch = (WORD)(SCR_H - dy);
-    }
+    if ((dx + w) > SCR_W)
+        w = SCR_W - dx;
+    if ((dy + h) > SCR_H)
+        h = SCR_H - dy;
 
-    if (cw <= 0 || ch <= 0)
+    if (w <= 0 || h <= 0)
         return;
 
-    BltMaskBitMapRastPort((struct BitMap *)srcBm, sx, sy, dstRP, dx, dy, cw, ch, 0xE0, maskPlane);
+    BltMaskBitMapRastPort((struct BitMap *)bm, sx, sy, rp, dx, dy, w, h, 0xE0, mask);
     WaitBlit();
 }
 
-/* ------------------------------------------------------------------ */
-/* Public API                                                          */
+static void TickSeries(TargetSeries *s) {
+    if (!s->loaded)
+        return;
+
+    ULONG t = ElapsedTicks(&s->startStamp);
+
+    if (t < s->startDelayTicks)
+        return;
+
+    t -= s->startDelayTicks;
+
+    if (t >= SLOT_TOTAL_TICKS) {
+        StartSlot(s, s->activeSlot + 1);
+        s->startDelayTicks = 0;
+    }
+}
+
+static void DrawSeries(TargetSeries *s, struct RastPort *rp) {
+    if (!s->loaded)
+        return;
+
+    ULONG t = ElapsedTicks(&s->startStamp);
+
+    if (t < s->startDelayTicks)
+        return;
+
+    t -= s->startDelayTicks;
+
+    if (t >= SLOT_TOTAL_TICKS)
+        return;
+
+    WORD left = s->slotX[s->activeSlot];
+    WORD bottom = s->slotY[s->activeSlot];
+
+    WORD risePx = (t >= RISE_TICKS) ? s->height : (WORD)((t * s->height) / RISE_TICKS);
+
+    if (risePx <= 0)
+        return;
+
+    WORD dstY = (bottom + 1) - risePx;
+
+    WORD visibleH = bottom - dstY + 1;
+    if (visibleH > s->height)
+        visibleH = s->height;
+
+    BltMaskClipped(&s->bob.bm, s->bob.mask, rp, 0, 0, left, dstY, s->width, visibleH);
+}
+
 /* ------------------------------------------------------------------ */
 
 BOOL TargetsHandler_Init(void) {
     if (gInited)
         return TRUE;
-
     gInited = TRUE;
-    gReady = FALSE;
 
-    if (!Bob_LoadRawAndMask(&gTarget050, TARGET050_RAW, TARGET050_MASK, T050_W, T050_H, 5)) {
-        /* Non-fatal: keep range running, just disable targets */
-        return TRUE;
+    InitSeries(&gSeries050, gSlot050X, gSlot050Y, SLOT050_COUNT, T050_W, T050_H, 0);
+    InitSeries(&gSeries100, gSlot100X, gSlot100Y, SLOT100_COUNT, T100_W, T100_H, SERIES100_DELAY);
+    InitSeries(&gSeries150, gSlot150X, gSlot150Y, SLOT150_COUNT, T150_W, T150_H, SERIES150_DELAY);
+    InitSeries(&gSeries200, gSlot200X, gSlot200Y, SLOT200_COUNT, T200_W, T200_H, SERIES200_DELAY);
+    InitSeries(&gSeries250, gSlot250X, gSlot250Y, SLOT250_COUNT, T250_W, T250_H, SERIES250_DELAY);
+    InitSeries(&gSeries300, gSlot300X, gSlot300Y, SLOT300_COUNT, T300_W, T300_H, SERIES300_DELAY);
+
+    if (Bob_LoadRawAndMask(&gSeries050.bob, TARGET050_RAW, TARGET050_MASK, T050_W, T050_H, 5)) {
+        gSeries050.loaded = TRUE;
+        StartSlot(&gSeries050, 0);
+    }
+    if (Bob_LoadRawAndMask(&gSeries100.bob, TARGET100_RAW, TARGET100_MASK, T100_W, T100_H, 5)) {
+        gSeries100.loaded = TRUE;
+        StartSlot(&gSeries100, 0);
+    }
+    if (Bob_LoadRawAndMask(&gSeries150.bob, TARGET150_RAW, TARGET150_MASK, T150_W, T150_H, 5)) {
+        gSeries150.loaded = TRUE;
+        StartSlot(&gSeries150, 0);
+    }
+    if (Bob_LoadRawAndMask(&gSeries200.bob, TARGET200_RAW, TARGET200_MASK, T200_W, T200_H, 5)) {
+        gSeries200.loaded = TRUE;
+        StartSlot(&gSeries200, 0);
+    }
+    if (Bob_LoadRawAndMask(&gSeries250.bob, TARGET250_RAW, TARGET250_MASK, T250_W, T250_H, 5)) {
+        gSeries250.loaded = TRUE;
+        StartSlot(&gSeries250, 0);
+    }
+    if (Bob_LoadRawAndMask(&gSeries300.bob, TARGET300_RAW, TARGET300_MASK, T300_W, T300_H, 5)) {
+        gSeries300.loaded = TRUE;
+        StartSlot(&gSeries300, 0);
     }
 
     gReady = TRUE;
-    StartSlot(0);
     return TRUE;
 }
 
@@ -164,85 +277,48 @@ void TargetsHandler_Shutdown(void) {
     if (!gInited)
         return;
 
-    if (gReady) {
-        Bob_Free(&gTarget050);
-    }
+    if (gSeries050.loaded)
+        Bob_Free(&gSeries050.bob);
+    if (gSeries100.loaded)
+        Bob_Free(&gSeries100.bob);
+    if (gSeries150.loaded)
+        Bob_Free(&gSeries150.bob);
+    if (gSeries200.loaded)
+        Bob_Free(&gSeries200.bob);
+    if (gSeries250.loaded)
+        Bob_Free(&gSeries250.bob);
+    if (gSeries300.loaded)
+        Bob_Free(&gSeries300.bob);
 
-    gReady = FALSE;
     gInited = FALSE;
+    gReady = FALSE;
+}
+
+void TargetsHandler_ToggleSlot(UWORD slot) {
+    (void)slot;
 }
 
 void TargetsHandler_Tick(void) {
-    if (!gInited || !gReady)
+    if (!gReady)
         return;
 
-    ULONG ticks = ElapsedTicks();
-
-    if (ticks >= (ULONG)SLOT_TOTAL_TICKS) {
-        WORD next = (WORD)(gActiveSlot + 1);
-        if (next >= SLOT_COUNT)
-            next = 0;
-        StartSlot(next);
-    }
+    TickSeries(&gSeries050);
+    TickSeries(&gSeries100);
+    TickSeries(&gSeries150);
+    TickSeries(&gSeries200);
+    TickSeries(&gSeries250);
+    TickSeries(&gSeries300);
 }
 
-/*
- * Draw current target with "rise from ground" animation.
- * Slot coordinates are LEFT-BOTTOM corner.
- *
- * IMPORTANT:
- * We want "moves up from ground", not "fills line by line".
- * So we animate dstY upward, and clip anything below the ground line (bottom).
- */
 void TargetsHandler_Draw(struct RastPort *rp) {
-    if (!gInited || !gReady || !rp)
+    if (!gReady || !rp)
         return;
 
-    ULONG ticks = ElapsedTicks();
-
-    if (ticks >= (ULONG)SLOT_TOTAL_TICKS)
-        return;
-
-    WORD left = gSlotX[gActiveSlot];
-    WORD bottom = gSlotY[gActiveSlot];
-
-    /* how many pixels of upward travel have we completed? 0..T050_H */
-    WORD risePx;
-    if (ticks >= (ULONG)RISE_TICKS) {
-        risePx = T050_H;
-    } else {
-        risePx = (WORD)((ticks * (ULONG)T050_H) / (ULONG)RISE_TICKS);
-        if (risePx < 0)
-            risePx = 0;
-        if (risePx > T050_H)
-            risePx = T050_H;
-    }
-
-    /* If not risen at all, sprite is fully underground -> nothing to draw */
-    if (risePx <= 0)
-        return;
-
-    /*
-     * When fully visible:
-     *   top = bottom - T050_H + 1
-     *
-     * When just starting (risePx small), we place the sprite lower:
-     *   dstY = (bottom + 1) - risePx
-     * This makes the sprite move upward as risePx grows.
-     */
-    WORD dstY = (WORD)((bottom + 1) - risePx);
-
-    /*
-     * Clip against ground: only draw the portion above (<= bottom).
-     * Visible height is from dstY up to bottom, inclusive:
-     *   visibleH = bottom - dstY + 1
-     */
-    WORD visibleH = (WORD)(bottom - dstY + 1);
-    if (visibleH <= 0)
-        return;
-    if (visibleH > T050_H)
-        visibleH = T050_H;
-
-    /* Draw the TOP part (srcY=0) with height visibleH at (left, dstY) */
-    BltMaskClippedSrc(&gTarget050.bm, gTarget050.mask, rp, 0, 0, left, dstY, T050_W, visibleH);
+    /* far -> near */
+    DrawSeries(&gSeries300, rp);
+    DrawSeries(&gSeries250, rp);
+    DrawSeries(&gSeries200, rp);
+    DrawSeries(&gSeries150, rp);
+    DrawSeries(&gSeries100, rp);
+    DrawSeries(&gSeries050, rp);
 }
