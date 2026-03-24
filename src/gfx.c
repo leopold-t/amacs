@@ -23,11 +23,35 @@ static struct RastPort drawRP; /* RastPort podpięty pod back buffer */
 static struct MsgPort *dbufPort = NULL;
 static BOOL dbufPrimed = FALSE;
 
-/* Invisible pointer */
-static UWORD blankPointer[] = {0x0000, 0x0000};
+/*
+ * Invisible pointer.
+ *
+ * IMPORTANT:
+ * Pointer image data must live in CHIP RAM on real Amiga hardware.
+ * A normal static array may end up outside CHIP RAM and produce
+ * corrupted vertical bars / sprite glitches.
+ */
+static UWORD *blankPointer = NULL;
+
+static BOOL InitBlankPointer(void) {
+    if (blankPointer) {
+        return TRUE;
+    }
+
+    /* Height = 1 line, 2 planes => 2 words total */
+    blankPointer = (UWORD *)AllocMem(2 * sizeof(UWORD), MEMF_CHIP | MEMF_CLEAR);
+    return (blankPointer != NULL);
+}
+
+static void FreeBlankPointer(void) {
+    if (blankPointer) {
+        FreeMem(blankPointer, 2 * sizeof(UWORD));
+        blankPointer = NULL;
+    }
+}
 
 static void HidePointer(struct Window *win) {
-    if (win) {
+    if (win && blankPointer) {
         SetPointer(win, blankPointer, 1, 1, 0, 0);
     }
 }
@@ -243,6 +267,7 @@ void Gfx_SwapBuffers(void) {
 struct Screen *Gfx_GetScreen(void) {
     return screen;
 }
+
 struct Window *Gfx_GetWindow(void) {
     return window;
 }
@@ -329,7 +354,12 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
         return FALSE;
     }
 
-    HidePointer(window);
+    if (!InitBlankPointer()) {
+        ShowPointer(window);
+    } else {
+        HidePointer(window);
+    }
+
     SettleDisplay(1);
     return TRUE;
 }
@@ -351,6 +381,9 @@ void Gfx_CloseScreenAndWindow(void) {
         window = NULL;
         SettleDisplay(2);
     }
+
+    /* Pointer image no longer needed once app window is gone */
+    FreeBlankPointer();
 
     WaitBlit();
     SettleDisplay(1);
