@@ -4,43 +4,37 @@
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
 
-#include <libraries/lowlevel.h> /* JPF_* masks */
+#include <libraries/lowlevel.h>
 #include <proto/exec.h>
 #include <proto/lowlevel.h>
 
 #include "input.h"
 
-/*
- * Joystick handling using lowlevel.library (ReadJoyPort).
- *
- * IMPORTANT:
- * - We do NOT link with -llowlevel (often not present as liblowlevel.a).
- * - proto/lowlevel.h uses direct library calls via LowLevelBase.
- * - LowLevelBase is declared by proto/lowlevel.h, so we must not redeclare it.
- */
-
 static ULONG ReadJoyPort2(void) {
     if (!LowLevelBase) {
         return 0;
     }
-    /* Port 2 = index 1 in ReadJoyPort() */
+
     return ReadJoyPort(1);
 }
 
-/* ---------------- IDCMP key/mouse state ---------------- */
-
 static UBYTE keyDown[256];
-static UBYTE keyPressed[256]; /* edge: set on key-down transition */
+static UBYTE keyPressed[256];
 static BOOL firePressedEdge = FALSE;
+static BOOL joyFireDown = FALSE;
 
 BOOL Input_Init(void) {
+    int i;
+
     LowLevelBase = OpenLibrary("lowlevel.library", 0);
 
-    for (int i = 0; i < 256; i++) {
+    for (i = 0; i < 256; i++) {
         keyDown[i] = 0;
         keyPressed[i] = 0;
     }
+
     firePressedEdge = FALSE;
+    joyFireDown = FALSE;
 
     return (LowLevelBase != NULL);
 }
@@ -77,35 +71,30 @@ BOOL Input_Down(void) {
     return (p & JPF_JOY_DOWN) ? TRUE : FALSE;
 }
 
-/*
- * Consume IDCMP messages and update edge states.
- * Must be called from the active loop (e.g. sightHandler) once per frame.
- */
 void Input_PollWindow(struct Window *win) {
     struct IntuiMessage *msg;
+    BOOL joyNow;
 
-    /* Fire edge from joystick (treat as "pressed") */
-    if (IsJoystickFirePressed()) {
+    joyNow = IsJoystickFirePressed();
+    if (joyNow && !joyFireDown) {
         firePressedEdge = TRUE;
     }
+    joyFireDown = joyNow;
 
     if (!win || !win->UserPort) {
         return;
     }
 
     while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
-
         if (msg->Class == IDCMP_RAWKEY) {
             UBYTE code = (UBYTE)msg->Code;
 
-            /* key up events are code | 0x80 */
             if (code & 0x80) {
                 UBYTE downCode = (UBYTE)(code & 0x7F);
                 keyDown[downCode] = 0;
             } else {
-                /* key-down */
                 if (!keyDown[code]) {
-                    keyPressed[code] = 1; /* rising edge */
+                    keyPressed[code] = 1;
                 }
                 keyDown[code] = 1;
             }
@@ -124,6 +113,7 @@ BOOL Input_KeyPressed(UBYTE rawCode) {
         keyPressed[rawCode] = 0;
         return TRUE;
     }
+
     return FALSE;
 }
 
@@ -132,5 +122,6 @@ BOOL Input_FirePressed(void) {
         firePressedEdge = FALSE;
         return TRUE;
     }
+
     return FALSE;
 }

@@ -19,12 +19,15 @@ extern const UWORD RangePaletteRGB4[32];
 #define targetRangesPalette TargetRangesPaletteRGB4
 #define rangePalette RangePaletteRGB4
 
-/* RAW files */
+/* RAW graphics files */
 #define LOGO_FILE "gfx/Logo.raw"
 #define TITLE_FILE "gfx/Title.raw"
 #define TRAINING_INFO_FILE "gfx/TrainingInfo.raw"
 #define FUNDAMENTALS_FILE "gfx/Fundamentals.raw"
 #define TARGET_RANGES_FILE "gfx/TargetRanges.raw"
 #define RANGE_FILE "gfx/OahuRange.raw"
+
+/* RAW sound files */
+#define SHOT_FILE "audio/Shot.raw"
 
 #endif
