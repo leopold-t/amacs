@@ -14,11 +14,15 @@ extern VOID BeginIO(struct IORequest *);
 #define SHOT_VOLUME 64
 #define SHOT_CYCLES 1
 
+typedef struct Sample {
+    BYTE *data;
+    ULONG length;
+} Sample;
+
 static struct MsgPort *gAudioPort = NULL;
 static struct IOAudio *gAudioIO = NULL;
 
-static BYTE *gShotData = NULL;
-static ULONG gShotLength = 0;
+static Sample gShot = {NULL, 0};
 
 static BOOL gSoundInited = FALSE;
 static BOOL gShotPlaying = FALSE;
@@ -31,12 +35,14 @@ static void ResetState(void) {
     gShotPlaying = FALSE;
 }
 
-static void FreeSample(void) {
-    if (gShotData) {
-        FreeMem(gShotData, gShotLength);
-        gShotData = NULL;
-        gShotLength = 0;
+static void FreeSample(Sample *sample) {
+    if (!sample || !sample->data) {
+        return;
     }
+
+    FreeMem(sample->data, sample->length);
+    sample->data = NULL;
+    sample->length = 0;
 }
 
 static void DeleteAudioIO(void) {
@@ -82,13 +88,18 @@ static void ReapPlayback(void) {
     }
 }
 
-static BOOL LoadRawSample(const char *path, BYTE **outData, ULONG *outLen) {
+static BOOL LoadSample(const char *path, Sample *sample) {
     BPTR fh;
     LONG size;
     BYTE *buf;
 
-    *outData = NULL;
-    *outLen = 0;
+    if (!sample) {
+        gLastError = SOUND_ERR_READFILE;
+        return FALSE;
+    }
+
+    sample->data = NULL;
+    sample->length = 0;
 
     fh = Open((STRPTR)path, MODE_OLDFILE);
     if (!fh) {
@@ -141,8 +152,8 @@ static BOOL LoadRawSample(const char *path, BYTE **outData, ULONG *outLen) {
 
     Close(fh);
 
-    *outData = buf;
-    *outLen = (ULONG)size;
+    sample->data = buf;
+    sample->length = (ULONG)size;
     return TRUE;
 }
 
@@ -159,14 +170,14 @@ BOOL Sound_Init(void) {
     ResetState();
     gLastError = SOUND_OK;
 
-    if (!LoadRawSample(SHOT_FILE, &gShotData, &gShotLength)) {
+    if (!LoadSample(SHOT_FILE, &gShot)) {
         return FALSE;
     }
 
     gAudioPort = CreateMsgPort();
     if (!gAudioPort) {
         gLastError = SOUND_ERR_PORT;
-        FreeSample();
+        FreeSample(&gShot);
         return FALSE;
     }
 
@@ -174,7 +185,7 @@ BOOL Sound_Init(void) {
     if (!gAudioIO) {
         gLastError = SOUND_ERR_IOREQ;
         DeleteAudioIO();
-        FreeSample();
+        FreeSample(&gShot);
         return FALSE;
     }
 
@@ -188,7 +199,7 @@ BOOL Sound_Init(void) {
     if (OpenDevice(AUDIONAME, 0L, (struct IORequest *)gAudioIO, 0L) != 0) {
         gLastError = SOUND_ERR_OPENDEVICE;
         DeleteAudioIO();
-        FreeSample();
+        FreeSample(&gShot);
         return FALSE;
     }
 
@@ -201,7 +212,7 @@ BOOL Sound_Init(void) {
 void Sound_Shutdown(void) {
     StopPlayback();
     CloseAudio();
-    FreeSample();
+    FreeSample(&gShot);
     ResetState();
     gLastError = SOUND_OK;
 }
@@ -211,7 +222,7 @@ void Sound_Update(void) {
 }
 
 void Sound_PlayShot(void) {
-    if (!gSoundInited || !gAudioIO || !gShotData || gShotLength == 0) {
+    if (!gSoundInited || !gAudioIO || !gShot.data || gShot.length == 0) {
         return;
     }
 
@@ -222,8 +233,8 @@ void Sound_PlayShot(void) {
 
     gAudioIO->ioa_Request.io_Command = CMD_WRITE;
     gAudioIO->ioa_Request.io_Flags = ADIOF_PERVOL;
-    gAudioIO->ioa_Data = (UBYTE *)gShotData;
-    gAudioIO->ioa_Length = gShotLength;
+    gAudioIO->ioa_Data = (UBYTE *)gShot.data;
+    gAudioIO->ioa_Length = gShot.length;
     gAudioIO->ioa_Period = SHOT_PERIOD;
     gAudioIO->ioa_Volume = SHOT_VOLUME;
     gAudioIO->ioa_Cycles = SHOT_CYCLES;

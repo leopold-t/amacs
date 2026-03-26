@@ -22,6 +22,7 @@ static UBYTE keyDown[256];
 static UBYTE keyPressed[256];
 static BOOL firePressedEdge = FALSE;
 static BOOL joyFireDown = FALSE;
+static BOOL mouseFireDown = FALSE;
 
 BOOL Input_Init(void) {
     int i;
@@ -35,6 +36,7 @@ BOOL Input_Init(void) {
 
     firePressedEdge = FALSE;
     joyFireDown = FALSE;
+    mouseFireDown = FALSE;
 
     return (LowLevelBase != NULL);
 }
@@ -100,8 +102,15 @@ void Input_PollWindow(struct Window *win) {
             }
         }
 
-        if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
-            firePressedEdge = TRUE;
+        if (msg->Class == IDCMP_MOUSEBUTTONS) {
+            if (msg->Code == SELECTDOWN) {
+                if (!mouseFireDown) {
+                    firePressedEdge = TRUE;
+                }
+                mouseFireDown = TRUE;
+            } else if (msg->Code == SELECTUP) {
+                mouseFireDown = FALSE;
+            }
         }
 
         ReplyMsg((struct Message *)msg);
@@ -124,4 +133,8 @@ BOOL Input_FirePressed(void) {
     }
 
     return FALSE;
+}
+
+BOOL Input_IsFireDown(void) {
+    return (joyFireDown || mouseFireDown) ? TRUE : FALSE;
 }

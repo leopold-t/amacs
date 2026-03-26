@@ -57,6 +57,11 @@ extern BOOL Input_Down(void);
 #define DOS_TICKS_PER_SEC 50
 #define SHOT_COOLDOWN_TICKS DOS_TICKS_PER_SEC
 
+#define RECOIL_PIXELS 4
+#define RECOIL_DOWN_TICKS 3
+#define RECOIL_UP_TICKS 1
+#define RECOIL_TOTAL_TICKS (RECOIL_UP_TICKS + RECOIL_DOWN_TICKS)
+
 static void DebugBeepError(SoundError err) {
     UWORD count = 0;
     UWORD i;
@@ -190,6 +195,35 @@ static void DrawMaskedClipped(const struct BitMap *srcBm, PLANEPTR maskPlane,
     WaitBlit();
 }
 
+static WORD RecoilOffsetY(BOOL *active, UWORD *tick) {
+    WORD offset = 0;
+
+    if (!*active) {
+        return 0;
+    }
+
+    if (*tick < RECOIL_UP_TICKS) {
+        offset = (WORD)(*tick + 1);
+        if (offset > RECOIL_PIXELS) {
+            offset = RECOIL_PIXELS;
+        }
+    } else if (*tick < RECOIL_TOTAL_TICKS) {
+        UWORD downTick = (UWORD)(*tick - RECOIL_UP_TICKS);
+        offset = (WORD)(RECOIL_PIXELS - (downTick + 1));
+        if (offset < 0) {
+            offset = 0;
+        }
+    }
+
+    (*tick)++;
+    if (*tick >= RECOIL_TOTAL_TICKS) {
+        *tick = 0;
+        *active = FALSE;
+    }
+
+    return (WORD)(-offset);
+}
+
 static LONG ClampLeadFP(LONG v) {
     if (v > LEAD_MAX_FP) {
         return LEAD_MAX_FP;
@@ -231,6 +265,9 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     struct BitMap maskTmpBm;
     struct RastPort maskTmpRP;
     BOOL shotCooldownActive = FALSE;
+    BOOL shotNeedsRelease = FALSE;
+    BOOL recoilActive = FALSE;
+    UWORD recoilTick = 0;
     struct DateStamp lastShotStamp;
     BOOL paused = FALSE;
 
@@ -333,10 +370,17 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             continue;
         }
 
+        if (!Input_IsFireDown()) {
+            shotNeedsRelease = FALSE;
+        }
+
         if (Input_FirePressed()) {
-            if (ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
+            if (!shotNeedsRelease && ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
                 Sound_PlayShot();
                 MarkShotFired(&shotCooldownActive, &lastShotStamp);
+                shotNeedsRelease = TRUE;
+                recoilActive = TRUE;
+                recoilTick = 0;
             }
         }
 
@@ -504,8 +548,9 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         }
 
         {
+            WORD recoilY = RecoilOffsetY(&recoilActive, &recoilTick);
             WORD frontX = (WORD)(ringX - RING_OFFSET_X + (leadX / 256));
-            WORD frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) - 1);
+            WORD frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) - 1 + recoilY);
             struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
 
             if (haveBg) {
@@ -523,7 +568,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
             {
                 WORD occX = ringX + OCCL_REL_X;
-                WORD occY = ringY + OCCL_REL_Y;
+                WORD occY = ringY + recoilY + OCCL_REL_Y;
                 WORD ix;
                 WORD iy;
                 WORD iw;
@@ -541,8 +586,8 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
             DrawMaskedClipped(&frontSight.bm, tempMaskPlane, rp, frontX, frontY, FRONTSIGHT_W,
                               FRONTSIGHT_H);
-            DrawMaskedClipped(&rearSight.bm, rearSight.mask, rp, ringX, ringY, REARSIGHT_W,
-                              REARSIGHT_H);
+            DrawMaskedClipped(&rearSight.bm, rearSight.mask, rp, ringX, (WORD)(ringY + recoilY),
+                              REARSIGHT_W, REARSIGHT_H);
 
             if (useDBuf) {
                 Gfx_SwapBuffers();
