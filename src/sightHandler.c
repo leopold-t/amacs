@@ -61,6 +61,7 @@ extern BOOL Input_Down(void);
 #define RECOIL_DOWN_TICKS 3
 #define RECOIL_UP_TICKS 1
 #define RECOIL_TOTAL_TICKS (RECOIL_UP_TICKS + RECOIL_DOWN_TICKS)
+#define RECOIL_REAR_DELAY_TICKS 2
 
 static void DebugBeepError(SoundError err) {
     UWORD count = 0;
@@ -224,6 +225,18 @@ static WORD RecoilOffsetY(BOOL *active, UWORD *tick) {
     return (WORD)(-offset);
 }
 
+static WORD RearRecoilOffsetY(WORD frontRecoilY, WORD *history) {
+    WORD delayed = history[0];
+    UWORD i;
+
+    for (i = 0; i < (RECOIL_REAR_DELAY_TICKS - 1); i++) {
+        history[i] = history[i + 1];
+    }
+
+    history[RECOIL_REAR_DELAY_TICKS - 1] = frontRecoilY;
+    return delayed;
+}
+
 static LONG ClampLeadFP(LONG v) {
     if (v > LEAD_MAX_FP) {
         return LEAD_MAX_FP;
@@ -268,6 +281,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     BOOL shotNeedsRelease = FALSE;
     BOOL recoilActive = FALSE;
     UWORD recoilTick = 0;
+    WORD rearRecoilHistory[RECOIL_REAR_DELAY_TICKS] = {0};
     struct DateStamp lastShotStamp;
     BOOL paused = FALSE;
 
@@ -548,9 +562,10 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         }
 
         {
-            WORD recoilY = RecoilOffsetY(&recoilActive, &recoilTick);
+            WORD frontRecoilY = RecoilOffsetY(&recoilActive, &recoilTick);
+            WORD rearRecoilY = RearRecoilOffsetY(frontRecoilY, rearRecoilHistory);
             WORD frontX = (WORD)(ringX - RING_OFFSET_X + (leadX / 256));
-            WORD frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) - 1 + recoilY);
+            WORD frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) - 1 + frontRecoilY);
             struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
 
             if (haveBg) {
@@ -568,7 +583,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
             {
                 WORD occX = ringX + OCCL_REL_X;
-                WORD occY = ringY + recoilY + OCCL_REL_Y;
+                WORD occY = ringY + rearRecoilY + OCCL_REL_Y;
                 WORD ix;
                 WORD iy;
                 WORD iw;
@@ -586,7 +601,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
             DrawMaskedClipped(&frontSight.bm, tempMaskPlane, rp, frontX, frontY, FRONTSIGHT_W,
                               FRONTSIGHT_H);
-            DrawMaskedClipped(&rearSight.bm, rearSight.mask, rp, ringX, (WORD)(ringY + recoilY),
+            DrawMaskedClipped(&rearSight.bm, rearSight.mask, rp, ringX, (WORD)(ringY + rearRecoilY),
                               REARSIGHT_W, REARSIGHT_H);
 
             if (useDBuf) {
