@@ -63,6 +63,13 @@ extern BOOL Input_Down(void);
 #define RECOIL_TOTAL_TICKS (RECOIL_UP_TICKS + RECOIL_DOWN_TICKS)
 #define RECOIL_REAR_DELAY_TICKS 2
 
+#define FRONT_AIM_X 41
+#define FRONT_AIM_Y 10
+
+#define HIT_FLASH_TICKS 3
+#define HIT_FLASH_COLOR 23
+#define HIT_FLASH_THICKNESS 3
+
 static void DebugBeepError(SoundError err) {
     UWORD count = 0;
     UWORD i;
@@ -237,6 +244,18 @@ static WORD RearRecoilOffsetY(WORD frontRecoilY, WORD *history) {
     return delayed;
 }
 
+static void DrawHitFlash(struct RastPort *rp) {
+    if (!rp) {
+        return;
+    }
+
+    SetAPen(rp, HIT_FLASH_COLOR);
+    RectFill(rp, 0, 0, SCR_W - 1, HIT_FLASH_THICKNESS - 1);
+    RectFill(rp, 0, SCR_H - HIT_FLASH_THICKNESS, SCR_W - 1, SCR_H - 1);
+    RectFill(rp, 0, 0, HIT_FLASH_THICKNESS - 1, SCR_H - 1);
+    RectFill(rp, SCR_W - HIT_FLASH_THICKNESS, 0, SCR_W - 1, SCR_H - 1);
+}
+
 static LONG ClampLeadFP(LONG v) {
     if (v > LEAD_MAX_FP) {
         return LEAD_MAX_FP;
@@ -282,6 +301,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     BOOL recoilActive = FALSE;
     UWORD recoilTick = 0;
     WORD rearRecoilHistory[RECOIL_REAR_DELAY_TICKS] = {0};
+    UWORD hitFlashTicks = 0;
     struct DateStamp lastShotStamp;
     BOOL paused = FALSE;
 
@@ -390,11 +410,21 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
         if (Input_FirePressed()) {
             if (!shotNeedsRelease && ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
+                WORD aimX;
+                WORD aimY;
+
                 Sound_PlayShot();
                 MarkShotFired(&shotCooldownActive, &lastShotStamp);
                 shotNeedsRelease = TRUE;
                 recoilActive = TRUE;
                 recoilTick = 0;
+
+                aimX = (WORD)(ringX - RING_OFFSET_X + FRONT_AIM_X);
+                aimY = (WORD)(ringY - RING_OFFSET_Y - 1 + FRONT_AIM_Y);
+
+                if (TargetsHandler_CheckHit(aimX, aimY)) {
+                    hitFlashTicks = HIT_FLASH_TICKS;
+                }
             }
         }
 
@@ -603,6 +633,11 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                               FRONTSIGHT_H);
             DrawMaskedClipped(&rearSight.bm, rearSight.mask, rp, ringX, (WORD)(ringY + rearRecoilY),
                               REARSIGHT_W, REARSIGHT_H);
+
+            if (hitFlashTicks > 0) {
+                DrawHitFlash(rp);
+                hitFlashTicks--;
+            }
 
             if (useDBuf) {
                 Gfx_SwapBuffers();

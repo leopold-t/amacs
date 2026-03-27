@@ -9,7 +9,6 @@
 #include "bob.h"
 #include "gfx.h"
 
-/* ---- Assets ---- */
 #define TARGET050_RAW "gfx/Target050.raw"
 #define TARGET050_MASK "gfx/Target050.mask"
 
@@ -28,7 +27,6 @@
 #define TARGET300_RAW "gfx/Target300.raw"
 #define TARGET300_MASK "gfx/Target300.mask"
 
-/* ---- Dimensions ---- */
 #define T050_W 48
 #define T050_H 23
 
@@ -47,7 +45,6 @@
 #define T300_W 5
 #define T300_H 10
 
-/* Screen */
 #define SCR_W 320
 #define SCR_H 256
 
@@ -57,14 +54,12 @@
 #define HOLD_TICKS (5 * TICKS_PER_SEC)
 #define SLOT_TOTAL_TICKS (RISE_TICKS + HOLD_TICKS)
 
-/* Delays */
 #define SERIES100_DELAY (3 * TICKS_PER_SEC)
 #define SERIES150_DELAY (6 * TICKS_PER_SEC)
 #define SERIES200_DELAY (9 * TICKS_PER_SEC)
 #define SERIES250_DELAY (12 * TICKS_PER_SEC)
 #define SERIES300_DELAY (15 * TICKS_PER_SEC)
 
-/* ---- Slots ---- */
 #define SLOT050_COUNT 5
 static const WORD gSlot050X[SLOT050_COUNT] = {17, 77, 136, 195, 255};
 static const WORD gSlot050Y[SLOT050_COUNT] = {215, 215, 215, 215, 215};
@@ -89,21 +84,15 @@ static const WORD gSlot250Y[SLOT250_COUNT] = {125, 125, 125, 125, 125, 125, 125,
 static const WORD gSlot300X[SLOT300_COUNT] = {99, 114, 128, 142, 156, 171, 185, 199, 214};
 static const WORD gSlot300Y[SLOT300_COUNT] = {119, 119, 119, 119, 119, 119, 119, 119, 119};
 
-/* ------------------------------------------------------------------ */
-
 typedef struct TargetSeries {
     AmacsBob bob;
     BOOL loaded;
-
     const WORD *slotX;
     const WORD *slotY;
     WORD slotCount;
-
     WORD width;
     WORD height;
-
     WORD activeSlot;
-
     struct DateStamp startStamp;
     ULONG startDelayTicks;
 } TargetSeries;
@@ -118,26 +107,33 @@ static TargetSeries gSeries200;
 static TargetSeries gSeries250;
 static TargetSeries gSeries300;
 
-/* ------------------------------------------------------------------ */
-
 static ULONG ElapsedTicks(const struct DateStamp *start) {
     struct DateStamp now;
+    LONG dd;
+    LONG dm;
+    LONG dt;
+    LONG total;
+
     DateStamp(&now);
 
-    LONG dd = now.ds_Days - start->ds_Days;
-    LONG dm = now.ds_Minute - start->ds_Minute;
-    LONG dt = now.ds_Tick - start->ds_Tick;
+    dd = now.ds_Days - start->ds_Days;
+    dm = now.ds_Minute - start->ds_Minute;
+    dt = now.ds_Tick - start->ds_Tick;
 
-    LONG total = dd * (24L * 60L * 60L * TICKS_PER_SEC) + dm * (60L * TICKS_PER_SEC) + dt;
+    total = dd * (24L * 60L * 60L * TICKS_PER_SEC) + dm * (60L * TICKS_PER_SEC) + dt;
 
-    if (total < 0)
+    if (total < 0) {
         total = 0;
+    }
+
     return (ULONG)total;
 }
 
 static void StartSlot(TargetSeries *s, WORD slot) {
-    if (slot >= s->slotCount)
+    if (slot >= s->slotCount) {
         slot = 0;
+    }
+
     s->activeSlot = slot;
     DateStamp(&s->startStamp);
 }
@@ -157,8 +153,9 @@ static void InitSeries(TargetSeries *s, const WORD *x, const WORD *y, WORD count
 
 static void BltMaskClipped(const struct BitMap *bm, PLANEPTR mask, struct RastPort *rp, WORD sx,
                            WORD sy, WORD dx, WORD dy, WORD w, WORD h) {
-    if (!bm || !mask || !rp || !rp->BitMap)
+    if (!bm || !mask || !rp || !rp->BitMap) {
         return;
+    }
 
     if (dx < 0) {
         sx -= dx;
@@ -170,26 +167,114 @@ static void BltMaskClipped(const struct BitMap *bm, PLANEPTR mask, struct RastPo
         h += dy;
         dy = 0;
     }
-    if ((dx + w) > SCR_W)
+    if ((dx + w) > SCR_W) {
         w = SCR_W - dx;
-    if ((dy + h) > SCR_H)
+    }
+    if ((dy + h) > SCR_H) {
         h = SCR_H - dy;
+    }
 
-    if (w <= 0 || h <= 0)
+    if (w <= 0 || h <= 0) {
         return;
+    }
 
     BltMaskBitMapRastPort((struct BitMap *)bm, sx, sy, rp, dx, dy, w, h, 0xE0, mask);
     WaitBlit();
 }
 
+static BOOL GetSeriesVisibleRect(TargetSeries *s, WORD *outX, WORD *outY, WORD *outW, WORD *outH) {
+    ULONG t;
+    WORD left;
+    WORD bottom;
+    WORD risePx;
+    WORD dstY;
+    WORD visibleH;
+
+    if (!s->loaded) {
+        return FALSE;
+    }
+
+    t = ElapsedTicks(&s->startStamp);
+    if (t < s->startDelayTicks) {
+        return FALSE;
+    }
+
+    t -= s->startDelayTicks;
+    if (t >= SLOT_TOTAL_TICKS) {
+        return FALSE;
+    }
+
+    left = s->slotX[s->activeSlot];
+    bottom = s->slotY[s->activeSlot];
+
+    risePx = (t >= RISE_TICKS) ? s->height : (WORD)((t * s->height) / RISE_TICKS);
+    if (risePx <= 0) {
+        return FALSE;
+    }
+
+    dstY = (bottom + 1) - risePx;
+    visibleH = bottom - dstY + 1;
+    if (visibleH > s->height) {
+        visibleH = s->height;
+    }
+
+    *outX = left;
+    *outY = dstY;
+    *outW = s->width;
+    *outH = visibleH;
+    return TRUE;
+}
+
+static BOOL IsMaskBitSet(PLANEPTR mask, WORD width, WORD x, WORD y) {
+    UWORD wordsPerRow;
+    UWORD maskWord;
+    UWORD bitMask;
+
+    if (!mask || x < 0 || y < 0 || x >= width) {
+        return FALSE;
+    }
+
+    wordsPerRow = (UWORD)((width + 15) >> 4);
+    maskWord = ((UWORD *)mask)[(y * wordsPerRow) + ((UWORD)x >> 4)];
+    bitMask = (UWORD)(0x8000 >> (x & 15));
+
+    return (maskWord & bitMask) ? TRUE : FALSE;
+}
+
+static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y) {
+    WORD left;
+    WORD top;
+    WORD width;
+    WORD visibleH;
+    WORD localX;
+    WORD localY;
+
+    if (!GetSeriesVisibleRect(s, &left, &top, &width, &visibleH)) {
+        return FALSE;
+    }
+
+    if (x < left || x >= (left + width) || y < top || y >= (top + visibleH)) {
+        return FALSE;
+    }
+
+    localX = (WORD)(x - left);
+    localY = (WORD)(y - top);
+
+    return IsMaskBitSet(s->bob.mask, s->width, localX, localY);
+}
+
 static void TickSeries(TargetSeries *s) {
-    if (!s->loaded)
-        return;
+    ULONG t;
 
-    ULONG t = ElapsedTicks(&s->startStamp);
-
-    if (t < s->startDelayTicks)
+    if (!s->loaded) {
         return;
+    }
+
+    t = ElapsedTicks(&s->startStamp);
+
+    if (t < s->startDelayTicks) {
+        return;
+    }
 
     t -= s->startDelayTicks;
 
@@ -200,41 +285,22 @@ static void TickSeries(TargetSeries *s) {
 }
 
 static void DrawSeries(TargetSeries *s, struct RastPort *rp) {
-    if (!s->loaded)
+    WORD left;
+    WORD dstY;
+    WORD visibleW;
+    WORD visibleH;
+
+    if (!GetSeriesVisibleRect(s, &left, &dstY, &visibleW, &visibleH)) {
         return;
+    }
 
-    ULONG t = ElapsedTicks(&s->startStamp);
-
-    if (t < s->startDelayTicks)
-        return;
-
-    t -= s->startDelayTicks;
-
-    if (t >= SLOT_TOTAL_TICKS)
-        return;
-
-    WORD left = s->slotX[s->activeSlot];
-    WORD bottom = s->slotY[s->activeSlot];
-
-    WORD risePx = (t >= RISE_TICKS) ? s->height : (WORD)((t * s->height) / RISE_TICKS);
-
-    if (risePx <= 0)
-        return;
-
-    WORD dstY = (bottom + 1) - risePx;
-
-    WORD visibleH = bottom - dstY + 1;
-    if (visibleH > s->height)
-        visibleH = s->height;
-
-    BltMaskClipped(&s->bob.bm, s->bob.mask, rp, 0, 0, left, dstY, s->width, visibleH);
+    BltMaskClipped(&s->bob.bm, s->bob.mask, rp, 0, 0, left, dstY, visibleW, visibleH);
 }
 
-/* ------------------------------------------------------------------ */
-
 BOOL TargetsHandler_Init(void) {
-    if (gInited)
+    if (gInited) {
         return TRUE;
+    }
     gInited = TRUE;
 
     InitSeries(&gSeries050, gSlot050X, gSlot050Y, SLOT050_COUNT, T050_W, T050_H, 0);
@@ -274,21 +340,28 @@ BOOL TargetsHandler_Init(void) {
 }
 
 void TargetsHandler_Shutdown(void) {
-    if (!gInited)
+    if (!gInited) {
         return;
+    }
 
-    if (gSeries050.loaded)
+    if (gSeries050.loaded) {
         Bob_Free(&gSeries050.bob);
-    if (gSeries100.loaded)
+    }
+    if (gSeries100.loaded) {
         Bob_Free(&gSeries100.bob);
-    if (gSeries150.loaded)
+    }
+    if (gSeries150.loaded) {
         Bob_Free(&gSeries150.bob);
-    if (gSeries200.loaded)
+    }
+    if (gSeries200.loaded) {
         Bob_Free(&gSeries200.bob);
-    if (gSeries250.loaded)
+    }
+    if (gSeries250.loaded) {
         Bob_Free(&gSeries250.bob);
-    if (gSeries300.loaded)
+    }
+    if (gSeries300.loaded) {
         Bob_Free(&gSeries300.bob);
+    }
 
     gInited = FALSE;
     gReady = FALSE;
@@ -299,8 +372,9 @@ void TargetsHandler_ToggleSlot(UWORD slot) {
 }
 
 void TargetsHandler_Tick(void) {
-    if (!gReady)
+    if (!gReady) {
         return;
+    }
 
     TickSeries(&gSeries050);
     TickSeries(&gSeries100);
@@ -311,14 +385,41 @@ void TargetsHandler_Tick(void) {
 }
 
 void TargetsHandler_Draw(struct RastPort *rp) {
-    if (!gReady || !rp)
+    if (!gReady || !rp) {
         return;
+    }
 
-    /* far -> near */
     DrawSeries(&gSeries300, rp);
     DrawSeries(&gSeries250, rp);
     DrawSeries(&gSeries200, rp);
     DrawSeries(&gSeries150, rp);
     DrawSeries(&gSeries100, rp);
     DrawSeries(&gSeries050, rp);
+}
+
+BOOL TargetsHandler_CheckHit(WORD x, WORD y) {
+    if (!gReady) {
+        return FALSE;
+    }
+
+    if (CheckSeriesHit(&gSeries050, x, y)) {
+        return TRUE;
+    }
+    if (CheckSeriesHit(&gSeries100, x, y)) {
+        return TRUE;
+    }
+    if (CheckSeriesHit(&gSeries150, x, y)) {
+        return TRUE;
+    }
+    if (CheckSeriesHit(&gSeries200, x, y)) {
+        return TRUE;
+    }
+    if (CheckSeriesHit(&gSeries250, x, y)) {
+        return TRUE;
+    }
+    if (CheckSeriesHit(&gSeries300, x, y)) {
+        return TRUE;
+    }
+
+    return FALSE;
 }
