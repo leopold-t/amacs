@@ -412,6 +412,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             if (!shotNeedsRelease && ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
                 WORD aimX;
                 WORD aimY;
+                UWORD hitDelayTicks;
 
                 Sound_PlayShot();
                 MarkShotFired(&shotCooldownActive, &lastShotStamp);
@@ -422,8 +423,9 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 aimX = (WORD)(ringX - RING_OFFSET_X + FRONT_AIM_X);
                 aimY = (WORD)(ringY - RING_OFFSET_Y - 1 + FRONT_AIM_Y);
 
-                if (TargetsHandler_CheckHit(aimX, aimY)) {
+                if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks)) {
                     hitFlashTicks = HIT_FLASH_TICKS;
+                    Sound_PlayHit(hitDelayTicks);
                 }
             }
         }

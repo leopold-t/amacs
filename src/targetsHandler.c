@@ -54,11 +54,19 @@
 #define HOLD_TICKS (5 * TICKS_PER_SEC)
 #define SLOT_TOTAL_TICKS (RISE_TICKS + HOLD_TICKS)
 
+#define SERIES050_DELAY 0
 #define SERIES100_DELAY (3 * TICKS_PER_SEC)
 #define SERIES150_DELAY (6 * TICKS_PER_SEC)
 #define SERIES200_DELAY (9 * TICKS_PER_SEC)
 #define SERIES250_DELAY (12 * TICKS_PER_SEC)
 #define SERIES300_DELAY (15 * TICKS_PER_SEC)
+
+#define HIT_DELAY_050 10
+#define HIT_DELAY_100 20
+#define HIT_DELAY_150 30
+#define HIT_DELAY_200 40
+#define HIT_DELAY_250 50
+#define HIT_DELAY_300 60
 
 #define SLOT050_COUNT 5
 static const WORD gSlot050X[SLOT050_COUNT] = {17, 77, 136, 195, 255};
@@ -95,6 +103,7 @@ typedef struct TargetSeries {
     WORD activeSlot;
     struct DateStamp startStamp;
     ULONG startDelayTicks;
+    UWORD hitDelayTicks;
 } TargetSeries;
 
 static BOOL gInited = FALSE;
@@ -139,7 +148,7 @@ static void StartSlot(TargetSeries *s, WORD slot) {
 }
 
 static void InitSeries(TargetSeries *s, const WORD *x, const WORD *y, WORD count, WORD w, WORD h,
-                       ULONG delay) {
+                       ULONG delay, UWORD hitDelayTicks) {
     s->loaded = FALSE;
     s->slotX = x;
     s->slotY = y;
@@ -147,6 +156,7 @@ static void InitSeries(TargetSeries *s, const WORD *x, const WORD *y, WORD count
     s->width = w;
     s->height = h;
     s->startDelayTicks = delay;
+    s->hitDelayTicks = hitDelayTicks;
     s->activeSlot = 0;
     DateStamp(&s->startStamp);
 }
@@ -303,12 +313,18 @@ BOOL TargetsHandler_Init(void) {
     }
     gInited = TRUE;
 
-    InitSeries(&gSeries050, gSlot050X, gSlot050Y, SLOT050_COUNT, T050_W, T050_H, 0);
-    InitSeries(&gSeries100, gSlot100X, gSlot100Y, SLOT100_COUNT, T100_W, T100_H, SERIES100_DELAY);
-    InitSeries(&gSeries150, gSlot150X, gSlot150Y, SLOT150_COUNT, T150_W, T150_H, SERIES150_DELAY);
-    InitSeries(&gSeries200, gSlot200X, gSlot200Y, SLOT200_COUNT, T200_W, T200_H, SERIES200_DELAY);
-    InitSeries(&gSeries250, gSlot250X, gSlot250Y, SLOT250_COUNT, T250_W, T250_H, SERIES250_DELAY);
-    InitSeries(&gSeries300, gSlot300X, gSlot300Y, SLOT300_COUNT, T300_W, T300_H, SERIES300_DELAY);
+    InitSeries(&gSeries050, gSlot050X, gSlot050Y, SLOT050_COUNT, T050_W, T050_H, SERIES050_DELAY,
+               HIT_DELAY_050);
+    InitSeries(&gSeries100, gSlot100X, gSlot100Y, SLOT100_COUNT, T100_W, T100_H, SERIES100_DELAY,
+               HIT_DELAY_100);
+    InitSeries(&gSeries150, gSlot150X, gSlot150Y, SLOT150_COUNT, T150_W, T150_H, SERIES150_DELAY,
+               HIT_DELAY_150);
+    InitSeries(&gSeries200, gSlot200X, gSlot200Y, SLOT200_COUNT, T200_W, T200_H, SERIES200_DELAY,
+               HIT_DELAY_200);
+    InitSeries(&gSeries250, gSlot250X, gSlot250Y, SLOT250_COUNT, T250_W, T250_H, SERIES250_DELAY,
+               HIT_DELAY_250);
+    InitSeries(&gSeries300, gSlot300X, gSlot300Y, SLOT300_COUNT, T300_W, T300_H, SERIES300_DELAY,
+               HIT_DELAY_300);
 
     if (Bob_LoadRawAndMask(&gSeries050.bob, TARGET050_RAW, TARGET050_MASK, T050_W, T050_H, 5)) {
         gSeries050.loaded = TRUE;
@@ -397,27 +413,45 @@ void TargetsHandler_Draw(struct RastPort *rp) {
     DrawSeries(&gSeries050, rp);
 }
 
-BOOL TargetsHandler_CheckHit(WORD x, WORD y) {
+BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks) {
     if (!gReady) {
         return FALSE;
     }
 
     if (CheckSeriesHit(&gSeries050, x, y)) {
+        if (hitDelayTicks) {
+            *hitDelayTicks = gSeries050.hitDelayTicks;
+        }
         return TRUE;
     }
     if (CheckSeriesHit(&gSeries100, x, y)) {
+        if (hitDelayTicks) {
+            *hitDelayTicks = gSeries100.hitDelayTicks;
+        }
         return TRUE;
     }
     if (CheckSeriesHit(&gSeries150, x, y)) {
+        if (hitDelayTicks) {
+            *hitDelayTicks = gSeries150.hitDelayTicks;
+        }
         return TRUE;
     }
     if (CheckSeriesHit(&gSeries200, x, y)) {
+        if (hitDelayTicks) {
+            *hitDelayTicks = gSeries200.hitDelayTicks;
+        }
         return TRUE;
     }
     if (CheckSeriesHit(&gSeries250, x, y)) {
+        if (hitDelayTicks) {
+            *hitDelayTicks = gSeries250.hitDelayTicks;
+        }
         return TRUE;
     }
     if (CheckSeriesHit(&gSeries300, x, y)) {
+        if (hitDelayTicks) {
+            *hitDelayTicks = gSeries300.hitDelayTicks;
+        }
         return TRUE;
     }
 

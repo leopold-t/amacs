@@ -10,29 +10,48 @@
 
 extern VOID BeginIO(struct IORequest *);
 
-#define SHOT_PERIOD 161
-#define SHOT_VOLUME 64
-#define SHOT_CYCLES 1
-
 typedef struct Sample {
     BYTE *data;
     ULONG length;
 } Sample;
 
-static struct MsgPort *gAudioPort = NULL;
-static struct IOAudio *gAudioIO = NULL;
+typedef struct AudioVoice {
+    struct MsgPort *port;
+    struct IOAudio *io;
+    BOOL playing;
+    UBYTE channelMap[1];
+} AudioVoice;
+
+#define SOUND_11KHZ_PERIOD 321
+
+#define SHOT_VOLUME 64
+#define SHOT_CYCLES 1
+
+#define HIT_VOLUME 64
+#define HIT_CYCLES 1
+
+#define AUDIO_CH_SHOT 1
+#define AUDIO_CH_HIT 2
+
+static AudioVoice gShotVoice = {NULL, NULL, FALSE, {AUDIO_CH_SHOT}};
+static AudioVoice gHitVoice = {NULL, NULL, FALSE, {AUDIO_CH_HIT}};
 
 static Sample gShot = {NULL, 0};
+static Sample gHit = {NULL, 0};
 
 static BOOL gSoundInited = FALSE;
-static BOOL gShotPlaying = FALSE;
+static BOOL gHitPending = FALSE;
+static struct DateStamp gHitDueStamp;
 static SoundError gLastError = SOUND_OK;
-
-static UBYTE gChannelMap[] = {15};
 
 static void ResetState(void) {
     gSoundInited = FALSE;
-    gShotPlaying = FALSE;
+    gHitPending = FALSE;
+    gShotVoice.playing = FALSE;
+    gHitVoice.playing = FALSE;
+    gHitDueStamp.ds_Days = 0;
+    gHitDueStamp.ds_Minute = 0;
+    gHitDueStamp.ds_Tick = 0;
 }
 
 static void FreeSample(Sample *sample) {
@@ -45,46 +64,56 @@ static void FreeSample(Sample *sample) {
     sample->length = 0;
 }
 
-static void DeleteAudioIO(void) {
-    if (gAudioIO) {
-        DeleteIORequest((struct IORequest *)gAudioIO);
-        gAudioIO = NULL;
+static void DeleteVoiceIO(AudioVoice *voice) {
+    if (!voice) {
+        return;
     }
 
-    if (gAudioPort) {
-        while (GetMsg(gAudioPort)) {
+    if (voice->io) {
+        DeleteIORequest((struct IORequest *)voice->io);
+        voice->io = NULL;
+    }
+
+    if (voice->port) {
+        while (GetMsg(voice->port)) {
         }
-        DeleteMsgPort(gAudioPort);
-        gAudioPort = NULL;
-    }
-}
-
-static void CloseAudio(void) {
-    if (gAudioIO) {
-        CloseDevice((struct IORequest *)gAudioIO);
+        DeleteMsgPort(voice->port);
+        voice->port = NULL;
     }
 
-    DeleteAudioIO();
+    voice->playing = FALSE;
 }
 
-static void StopPlayback(void) {
-    if (!gAudioIO || !gShotPlaying) {
+static void CloseVoice(AudioVoice *voice) {
+    if (!voice) {
         return;
     }
 
-    AbortIO((struct IORequest *)gAudioIO);
-    WaitIO((struct IORequest *)gAudioIO);
-    gShotPlaying = FALSE;
+    if (voice->io) {
+        CloseDevice((struct IORequest *)voice->io);
+    }
+
+    DeleteVoiceIO(voice);
 }
 
-static void ReapPlayback(void) {
-    if (!gAudioIO || !gShotPlaying) {
+static void StopVoice(AudioVoice *voice) {
+    if (!voice || !voice->io || !voice->playing) {
         return;
     }
 
-    if (CheckIO((struct IORequest *)gAudioIO)) {
-        WaitIO((struct IORequest *)gAudioIO);
-        gShotPlaying = FALSE;
+    AbortIO((struct IORequest *)voice->io);
+    WaitIO((struct IORequest *)voice->io);
+    voice->playing = FALSE;
+}
+
+static void ReapVoice(AudioVoice *voice) {
+    if (!voice || !voice->io || !voice->playing) {
+        return;
+    }
+
+    if (CheckIO((struct IORequest *)voice->io)) {
+        WaitIO((struct IORequest *)voice->io);
+        voice->playing = FALSE;
     }
 }
 
@@ -157,6 +186,90 @@ static BOOL LoadSample(const char *path, Sample *sample) {
     return TRUE;
 }
 
+static BOOL InitVoice(AudioVoice *voice) {
+    if (!voice) {
+        gLastError = SOUND_ERR_IOREQ;
+        return FALSE;
+    }
+
+    voice->port = CreateMsgPort();
+    if (!voice->port) {
+        gLastError = SOUND_ERR_PORT;
+        return FALSE;
+    }
+
+    voice->io = (struct IOAudio *)CreateIORequest(voice->port, sizeof(struct IOAudio));
+    if (!voice->io) {
+        gLastError = SOUND_ERR_IOREQ;
+        DeleteVoiceIO(voice);
+        return FALSE;
+    }
+
+    voice->io->ioa_Request.io_Message.mn_Node.ln_Pri = 0;
+    voice->io->ioa_Request.io_Command = ADCMD_ALLOCATE;
+    voice->io->ioa_Request.io_Flags = ADIOF_NOWAIT;
+    voice->io->ioa_Data = voice->channelMap;
+    voice->io->ioa_Length = sizeof(voice->channelMap);
+    voice->io->ioa_AllocKey = 0;
+
+    if (OpenDevice(AUDIONAME, 0L, (struct IORequest *)voice->io, 0L) != 0) {
+        gLastError = SOUND_ERR_OPENDEVICE;
+        DeleteVoiceIO(voice);
+        return FALSE;
+    }
+
+    voice->playing = FALSE;
+    return TRUE;
+}
+
+static void StartVoiceSample(AudioVoice *voice, const Sample *sample, UWORD period, UBYTE volume,
+                             UBYTE cycles) {
+    if (!gSoundInited || !voice || !voice->io || !sample || !sample->data || sample->length == 0) {
+        return;
+    }
+
+    voice->io->ioa_Request.io_Command = CMD_WRITE;
+    voice->io->ioa_Request.io_Flags = ADIOF_PERVOL;
+    voice->io->ioa_Data = (UBYTE *)sample->data;
+    voice->io->ioa_Length = sample->length;
+    voice->io->ioa_Period = period;
+    voice->io->ioa_Volume = volume;
+    voice->io->ioa_Cycles = cycles;
+
+    BeginIO((struct IORequest *)voice->io);
+
+    if (voice->io->ioa_Request.io_Flags & IOF_QUICK) {
+        voice->playing = FALSE;
+        return;
+    }
+
+    voice->playing = TRUE;
+}
+
+static void AddTicksToDateStamp(struct DateStamp *stamp, UWORD ticks) {
+    LONG totalTicks;
+
+    if (!stamp) {
+        return;
+    }
+
+    totalTicks = (LONG)stamp->ds_Tick + (LONG)ticks;
+    stamp->ds_Minute += totalTicks / 3000;
+    stamp->ds_Tick = totalTicks % 3000;
+}
+
+static LONG CompareDateStamp(const struct DateStamp *a, const struct DateStamp *b) {
+    if (a->ds_Days != b->ds_Days) {
+        return (LONG)a->ds_Days - (LONG)b->ds_Days;
+    }
+
+    if (a->ds_Minute != b->ds_Minute) {
+        return (LONG)a->ds_Minute - (LONG)b->ds_Minute;
+    }
+
+    return (LONG)a->ds_Tick - (LONG)b->ds_Tick;
+}
+
 SoundError Sound_GetLastError(void) {
     return gLastError;
 }
@@ -174,77 +287,96 @@ BOOL Sound_Init(void) {
         return FALSE;
     }
 
-    gAudioPort = CreateMsgPort();
-    if (!gAudioPort) {
-        gLastError = SOUND_ERR_PORT;
+    if (!LoadSample(TARGET_HIT_FILE, &gHit)) {
         FreeSample(&gShot);
         return FALSE;
     }
 
-    gAudioIO = (struct IOAudio *)CreateIORequest(gAudioPort, sizeof(struct IOAudio));
-    if (!gAudioIO) {
-        gLastError = SOUND_ERR_IOREQ;
-        DeleteAudioIO();
+    if (!InitVoice(&gShotVoice)) {
         FreeSample(&gShot);
+        FreeSample(&gHit);
         return FALSE;
     }
 
-    gAudioIO->ioa_Request.io_Message.mn_Node.ln_Pri = 0;
-    gAudioIO->ioa_Request.io_Command = ADCMD_ALLOCATE;
-    gAudioIO->ioa_Request.io_Flags = ADIOF_NOWAIT;
-    gAudioIO->ioa_Data = gChannelMap;
-    gAudioIO->ioa_Length = sizeof(gChannelMap);
-    gAudioIO->ioa_AllocKey = 0;
-
-    if (OpenDevice(AUDIONAME, 0L, (struct IORequest *)gAudioIO, 0L) != 0) {
-        gLastError = SOUND_ERR_OPENDEVICE;
-        DeleteAudioIO();
+    if (!InitVoice(&gHitVoice)) {
+        CloseVoice(&gShotVoice);
         FreeSample(&gShot);
+        FreeSample(&gHit);
         return FALSE;
     }
 
     gSoundInited = TRUE;
-    gShotPlaying = FALSE;
     gLastError = SOUND_OK;
     return TRUE;
 }
 
 void Sound_Shutdown(void) {
-    StopPlayback();
-    CloseAudio();
+    StopVoice(&gShotVoice);
+    StopVoice(&gHitVoice);
+    CloseVoice(&gShotVoice);
+    CloseVoice(&gHitVoice);
     FreeSample(&gShot);
+    FreeSample(&gHit);
     ResetState();
     gLastError = SOUND_OK;
 }
 
 void Sound_Update(void) {
-    ReapPlayback();
+    struct DateStamp now;
+
+    ReapVoice(&gShotVoice);
+    ReapVoice(&gHitVoice);
+
+    if (!gHitPending) {
+        return;
+    }
+
+    DateStamp(&now);
+    if (CompareDateStamp(&now, &gHitDueStamp) < 0) {
+        return;
+    }
+
+    if (gHitVoice.playing) {
+        StopVoice(&gHitVoice);
+    }
+
+    gHitPending = FALSE;
+    StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, HIT_VOLUME, HIT_CYCLES);
 }
 
 void Sound_PlayShot(void) {
-    if (!gSoundInited || !gAudioIO || !gShot.data || gShot.length == 0) {
+    if (!gSoundInited || !gShotVoice.io || !gShot.data || gShot.length == 0) {
         return;
     }
 
-    ReapPlayback();
-    if (gShotPlaying) {
+    ReapVoice(&gShotVoice);
+    if (gShotVoice.playing) {
         return;
     }
 
-    gAudioIO->ioa_Request.io_Command = CMD_WRITE;
-    gAudioIO->ioa_Request.io_Flags = ADIOF_PERVOL;
-    gAudioIO->ioa_Data = (UBYTE *)gShot.data;
-    gAudioIO->ioa_Length = gShot.length;
-    gAudioIO->ioa_Period = SHOT_PERIOD;
-    gAudioIO->ioa_Volume = SHOT_VOLUME;
-    gAudioIO->ioa_Cycles = SHOT_CYCLES;
+    StartVoiceSample(&gShotVoice, &gShot, SOUND_11KHZ_PERIOD, SHOT_VOLUME, SHOT_CYCLES);
+}
 
-    BeginIO((struct IORequest *)gAudioIO);
+void Sound_PlayHit(UWORD delayTicks) {
+    struct DateStamp now;
 
-    if (gAudioIO->ioa_Request.io_Flags & IOF_QUICK) {
-        gShotPlaying = FALSE;
+    if (!gSoundInited || !gHitVoice.io || !gHit.data || gHit.length == 0) {
         return;
     }
 
-    gShotPlaying = TRUE;
+    ReapVoice(&gHitVoice);
+
+    if (gHitVoice.playing) {
+        StopVoice(&gHitVoice);
+    }
+
+    DateStamp(&now);
+    gHitDueStamp = now;
+    AddTicksToDateStamp(&gHitDueStamp, delayTicks);
+    gHitPending = TRUE;
+
+    if (delayTicks == 0) {
+        gHitPending = FALSE;
+        StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, HIT_VOLUME, HIT_CYCLES);
+    }
 }

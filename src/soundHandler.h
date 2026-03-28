@@ -18,6 +18,7 @@ BOOL Sound_Init(void);
 void Sound_Shutdown(void);
 void Sound_Update(void);
 void Sound_PlayShot(void);
+void Sound_PlayHit(UWORD delayTicks);
 
 SoundError Sound_GetLastError(void);
 
