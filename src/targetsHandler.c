@@ -95,6 +95,8 @@ static const WORD gSlot300Y[SLOT300_COUNT] = {119, 119, 119, 119, 119, 119, 119,
 typedef struct TargetSeries {
     AmacsBob bob;
     BOOL loaded;
+    BOOL visible;
+    BOOL hit;
     const WORD *slotX;
     const WORD *slotY;
     WORD slotCount;
@@ -144,12 +146,16 @@ static void StartSlot(TargetSeries *s, WORD slot) {
     }
 
     s->activeSlot = slot;
+    s->visible = TRUE;
+    s->hit = FALSE;
     DateStamp(&s->startStamp);
 }
 
 static void InitSeries(TargetSeries *s, const WORD *x, const WORD *y, WORD count, WORD w, WORD h,
                        ULONG delay, UWORD hitDelayTicks) {
     s->loaded = FALSE;
+    s->visible = FALSE;
+    s->hit = FALSE;
     s->slotX = x;
     s->slotY = y;
     s->slotCount = count;
@@ -200,7 +206,7 @@ static BOOL GetSeriesVisibleRect(TargetSeries *s, WORD *outX, WORD *outY, WORD *
     WORD dstY;
     WORD visibleH;
 
-    if (!s->loaded) {
+    if (!s->loaded || !s->visible || s->hit) {
         return FALSE;
     }
 
@@ -270,7 +276,13 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y) {
     localX = (WORD)(x - left);
     localY = (WORD)(y - top);
 
-    return IsMaskBitSet(s->bob.mask, s->width, localX, localY);
+    if (!IsMaskBitSet(s->bob.mask, s->width, localX, localY)) {
+        return FALSE;
+    }
+
+    s->hit = TRUE;
+    s->visible = FALSE;
+    return TRUE;
 }
 
 static void TickSeries(TargetSeries *s) {

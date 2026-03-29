@@ -2,6 +2,7 @@
 
 #include <dos/dos.h>
 #include <exec/types.h>
+#include <graphics/text.h>
 #include <intuition/intuition.h>
 #include <proto/dos.h>
 #include <proto/graphics.h>
@@ -69,6 +70,63 @@ extern BOOL Input_Down(void);
 #define HIT_FLASH_TICKS 3
 #define HIT_FLASH_COLOR 23
 #define HIT_FLASH_THICKNESS 3
+
+#define HUD_TEXT_X 11
+#define HUD_TEXT_Y 11
+#define HUD_TEXT_PEN 25
+#define HUD_FONT_NAME "topaz.font"
+#define HUD_FONT_SIZE 9
+
+static const struct TextAttr gHudFontAttr = {HUD_FONT_NAME, HUD_FONT_SIZE, FS_NORMAL, FPF_ROMFONT};
+
+static UWORD gHitCount = 0;
+
+static void ResetHitCounter(void) {
+    gHitCount = 0;
+}
+
+static void RegisterHit(void) {
+    if (gHitCount < 65535) {
+        gHitCount++;
+    }
+}
+
+static UWORD GetHitCount(void) {
+    return gHitCount;
+}
+
+static UWORD BuildHitCounterText(char *buf, UWORD value) {
+    char digits[5];
+    UWORD digitCount = 0;
+    UWORD pos = 0;
+    UWORD i;
+    UWORD temp = value;
+
+    buf[pos++] = 'H';
+    buf[pos++] = 'I';
+    buf[pos++] = 'T';
+    buf[pos++] = 'S';
+    buf[pos++] = ':';
+    buf[pos++] = ' ';
+
+    if (temp == 0) {
+        buf[pos++] = '0';
+        buf[pos] = '\0';
+        return pos;
+    }
+
+    while (temp > 0 && digitCount < 5) {
+        digits[digitCount++] = (char)('0' + (temp % 10));
+        temp /= 10;
+    }
+
+    for (i = 0; i < digitCount; i++) {
+        buf[pos++] = digits[digitCount - 1 - i];
+    }
+
+    buf[pos] = '\0';
+    return pos;
+}
 
 static void DebugBeepError(SoundError err) {
     UWORD count = 0;
@@ -256,6 +314,26 @@ static void DrawHitFlash(struct RastPort *rp) {
     RectFill(rp, SCR_W - HIT_FLASH_THICKNESS, 0, SCR_W - 1, SCR_H - 1);
 }
 
+static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
+    char text[16];
+    UWORD len;
+
+    if (!rp) {
+        return;
+    }
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    SetDrMd(rp, JAM1);
+    SetAPen(rp, HUD_TEXT_PEN);
+
+    len = BuildHitCounterText(text, GetHitCount());
+    Move(rp, HUD_TEXT_X, HUD_TEXT_Y + rp->TxBaseline);
+    Text(rp, text, len);
+}
+
 static LONG ClampLeadFP(LONG v) {
     if (v > LEAD_MAX_FP) {
         return LEAD_MAX_FP;
@@ -271,6 +349,7 @@ static LONG ClampLeadFP(LONG v) {
 void RunRangeWithFrontSight(BOOL useDBuf) {
     AmacsBob frontSight;
     AmacsBob rearSight;
+    struct TextFont *hudFont = NULL;
     WORD ringX = (SCR_W - REARSIGHT_W) / 2;
     WORD ringY = (SCR_H - REARSIGHT_H) / 2;
     LONG ax = 0;
@@ -316,6 +395,9 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         return;
     }
 
+    hudFont = OpenFont((struct TextAttr *)&gHudFontAttr);
+    ResetHitCounter();
+
     TargetsHandler_Init();
 
     if (!Sound_Init()) {
@@ -326,6 +408,9 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     if (!tempMaskPlane) {
         Sound_Shutdown();
         TargetsHandler_Shutdown();
+        if (hudFont) {
+            CloseFont(hudFont);
+        }
         Bob_Free(&frontSight);
         Bob_Free(&rearSight);
         return;
@@ -359,6 +444,9 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 tempMaskPlane = NULL;
                 Sound_Shutdown();
                 TargetsHandler_Shutdown();
+                if (hudFont) {
+                    CloseFont(hudFont);
+                }
                 Bob_Free(&frontSight);
                 Bob_Free(&rearSight);
                 return;
@@ -425,6 +513,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
                 if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks)) {
                     hitFlashTicks = HIT_FLASH_TICKS;
+                    RegisterHit();
                     Sound_PlayHit(hitDelayTicks);
                 }
             }
@@ -641,6 +730,8 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 hitFlashTicks--;
             }
 
+            DrawHitCounter(rp, hudFont);
+
             if (useDBuf) {
                 Gfx_SwapBuffers();
             }
@@ -665,6 +756,10 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     if (tempMaskPlane) {
         FreeRaster(tempMaskPlane, FRONTSIGHT_W, FRONTSIGHT_H);
         tempMaskPlane = NULL;
+    }
+
+    if (hudFont) {
+        CloseFont(hudFont);
     }
 
     Bob_Free(&frontSight);
