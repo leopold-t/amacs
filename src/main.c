@@ -8,7 +8,7 @@
 #include "bob.h"
 #include "gfx.h"
 #include "input.h"
-#include "sightHandler.h"
+#include "levelManager.h"
 
 /* If your input.h doesn't expose directions yet, keep these externs here.
    They must exist in input.c (or you'll get linker errors). */
@@ -173,7 +173,10 @@ int main(void) {
         return RETURN_FAIL;
     }
 
+    LevelManager_Init();
+
     if (!Gfx_OpenBlackScreen(BLK_WIDTH, BLK_HEIGHT, BLK_DEPTH)) {
+        LevelManager_Shutdown();
         Input_Shutdown();
         return RETURN_FAIL;
     }
@@ -296,7 +299,7 @@ int main(void) {
                 }
             }
 
-            RunRangeWithFrontSight(useDBuf);
+            LevelManager_RunCurrent(useDBuf);
 
             goto exit_ok;
         }
@@ -338,12 +341,14 @@ int main(void) {
 fail:
     Gfx_CloseScreenAndWindow();
     Gfx_CloseBlackScreen();
+    LevelManager_Shutdown();
     Input_Shutdown();
     return RETURN_FAIL;
 
 exit_ok:
     Gfx_CloseScreenAndWindow();
     Gfx_CloseBlackScreen();
+    LevelManager_Shutdown();
     Input_Shutdown();
     return RETURN_OK;
 }

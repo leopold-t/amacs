@@ -118,6 +118,25 @@ static TargetSeries gSeries200;
 static TargetSeries gSeries250;
 static TargetSeries gSeries300;
 
+static TargetSeries *GetSeriesByDistance(TargetDistance distance) {
+    switch (distance) {
+        case TARGET_DISTANCE_050:
+            return &gSeries050;
+        case TARGET_DISTANCE_100:
+            return &gSeries100;
+        case TARGET_DISTANCE_150:
+            return &gSeries150;
+        case TARGET_DISTANCE_200:
+            return &gSeries200;
+        case TARGET_DISTANCE_250:
+            return &gSeries250;
+        case TARGET_DISTANCE_300:
+            return &gSeries300;
+        default:
+            return NULL;
+    }
+}
+
 static ULONG ElapsedTicks(const struct DateStamp *start) {
     struct DateStamp now;
     LONG dd;
@@ -395,8 +414,95 @@ void TargetsHandler_Shutdown(void) {
     gReady = FALSE;
 }
 
+void TargetsHandler_Reset(void) {
+    if (!gReady) {
+        return;
+    }
+
+    StartSlot(&gSeries050, 0);
+    gSeries050.startDelayTicks = SERIES050_DELAY;
+    StartSlot(&gSeries100, 0);
+    gSeries100.startDelayTicks = SERIES100_DELAY;
+    StartSlot(&gSeries150, 0);
+    gSeries150.startDelayTicks = SERIES150_DELAY;
+    StartSlot(&gSeries200, 0);
+    gSeries200.startDelayTicks = SERIES200_DELAY;
+    StartSlot(&gSeries250, 0);
+    gSeries250.startDelayTicks = SERIES250_DELAY;
+    StartSlot(&gSeries300, 0);
+    gSeries300.startDelayTicks = SERIES300_DELAY;
+}
+
 void TargetsHandler_ToggleSlot(UWORD slot) {
     (void)slot;
+}
+
+UWORD TargetsHandler_GetSlotCount(TargetDistance distance) {
+    TargetSeries *series = GetSeriesByDistance(distance);
+
+    if (!series) {
+        return 0;
+    }
+
+    return (UWORD)series->slotCount;
+}
+
+BOOL TargetsHandler_SelectSlot(TargetDistance distance, UWORD slotIndex) {
+    TargetSeries *series = GetSeriesByDistance(distance);
+
+    if (!gReady || !series || !series->loaded) {
+        return FALSE;
+    }
+
+    StartSlot(series, (WORD)slotIndex);
+    series->startDelayTicks = 0;
+    return TRUE;
+}
+
+BOOL TargetsHandler_GetTargetInfo(TargetDistance distance, TargetInfo *outInfo) {
+    TargetSeries *series = GetSeriesByDistance(distance);
+    WORD x = 0;
+    WORD y = 0;
+    WORD w = 0;
+    WORD h = 0;
+
+    if (!outInfo) {
+        return FALSE;
+    }
+
+    outInfo->loaded = FALSE;
+    outInfo->visible = FALSE;
+    outInfo->hit = FALSE;
+    outInfo->distance = (UWORD)distance;
+    outInfo->slotIndex = 0;
+    outInfo->slotCount = 0;
+    outInfo->x = 0;
+    outInfo->y = 0;
+    outInfo->width = 0;
+    outInfo->height = 0;
+    outInfo->hitDelayTicks = 0;
+
+    if (!series) {
+        return FALSE;
+    }
+
+    outInfo->loaded = series->loaded;
+    outInfo->visible = series->visible;
+    outInfo->hit = series->hit;
+    outInfo->slotIndex = (UWORD)series->activeSlot;
+    outInfo->slotCount = (UWORD)series->slotCount;
+    outInfo->width = series->width;
+    outInfo->height = series->height;
+    outInfo->hitDelayTicks = series->hitDelayTicks;
+
+    if (GetSeriesVisibleRect(series, &x, &y, &w, &h)) {
+        outInfo->x = x;
+        outInfo->y = y;
+        outInfo->width = w;
+        outInfo->height = h;
+    }
+
+    return TRUE;
 }
 
 void TargetsHandler_Tick(void) {
