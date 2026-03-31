@@ -539,7 +539,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 shotTaken = TRUE;
 
                 aimX = (WORD)(ringX - RING_OFFSET_X + FRONT_AIM_X);
-                aimY = (WORD)(ringY - RING_OFFSET_Y - 1 + FRONT_AIM_Y);
+                aimY = (WORD)(ringY - RING_OFFSET_Y + FRONT_AIM_Y);
 
                 if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks)) {
                     RegisterHit();
@@ -722,7 +722,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             WORD frontRecoilY = RecoilOffsetY(&recoilActive, &recoilTick);
             WORD rearRecoilY = RearRecoilOffsetY(frontRecoilY, rearRecoilHistory);
             WORD frontX = (WORD)(ringX - RING_OFFSET_X + (leadX / 256));
-            WORD frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) - 1 + frontRecoilY);
+            WORD frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) + frontRecoilY);
             struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
 
             if (haveBg) {
