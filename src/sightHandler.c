@@ -67,12 +67,14 @@ extern BOOL Input_Down(void);
 #define FRONT_AIM_X 41
 #define FRONT_AIM_Y 10
 
-#define HIT_FLASH_TICKS 3
-#define HIT_FLASH_COLOR 23
-#define HIT_FLASH_THICKNESS 3
+#define RESULT_FLASH_TICKS 3
+#define HIT_FLASH_COLOR 11
+#define MISS_FLASH_COLOR 20
+#define RESULT_FLASH_THICKNESS 3
 
 #define HUD_TEXT_X 11
 #define HUD_TEXT_Y 11
+#define HUD_RESULT_Y 24
 #define HUD_TEXT_PEN 25
 #define HUD_FONT_NAME "topaz.font"
 #define HUD_FONT_SIZE 9
@@ -302,16 +304,16 @@ static WORD RearRecoilOffsetY(WORD frontRecoilY, WORD *history) {
     return delayed;
 }
 
-static void DrawHitFlash(struct RastPort *rp) {
+static void DrawResultFlash(struct RastPort *rp, UWORD colorIndex) {
     if (!rp) {
         return;
     }
 
-    SetAPen(rp, HIT_FLASH_COLOR);
-    RectFill(rp, 0, 0, SCR_W - 1, HIT_FLASH_THICKNESS - 1);
-    RectFill(rp, 0, SCR_H - HIT_FLASH_THICKNESS, SCR_W - 1, SCR_H - 1);
-    RectFill(rp, 0, 0, HIT_FLASH_THICKNESS - 1, SCR_H - 1);
-    RectFill(rp, SCR_W - HIT_FLASH_THICKNESS, 0, SCR_W - 1, SCR_H - 1);
+    SetAPen(rp, colorIndex);
+    RectFill(rp, 0, 0, SCR_W - 1, RESULT_FLASH_THICKNESS - 1);
+    RectFill(rp, 0, SCR_H - RESULT_FLASH_THICKNESS, SCR_W - 1, SCR_H - 1);
+    RectFill(rp, 0, 0, RESULT_FLASH_THICKNESS - 1, SCR_H - 1);
+    RectFill(rp, SCR_W - RESULT_FLASH_THICKNESS, 0, SCR_W - 1, SCR_H - 1);
 }
 
 static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
@@ -332,6 +334,30 @@ static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
     len = BuildHitCounterText(text, GetHitCount());
     Move(rp, HUD_TEXT_X, HUD_TEXT_Y + rp->TxBaseline);
     Text(rp, text, len);
+}
+
+static void DrawLastShotResult(struct RastPort *rp, struct TextFont *font, BOOL shotTaken,
+                               BOOL lastShotHit) {
+    static const char gHitText[] = "HIT";
+    static const char gMissText[] = "MISS";
+    const char *text;
+    UWORD len;
+
+    if (!rp || !shotTaken) {
+        return;
+    }
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    SetDrMd(rp, JAM1);
+    SetAPen(rp, HUD_TEXT_PEN);
+
+    text = lastShotHit ? gHitText : gMissText;
+    len = lastShotHit ? 3 : 4;
+    Move(rp, HUD_TEXT_X, HUD_RESULT_Y + rp->TxBaseline);
+    Text(rp, (STRPTR)text, len);
 }
 
 static LONG ClampLeadFP(LONG v) {
@@ -380,9 +406,12 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     BOOL recoilActive = FALSE;
     UWORD recoilTick = 0;
     WORD rearRecoilHistory[RECOIL_REAR_DELAY_TICKS] = {0};
-    UWORD hitFlashTicks = 0;
+    UWORD resultFlashTicks = 0;
+    UWORD resultFlashColor = HIT_FLASH_COLOR;
     struct DateStamp lastShotStamp;
     BOOL paused = FALSE;
+    BOOL shotTaken = FALSE;
+    BOOL lastShotHit = FALSE;
 
     if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, FRONTSIGHT_W,
                             FRONTSIGHT_H, 5)) {
@@ -507,15 +536,22 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 shotNeedsRelease = TRUE;
                 recoilActive = TRUE;
                 recoilTick = 0;
+                shotTaken = TRUE;
 
                 aimX = (WORD)(ringX - RING_OFFSET_X + FRONT_AIM_X);
                 aimY = (WORD)(ringY - RING_OFFSET_Y - 1 + FRONT_AIM_Y);
 
                 if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks)) {
-                    hitFlashTicks = HIT_FLASH_TICKS;
                     RegisterHit();
                     Sound_PlayHit(hitDelayTicks);
+                    lastShotHit = TRUE;
+                    resultFlashColor = HIT_FLASH_COLOR;
+                } else {
+                    lastShotHit = FALSE;
+                    resultFlashColor = MISS_FLASH_COLOR;
                 }
+
+                resultFlashTicks = RESULT_FLASH_TICKS;
             }
         }
 
@@ -725,12 +761,13 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             DrawMaskedClipped(&rearSight.bm, rearSight.mask, rp, ringX, (WORD)(ringY + rearRecoilY),
                               REARSIGHT_W, REARSIGHT_H);
 
-            if (hitFlashTicks > 0) {
-                DrawHitFlash(rp);
-                hitFlashTicks--;
+            if (resultFlashTicks > 0) {
+                DrawResultFlash(rp, resultFlashColor);
+                resultFlashTicks--;
             }
 
             DrawHitCounter(rp, hudFont);
+            DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
 
             if (useDBuf) {
                 Gfx_SwapBuffers();
