@@ -13,6 +13,7 @@
 #include "input.h"
 #include "soundHandler.h"
 #include "targetsHandler.h"
+#include "targetScoring.h"
 
 extern BOOL Input_Left(void);
 extern BOOL Input_Right(void);
@@ -68,13 +69,18 @@ extern BOOL Input_Down(void);
 #define FRONT_AIM_Y 10
 
 #define RESULT_FLASH_TICKS 3
-#define HIT_FLASH_COLOR 11
-#define MISS_FLASH_COLOR 20
+#define SCORE_FLASH_EXCELLENT_COLOR 8
+#define SCORE_FLASH_GOOD_COLOR 11
+#define SCORE_FLASH_AVERAGE_COLOR 23
+#define SCORE_FLASH_BELOW_AVG_COLOR 17
+#define SCORE_FLASH_POOR_COLOR 20
+#define SCORE_FLASH_MISS_COLOR 24
 #define RESULT_FLASH_THICKNESS 3
 
 #define HUD_TEXT_X 11
 #define HUD_TEXT_Y 11
 #define HUD_RESULT_Y 24
+#define HUD_QUALITY_Y 37
 #define HUD_TEXT_PEN 25
 #define HUD_FONT_NAME "topaz.font"
 #define HUD_FONT_SIZE 9
@@ -360,6 +366,88 @@ static void DrawLastShotResult(struct RastPort *rp, struct TextFont *font, BOOL 
     Text(rp, (STRPTR)text, len);
 }
 
+
+static const char *GetScoreText(UBYTE score) {
+    switch (score) {
+        case SCORE_EXCELLENT:
+            return "EXCELLENT";
+        case SCORE_GOOD:
+            return "GOOD";
+        case SCORE_AVERAGE:
+            return "AVERAGE";
+        case SCORE_BELOW_AVG:
+            return "BELOW AVG";
+        case SCORE_POOR:
+            return "POOR";
+        default:
+            return NULL;
+    }
+}
+
+static UWORD GetScoreTextPen(UBYTE score) {
+    switch (score) {
+        case SCORE_EXCELLENT:
+            return SCORE_FLASH_EXCELLENT_COLOR;
+        case SCORE_GOOD:
+            return SCORE_FLASH_GOOD_COLOR;
+        case SCORE_AVERAGE:
+            return SCORE_FLASH_AVERAGE_COLOR;
+        case SCORE_BELOW_AVG:
+            return SCORE_FLASH_BELOW_AVG_COLOR;
+        case SCORE_POOR:
+            return SCORE_FLASH_POOR_COLOR;
+        default:
+            return HUD_TEXT_PEN;
+    }
+}
+
+static UWORD GetFlashColorForScore(UBYTE score) {
+    switch (score) {
+        case SCORE_EXCELLENT:
+            return SCORE_FLASH_EXCELLENT_COLOR;
+        case SCORE_GOOD:
+            return SCORE_FLASH_GOOD_COLOR;
+        case SCORE_AVERAGE:
+            return SCORE_FLASH_AVERAGE_COLOR;
+        case SCORE_BELOW_AVG:
+            return SCORE_FLASH_BELOW_AVG_COLOR;
+        case SCORE_POOR:
+            return SCORE_FLASH_POOR_COLOR;
+        case SCORE_MISS:
+        default:
+            return SCORE_FLASH_MISS_COLOR;
+    }
+}
+
+
+static void DrawShotQuality(struct RastPort *rp, struct TextFont *font, BOOL shotTaken,
+                            BOOL lastShotHit, UBYTE lastShotScore) {
+    const char *text;
+    UWORD len = 0;
+
+    if (!rp || !shotTaken || !lastShotHit) {
+        return;
+    }
+
+    text = GetScoreText(lastShotScore);
+    if (!text) {
+        return;
+    }
+
+    while (text[len] != '\0') {
+        len++;
+    }
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    SetDrMd(rp, JAM1);
+    SetAPen(rp, GetScoreTextPen(lastShotScore));
+    Move(rp, HUD_TEXT_X, HUD_QUALITY_Y + rp->TxBaseline);
+    Text(rp, (STRPTR)text, len);
+}
+
 static LONG ClampLeadFP(LONG v) {
     if (v > LEAD_MAX_FP) {
         return LEAD_MAX_FP;
@@ -407,11 +495,12 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     UWORD recoilTick = 0;
     WORD rearRecoilHistory[RECOIL_REAR_DELAY_TICKS] = {0};
     UWORD resultFlashTicks = 0;
-    UWORD resultFlashColor = HIT_FLASH_COLOR;
+    UWORD resultFlashColor = SCORE_FLASH_MISS_COLOR;
     struct DateStamp lastShotStamp;
     BOOL paused = FALSE;
     BOOL shotTaken = FALSE;
     BOOL lastShotHit = FALSE;
+    UBYTE lastShotScore = SCORE_MISS;
 
     if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, FRONTSIGHT_W,
                             FRONTSIGHT_H, 5)) {
@@ -530,6 +619,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 WORD aimX;
                 WORD aimY;
                 UWORD hitDelayTicks;
+                UBYTE hitScore = SCORE_MISS;
 
                 Sound_PlayShot();
                 MarkShotFired(&shotCooldownActive, &lastShotStamp);
@@ -541,14 +631,16 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 aimX = (WORD)(ringX - RING_OFFSET_X + FRONT_AIM_X);
                 aimY = (WORD)(ringY - RING_OFFSET_Y + FRONT_AIM_Y);
 
-                if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks)) {
+                if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks, &hitScore)) {
                     RegisterHit();
                     Sound_PlayHit(hitDelayTicks);
                     lastShotHit = TRUE;
-                    resultFlashColor = HIT_FLASH_COLOR;
+                    lastShotScore = hitScore;
+                    resultFlashColor = GetFlashColorForScore(hitScore);
                 } else {
                     lastShotHit = FALSE;
-                    resultFlashColor = MISS_FLASH_COLOR;
+                    lastShotScore = SCORE_MISS;
+                    resultFlashColor = SCORE_FLASH_MISS_COLOR;
                 }
 
                 resultFlashTicks = RESULT_FLASH_TICKS;
@@ -768,6 +860,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
             DrawHitCounter(rp, hudFont);
             DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
+            DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
 
             if (useDBuf) {
                 Gfx_SwapBuffers();

@@ -33,7 +33,7 @@ void TargetsHandler_Reset(void);
 void TargetsHandler_ToggleSlot(UWORD slot);
 void TargetsHandler_Tick(void);
 void TargetsHandler_Draw(struct RastPort *rp);
-BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks);
+BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks, UBYTE *hitScore);
 UWORD TargetsHandler_GetSlotCount(TargetDistance distance);
 BOOL TargetsHandler_SelectSlot(TargetDistance distance, UWORD slotIndex);
 BOOL TargetsHandler_GetTargetInfo(TargetDistance distance, TargetInfo *outInfo);

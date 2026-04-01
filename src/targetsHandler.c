@@ -8,6 +8,7 @@
 
 #include "bob.h"
 #include "gfx.h"
+#include "targetScoring.h"
 
 #define TARGET050_RAW "gfx/Target050.raw"
 #define TARGET050_MASK "gfx/Target050.mask"
@@ -276,7 +277,30 @@ static BOOL IsMaskBitSet(PLANEPTR mask, WORD width, WORD x, WORD y) {
     return (maskWord & bitMask) ? TRUE : FALSE;
 }
 
-static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y) {
+static UWORD GetDistanceForSeries(const TargetSeries *s) {
+    if (s == &gSeries050) {
+        return 50;
+    }
+    if (s == &gSeries100) {
+        return 100;
+    }
+    if (s == &gSeries150) {
+        return 150;
+    }
+    if (s == &gSeries200) {
+        return 200;
+    }
+    if (s == &gSeries250) {
+        return 250;
+    }
+    if (s == &gSeries300) {
+        return 300;
+    }
+
+    return 0;
+}
+
+static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, UBYTE *hitScore) {
     WORD left;
     WORD top;
     WORD width;
@@ -297,6 +321,10 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y) {
 
     if (!IsMaskBitSet(s->bob.mask, s->width, localX, localY)) {
         return FALSE;
+    }
+
+    if (hitScore) {
+        *hitScore = TargetScoring_GetScore((UWORD)GetDistanceForSeries(s), localX, localY);
     }
 
     s->hit = TRUE;
@@ -531,42 +559,42 @@ void TargetsHandler_Draw(struct RastPort *rp) {
     DrawSeries(&gSeries050, rp);
 }
 
-BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks) {
+BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks, UBYTE *hitScore) {
     if (!gReady) {
         return FALSE;
     }
 
-    if (CheckSeriesHit(&gSeries050, x, y)) {
+    if (CheckSeriesHit(&gSeries050, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries050.hitDelayTicks;
         }
         return TRUE;
     }
-    if (CheckSeriesHit(&gSeries100, x, y)) {
+    if (CheckSeriesHit(&gSeries100, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries100.hitDelayTicks;
         }
         return TRUE;
     }
-    if (CheckSeriesHit(&gSeries150, x, y)) {
+    if (CheckSeriesHit(&gSeries150, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries150.hitDelayTicks;
         }
         return TRUE;
     }
-    if (CheckSeriesHit(&gSeries200, x, y)) {
+    if (CheckSeriesHit(&gSeries200, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries200.hitDelayTicks;
         }
         return TRUE;
     }
-    if (CheckSeriesHit(&gSeries250, x, y)) {
+    if (CheckSeriesHit(&gSeries250, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries250.hitDelayTicks;
         }
         return TRUE;
     }
-    if (CheckSeriesHit(&gSeries300, x, y)) {
+    if (CheckSeriesHit(&gSeries300, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries300.hitDelayTicks;
         }
