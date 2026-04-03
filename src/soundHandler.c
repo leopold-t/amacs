@@ -41,17 +41,23 @@ static Sample gHit = {NULL, 0};
 
 static BOOL gSoundInited = FALSE;
 static BOOL gHitPending = FALSE;
+static BOOL gSoundPaused = FALSE;
 static struct DateStamp gHitDueStamp;
+static struct DateStamp gPauseStamp;
 static SoundError gLastError = SOUND_OK;
 
 static void ResetState(void) {
     gSoundInited = FALSE;
     gHitPending = FALSE;
+    gSoundPaused = FALSE;
     gShotVoice.playing = FALSE;
     gHitVoice.playing = FALSE;
     gHitDueStamp.ds_Days = 0;
     gHitDueStamp.ds_Minute = 0;
     gHitDueStamp.ds_Tick = 0;
+    gPauseStamp.ds_Days = 0;
+    gPauseStamp.ds_Minute = 0;
+    gPauseStamp.ds_Tick = 0;
 }
 
 static void FreeSample(Sample *sample) {
@@ -270,6 +276,30 @@ static LONG CompareDateStamp(const struct DateStamp *a, const struct DateStamp *
     return (LONG)a->ds_Tick - (LONG)b->ds_Tick;
 }
 
+static void AddDateStampDelta(struct DateStamp *stamp, const struct DateStamp *delta) {
+    LONG days;
+    LONG minutes;
+    LONG ticks;
+
+    if (!stamp || !delta) {
+        return;
+    }
+
+    days = (LONG)stamp->ds_Days + (LONG)delta->ds_Days;
+    minutes = (LONG)stamp->ds_Minute + (LONG)delta->ds_Minute;
+    ticks = (LONG)stamp->ds_Tick + (LONG)delta->ds_Tick;
+
+    minutes += ticks / 3000;
+    ticks %= 3000;
+
+    days += minutes / (24L * 60L);
+    minutes %= (24L * 60L);
+
+    stamp->ds_Days = days;
+    stamp->ds_Minute = minutes;
+    stamp->ds_Tick = ticks;
+}
+
 SoundError Sound_GetLastError(void) {
     return gLastError;
 }
@@ -324,6 +354,10 @@ void Sound_Shutdown(void) {
 void Sound_Update(void) {
     struct DateStamp now;
 
+    if (gSoundPaused) {
+        return;
+    }
+
     ReapVoice(&gShotVoice);
     ReapVoice(&gHitVoice);
 
@@ -342,6 +376,42 @@ void Sound_Update(void) {
 
     gHitPending = FALSE;
     StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, HIT_VOLUME, HIT_CYCLES);
+}
+
+void Sound_SetPaused(BOOL paused) {
+    struct DateStamp now;
+    struct DateStamp delta;
+
+    if (!gSoundInited || paused == gSoundPaused) {
+        return;
+    }
+
+    if (paused) {
+        DateStamp(&gPauseStamp);
+        gSoundPaused = TRUE;
+        return;
+    }
+
+    DateStamp(&now);
+    delta.ds_Days = now.ds_Days - gPauseStamp.ds_Days;
+    delta.ds_Minute = now.ds_Minute - gPauseStamp.ds_Minute;
+    delta.ds_Tick = now.ds_Tick - gPauseStamp.ds_Tick;
+
+    while (delta.ds_Tick < 0) {
+        delta.ds_Tick += 3000;
+        delta.ds_Minute--;
+    }
+
+    while (delta.ds_Minute < 0) {
+        delta.ds_Minute += 24L * 60L;
+        delta.ds_Days--;
+    }
+
+    if (gHitPending) {
+        AddDateStampDelta(&gHitDueStamp, &delta);
+    }
+
+    gSoundPaused = FALSE;
 }
 
 void Sound_PlayShot(void) {

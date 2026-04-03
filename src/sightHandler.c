@@ -12,8 +12,8 @@
 #include "gfx.h"
 #include "input.h"
 #include "soundHandler.h"
-#include "targetsHandler.h"
 #include "targetScoring.h"
+#include "targetsHandler.h"
 
 extern BOOL Input_Left(void);
 extern BOOL Input_Right(void);
@@ -81,9 +81,13 @@ extern BOOL Input_Down(void);
 #define HUD_TEXT_Y 11
 #define HUD_RESULT_Y 24
 #define HUD_QUALITY_Y 37
+#define HUD_PAUSED_Y HUD_QUALITY_Y
 #define HUD_TEXT_PEN 25
+#define HUD_SHADOW_PEN 21
 #define HUD_FONT_NAME "topaz.font"
-#define HUD_FONT_SIZE 9
+#define HUD_FONT_SIZE 8
+#define HUD_SHADOW_OFFSET_X 1
+#define HUD_SHADOW_OFFSET_Y 1
 
 static const struct TextAttr gHudFontAttr = {HUD_FONT_NAME, HUD_FONT_SIZE, FS_NORMAL, FPF_ROMFONT};
 
@@ -134,6 +138,20 @@ static UWORD BuildHitCounterText(char *buf, UWORD value) {
 
     buf[pos] = '\0';
     return pos;
+}
+
+static UWORD TextLen(const char *text) {
+    UWORD len = 0;
+
+    if (!text) {
+        return 0;
+    }
+
+    while (text[len] != '\0') {
+        len++;
+    }
+
+    return len;
 }
 
 static void DebugBeepError(SoundError err) {
@@ -322,11 +340,9 @@ static void DrawResultFlash(struct RastPort *rp, UWORD colorIndex) {
     RectFill(rp, SCR_W - RESULT_FLASH_THICKNESS, 0, SCR_W - 1, SCR_H - 1);
 }
 
-static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
-    char text[16];
-    UWORD len;
-
-    if (!rp) {
+static void DrawTextWithShadow(struct RastPort *rp, struct TextFont *font, WORD x, WORD y,
+                               UWORD pen, const char *text, UWORD len) {
+    if (!rp || !text || len == 0) {
         return;
     }
 
@@ -335,11 +351,22 @@ static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
     }
 
     SetDrMd(rp, JAM1);
-    SetAPen(rp, HUD_TEXT_PEN);
+
+    SetAPen(rp, HUD_SHADOW_PEN);
+    Move(rp, x + HUD_SHADOW_OFFSET_X, y + HUD_SHADOW_OFFSET_Y + rp->TxBaseline);
+    Text(rp, (STRPTR)text, len);
+
+    SetAPen(rp, pen);
+    Move(rp, x, y + rp->TxBaseline);
+    Text(rp, (STRPTR)text, len);
+}
+
+static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
+    char text[16];
+    UWORD len;
 
     len = BuildHitCounterText(text, GetHitCount());
-    Move(rp, HUD_TEXT_X, HUD_TEXT_Y + rp->TxBaseline);
-    Text(rp, text, len);
+    DrawTextWithShadow(rp, font, HUD_TEXT_X, HUD_TEXT_Y, HUD_TEXT_PEN, text, len);
 }
 
 static void DrawLastShotResult(struct RastPort *rp, struct TextFont *font, BOOL shotTaken,
@@ -349,23 +376,14 @@ static void DrawLastShotResult(struct RastPort *rp, struct TextFont *font, BOOL 
     const char *text;
     UWORD len;
 
-    if (!rp || !shotTaken) {
+    if (!shotTaken) {
         return;
     }
 
-    if (font) {
-        SetFont(rp, font);
-    }
-
-    SetDrMd(rp, JAM1);
-    SetAPen(rp, HUD_TEXT_PEN);
-
     text = lastShotHit ? gHitText : gMissText;
     len = lastShotHit ? 3 : 4;
-    Move(rp, HUD_TEXT_X, HUD_RESULT_Y + rp->TxBaseline);
-    Text(rp, (STRPTR)text, len);
+    DrawTextWithShadow(rp, font, HUD_TEXT_X, HUD_RESULT_Y, HUD_TEXT_PEN, text, len);
 }
-
 
 static const char *GetScoreText(UBYTE score) {
     switch (score) {
@@ -419,33 +437,43 @@ static UWORD GetFlashColorForScore(UBYTE score) {
     }
 }
 
-
 static void DrawShotQuality(struct RastPort *rp, struct TextFont *font, BOOL shotTaken,
                             BOOL lastShotHit, UBYTE lastShotScore) {
     const char *text;
-    UWORD len = 0;
+    UWORD len;
 
-    if (!rp || !shotTaken || !lastShotHit) {
+    if (!shotTaken || !lastShotHit) {
         return;
     }
 
     text = GetScoreText(lastShotScore);
-    if (!text) {
+    len = TextLen(text);
+    if (len == 0) {
         return;
     }
 
-    while (text[len] != '\0') {
-        len++;
+    DrawTextWithShadow(rp, font, HUD_TEXT_X, HUD_QUALITY_Y, GetScoreTextPen(lastShotScore), text,
+                       len);
+}
+
+static void DrawPausedText(struct RastPort *rp, struct TextFont *font, BOOL paused) {
+    static const char gPausedText[] = "PAUSED";
+    UWORD len;
+    WORD x;
+    WORD width;
+
+    if (!paused || !rp) {
+        return;
     }
 
     if (font) {
         SetFont(rp, font);
     }
 
-    SetDrMd(rp, JAM1);
-    SetAPen(rp, GetScoreTextPen(lastShotScore));
-    Move(rp, HUD_TEXT_X, HUD_QUALITY_Y + rp->TxBaseline);
-    Text(rp, (STRPTR)text, len);
+    len = 6;
+    width = TextLength(rp, (STRPTR)gPausedText, len);
+    x = (WORD)((SCR_W - width) / 2);
+    DrawTextWithShadow(rp, font, x, HUD_PAUSED_Y, HUD_TEXT_PEN, gPausedText, len);
 }
 
 static LONG ClampLeadFP(LONG v) {
@@ -501,6 +529,8 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     BOOL shotTaken = FALSE;
     BOOL lastShotHit = FALSE;
     UBYTE lastShotScore = SCORE_MISS;
+    WORD currentFrontRecoilY = 0;
+    WORD currentRearRecoilY = 0;
 
     if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, FRONTSIGHT_W,
                             FRONTSIGHT_H, 5)) {
@@ -595,7 +625,10 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
     for (;;) {
         Input_PollWindow(Gfx_GetWindow());
-        Sound_Update();
+
+        if (!paused) {
+            Sound_Update();
+        }
 
         if (Input_KeyPressed(0x45)) {
             break;
@@ -603,219 +636,228 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
         if (Input_KeyPressed(0x19)) {
             paused = (BOOL)!paused;
+            Sound_SetPaused(paused);
+            TargetsHandler_SetPaused(paused);
         }
 
-        if (paused) {
-            WaitTOF();
-            continue;
-        }
+        if (!paused) {
+            if (!Input_IsFireDown()) {
+                shotNeedsRelease = FALSE;
+            }
 
-        if (!Input_IsFireDown()) {
-            shotNeedsRelease = FALSE;
-        }
+            if (Input_FirePressed()) {
+                if (!shotNeedsRelease && ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
+                    WORD aimX;
+                    WORD aimY;
+                    UWORD hitDelayTicks;
+                    UBYTE hitScore = SCORE_MISS;
 
-        if (Input_FirePressed()) {
-            if (!shotNeedsRelease && ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
-                WORD aimX;
-                WORD aimY;
-                UWORD hitDelayTicks;
-                UBYTE hitScore = SCORE_MISS;
+                    Sound_PlayShot();
+                    MarkShotFired(&shotCooldownActive, &lastShotStamp);
+                    shotNeedsRelease = TRUE;
+                    recoilActive = TRUE;
+                    recoilTick = 0;
+                    shotTaken = TRUE;
 
-                Sound_PlayShot();
-                MarkShotFired(&shotCooldownActive, &lastShotStamp);
-                shotNeedsRelease = TRUE;
-                recoilActive = TRUE;
-                recoilTick = 0;
-                shotTaken = TRUE;
+                    aimX = (WORD)(ringX - RING_OFFSET_X + FRONT_AIM_X);
+                    aimY = (WORD)(ringY - RING_OFFSET_Y + FRONT_AIM_Y);
 
-                aimX = (WORD)(ringX - RING_OFFSET_X + FRONT_AIM_X);
-                aimY = (WORD)(ringY - RING_OFFSET_Y + FRONT_AIM_Y);
+                    if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks, &hitScore)) {
+                        RegisterHit();
+                        Sound_PlayHit(hitDelayTicks);
+                        lastShotHit = TRUE;
+                        lastShotScore = hitScore;
+                        resultFlashColor = GetFlashColorForScore(hitScore);
+                    } else {
+                        lastShotHit = FALSE;
+                        lastShotScore = SCORE_MISS;
+                        resultFlashColor = SCORE_FLASH_MISS_COLOR;
+                    }
 
-                if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks, &hitScore)) {
-                    RegisterHit();
-                    Sound_PlayHit(hitDelayTicks);
-                    lastShotHit = TRUE;
-                    lastShotScore = hitScore;
-                    resultFlashColor = GetFlashColorForScore(hitScore);
+                    resultFlashTicks = RESULT_FLASH_TICKS;
+                }
+            }
+
+            TargetsHandler_Tick();
+
+            {
+                int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
+                int dirY = (Input_Down() ? 1 : 0) - (Input_Up() ? 1 : 0);
+
+                if (dirX != 0) {
+                    if (prevDirX == 0 || dirX != prevDirX) {
+                        ringX += (WORD)dirX;
+                        holdX = 1;
+                        vx = 0;
+                        ax = 0;
+                    } else {
+                        if (holdX < 0xFFFF) {
+                            holdX++;
+                        }
+
+                        if (holdX >= START_DELAY) {
+                            LONG target = (LONG)dirX * V_MAX;
+                            LONG dv = target - vx;
+
+                            vx += dv / ACCEL_DIV;
+
+                            if (vx < V_MIN && vx > -V_MIN) {
+                                vx = (LONG)dirX * V_MIN;
+                            }
+
+                            ax += vx;
+
+                            while (ax >= 256) {
+                                ax -= 256;
+                                ringX++;
+                            }
+                            while (ax <= -256) {
+                                ax += 256;
+                                ringX--;
+                            }
+                        }
+                    }
                 } else {
-                    lastShotHit = FALSE;
-                    lastShotScore = SCORE_MISS;
-                    resultFlashColor = SCORE_FLASH_MISS_COLOR;
+                    holdX = 0;
+                    prevDirX = 0;
+                    vx = (vx * DECAY_NUM) / DECAY_DEN;
+
+                    if (vx < V_STOP && vx > -V_STOP) {
+                        vx = 0;
+                    }
+
+                    ax += vx;
+
+                    while (ax >= 256) {
+                        ax -= 256;
+                        ringX++;
+                    }
+                    while (ax <= -256) {
+                        ax += 256;
+                        ringX--;
+                    }
+
+                    if (vx == 0) {
+                        ax = 0;
+                    }
                 }
 
-                resultFlashTicks = RESULT_FLASH_TICKS;
+                if (dirY != 0) {
+                    if (prevDirY == 0 || dirY != prevDirY) {
+                        ringY += (WORD)dirY;
+                        holdY = 1;
+                        vy = 0;
+                        ay = 0;
+                    } else {
+                        if (holdY < 0xFFFF) {
+                            holdY++;
+                        }
+
+                        if (holdY >= START_DELAY) {
+                            LONG target = (LONG)dirY * V_MAX;
+                            LONG dv = target - vy;
+
+                            vy += dv / ACCEL_DIV;
+
+                            if (vy < V_MIN && vy > -V_MIN) {
+                                vy = (LONG)dirY * V_MIN;
+                            }
+
+                            ay += vy;
+
+                            while (ay >= 256) {
+                                ay -= 256;
+                                ringY++;
+                            }
+                            while (ay <= -256) {
+                                ay += 256;
+                                ringY--;
+                            }
+                        }
+                    }
+                } else {
+                    holdY = 0;
+                    prevDirY = 0;
+                    vy = (vy * DECAY_NUM) / DECAY_DEN;
+
+                    if (vy < V_STOP && vy > -V_STOP) {
+                        vy = 0;
+                    }
+
+                    ay += vy;
+
+                    while (ay >= 256) {
+                        ay -= 256;
+                        ringY++;
+                    }
+                    while (ay <= -256) {
+                        ay += 256;
+                        ringY--;
+                    }
+
+                    if (vy == 0) {
+                        ay = 0;
+                    }
+                }
+
+                prevDirX = dirX;
+                prevDirY = dirY;
+            }
+
+            if (ringX < -OVERSCAN_X_TOTAL) {
+                ringX = -OVERSCAN_X_TOTAL;
+            }
+            if (ringX > SCR_W - REARSIGHT_W + OVERSCAN_X_TOTAL) {
+                ringX = (SCR_W - REARSIGHT_W + OVERSCAN_X_TOTAL);
+            }
+
+            if (ringY < 0) {
+                ringY = 0;
+            }
+            if (ringY > SCR_H - REARSIGHT_H + OVERSCAN_Y) {
+                ringY = (SCR_H - REARSIGHT_H + OVERSCAN_Y);
+            }
+
+            {
+                LONG targetLeadX = (vx * LEAD_MAX_FP) / V_MAX;
+                LONG targetLeadY = (vy * LEAD_MAX_FP) / V_MAX;
+
+                targetLeadX = ClampLeadFP(targetLeadX);
+                targetLeadY = ClampLeadFP(targetLeadY);
+
+                leadX += (targetLeadX - leadX) / LEAD_FOLLOW_DIV;
+                leadY += (targetLeadY - leadY) / LEAD_FOLLOW_DIV;
+
+                if (vx == 0 && vy == 0) {
+                    leadX = (leadX * LEAD_DECAY_NUM) / LEAD_DECAY_DEN;
+                    leadY = (leadY * LEAD_DECAY_NUM) / LEAD_DECAY_DEN;
+
+                    if (leadX < LEAD_STOP_FP && leadX > -LEAD_STOP_FP) {
+                        leadX = 0;
+                    }
+                    if (leadY < LEAD_STOP_FP && leadY > -LEAD_STOP_FP) {
+                        leadY = 0;
+                    }
+                }
             }
         }
-
-        TargetsHandler_Tick();
 
         {
-            int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
-            int dirY = (Input_Down() ? 1 : 0) - (Input_Up() ? 1 : 0);
-
-            if (dirX != 0) {
-                if (prevDirX == 0 || dirX != prevDirX) {
-                    ringX += (WORD)dirX;
-                    holdX = 1;
-                    vx = 0;
-                    ax = 0;
-                } else {
-                    if (holdX < 0xFFFF) {
-                        holdX++;
-                    }
-
-                    if (holdX >= START_DELAY) {
-                        LONG target = (LONG)dirX * V_MAX;
-                        LONG dv = target - vx;
-
-                        vx += dv / ACCEL_DIV;
-
-                        if (vx < V_MIN && vx > -V_MIN) {
-                            vx = (LONG)dirX * V_MIN;
-                        }
-
-                        ax += vx;
-
-                        while (ax >= 256) {
-                            ax -= 256;
-                            ringX++;
-                        }
-                        while (ax <= -256) {
-                            ax += 256;
-                            ringX--;
-                        }
-                    }
-                }
-            } else {
-                holdX = 0;
-                prevDirX = 0;
-                vx = (vx * DECAY_NUM) / DECAY_DEN;
-
-                if (vx < V_STOP && vx > -V_STOP) {
-                    vx = 0;
-                }
-
-                ax += vx;
-
-                while (ax >= 256) {
-                    ax -= 256;
-                    ringX++;
-                }
-                while (ax <= -256) {
-                    ax += 256;
-                    ringX--;
-                }
-
-                if (vx == 0) {
-                    ax = 0;
-                }
-            }
-
-            if (dirY != 0) {
-                if (prevDirY == 0 || dirY != prevDirY) {
-                    ringY += (WORD)dirY;
-                    holdY = 1;
-                    vy = 0;
-                    ay = 0;
-                } else {
-                    if (holdY < 0xFFFF) {
-                        holdY++;
-                    }
-
-                    if (holdY >= START_DELAY) {
-                        LONG target = (LONG)dirY * V_MAX;
-                        LONG dv = target - vy;
-
-                        vy += dv / ACCEL_DIV;
-
-                        if (vy < V_MIN && vy > -V_MIN) {
-                            vy = (LONG)dirY * V_MIN;
-                        }
-
-                        ay += vy;
-
-                        while (ay >= 256) {
-                            ay -= 256;
-                            ringY++;
-                        }
-                        while (ay <= -256) {
-                            ay += 256;
-                            ringY--;
-                        }
-                    }
-                }
-            } else {
-                holdY = 0;
-                prevDirY = 0;
-                vy = (vy * DECAY_NUM) / DECAY_DEN;
-
-                if (vy < V_STOP && vy > -V_STOP) {
-                    vy = 0;
-                }
-
-                ay += vy;
-
-                while (ay >= 256) {
-                    ay -= 256;
-                    ringY++;
-                }
-                while (ay <= -256) {
-                    ay += 256;
-                    ringY--;
-                }
-
-                if (vy == 0) {
-                    ay = 0;
-                }
-            }
-
-            prevDirX = dirX;
-            prevDirY = dirY;
-        }
-
-        if (ringX < -OVERSCAN_X_TOTAL) {
-            ringX = -OVERSCAN_X_TOTAL;
-        }
-        if (ringX > SCR_W - REARSIGHT_W + OVERSCAN_X_TOTAL) {
-            ringX = (SCR_W - REARSIGHT_W + OVERSCAN_X_TOTAL);
-        }
-
-        if (ringY < 0) {
-            ringY = 0;
-        }
-        if (ringY > SCR_H - REARSIGHT_H + OVERSCAN_Y) {
-            ringY = (SCR_H - REARSIGHT_H + OVERSCAN_Y);
-        }
-
-        {
-            LONG targetLeadX = (vx * LEAD_MAX_FP) / V_MAX;
-            LONG targetLeadY = (vy * LEAD_MAX_FP) / V_MAX;
-
-            targetLeadX = ClampLeadFP(targetLeadX);
-            targetLeadY = ClampLeadFP(targetLeadY);
-
-            leadX += (targetLeadX - leadX) / LEAD_FOLLOW_DIV;
-            leadY += (targetLeadY - leadY) / LEAD_FOLLOW_DIV;
-
-            if (vx == 0 && vy == 0) {
-                leadX = (leadX * LEAD_DECAY_NUM) / LEAD_DECAY_DEN;
-                leadY = (leadY * LEAD_DECAY_NUM) / LEAD_DECAY_DEN;
-
-                if (leadX < LEAD_STOP_FP && leadX > -LEAD_STOP_FP) {
-                    leadX = 0;
-                }
-                if (leadY < LEAD_STOP_FP && leadY > -LEAD_STOP_FP) {
-                    leadY = 0;
-                }
-            }
-        }
-
-        {
-            WORD frontRecoilY = RecoilOffsetY(&recoilActive, &recoilTick);
-            WORD rearRecoilY = RearRecoilOffsetY(frontRecoilY, rearRecoilHistory);
-            WORD frontX = (WORD)(ringX - RING_OFFSET_X + (leadX / 256));
-            WORD frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) + frontRecoilY);
+            WORD frontRecoilY;
+            WORD rearRecoilY;
+            WORD frontX;
+            WORD frontY;
             struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
+
+            if (!paused) {
+                currentFrontRecoilY = RecoilOffsetY(&recoilActive, &recoilTick);
+                currentRearRecoilY = RearRecoilOffsetY(currentFrontRecoilY, rearRecoilHistory);
+            }
+
+            frontRecoilY = currentFrontRecoilY;
+            rearRecoilY = currentRearRecoilY;
+            frontX = (WORD)(ringX - RING_OFFSET_X + (leadX / 256));
+            frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) + frontRecoilY);
 
             if (haveBg) {
                 WaitBlit();
@@ -855,12 +897,15 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
             if (resultFlashTicks > 0) {
                 DrawResultFlash(rp, resultFlashColor);
-                resultFlashTicks--;
+                if (!paused) {
+                    resultFlashTicks--;
+                }
             }
 
             DrawHitCounter(rp, hudFont);
             DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
             DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
+            DrawPausedText(rp, hudFont, paused);
 
             if (useDBuf) {
                 Gfx_SwapBuffers();

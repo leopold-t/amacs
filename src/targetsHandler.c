@@ -111,6 +111,8 @@ typedef struct TargetSeries {
 
 static BOOL gInited = FALSE;
 static BOOL gReady = FALSE;
+static BOOL gPaused = FALSE;
+static struct DateStamp gPauseStamp;
 
 static TargetSeries gSeries050;
 static TargetSeries gSeries100;
@@ -138,6 +140,38 @@ static TargetSeries *GetSeriesByDistance(TargetDistance distance) {
     }
 }
 
+static void AddDateStampDelta(struct DateStamp *stamp, const struct DateStamp *delta) {
+    LONG days;
+    LONG minutes;
+    LONG ticks;
+
+    if (!stamp || !delta) {
+        return;
+    }
+
+    days = (LONG)stamp->ds_Days + (LONG)delta->ds_Days;
+    minutes = (LONG)stamp->ds_Minute + (LONG)delta->ds_Minute;
+    ticks = (LONG)stamp->ds_Tick + (LONG)delta->ds_Tick;
+
+    minutes += ticks / 3000;
+    ticks %= 3000;
+
+    days += minutes / (24L * 60L);
+    minutes %= (24L * 60L);
+
+    stamp->ds_Days = days;
+    stamp->ds_Minute = minutes;
+    stamp->ds_Tick = ticks;
+}
+
+static void ApplyPauseDeltaToSeries(TargetSeries *s, const struct DateStamp *delta) {
+    if (!s || !s->loaded) {
+        return;
+    }
+
+    AddDateStampDelta(&s->startStamp, delta);
+}
+
 static ULONG ElapsedTicks(const struct DateStamp *start) {
     struct DateStamp now;
     LONG dd;
@@ -145,7 +179,11 @@ static ULONG ElapsedTicks(const struct DateStamp *start) {
     LONG dt;
     LONG total;
 
-    DateStamp(&now);
+    if (gPaused) {
+        now = gPauseStamp;
+    } else {
+        DateStamp(&now);
+    }
 
     dd = now.ds_Days - start->ds_Days;
     dm = now.ds_Minute - start->ds_Minute;
@@ -410,6 +448,10 @@ BOOL TargetsHandler_Init(void) {
         StartSlot(&gSeries300, 0);
     }
 
+    gPaused = FALSE;
+    gPauseStamp.ds_Days = 0;
+    gPauseStamp.ds_Minute = 0;
+    gPauseStamp.ds_Tick = 0;
     gReady = TRUE;
     return TRUE;
 }
@@ -440,6 +482,7 @@ void TargetsHandler_Shutdown(void) {
 
     gInited = FALSE;
     gReady = FALSE;
+    gPaused = FALSE;
 }
 
 void TargetsHandler_Reset(void) {
@@ -534,7 +577,7 @@ BOOL TargetsHandler_GetTargetInfo(TargetDistance distance, TargetInfo *outInfo) 
 }
 
 void TargetsHandler_Tick(void) {
-    if (!gReady) {
+    if (!gReady || gPaused) {
         return;
     }
 
@@ -557,6 +600,45 @@ void TargetsHandler_Draw(struct RastPort *rp) {
     DrawSeries(&gSeries150, rp);
     DrawSeries(&gSeries100, rp);
     DrawSeries(&gSeries050, rp);
+}
+
+void TargetsHandler_SetPaused(BOOL paused) {
+    struct DateStamp now;
+    struct DateStamp delta;
+
+    if (!gReady || paused == gPaused) {
+        return;
+    }
+
+    if (paused) {
+        DateStamp(&gPauseStamp);
+        gPaused = TRUE;
+        return;
+    }
+
+    DateStamp(&now);
+    delta.ds_Days = now.ds_Days - gPauseStamp.ds_Days;
+    delta.ds_Minute = now.ds_Minute - gPauseStamp.ds_Minute;
+    delta.ds_Tick = now.ds_Tick - gPauseStamp.ds_Tick;
+
+    while (delta.ds_Tick < 0) {
+        delta.ds_Tick += 3000;
+        delta.ds_Minute--;
+    }
+
+    while (delta.ds_Minute < 0) {
+        delta.ds_Minute += 24L * 60L;
+        delta.ds_Days--;
+    }
+
+    ApplyPauseDeltaToSeries(&gSeries050, &delta);
+    ApplyPauseDeltaToSeries(&gSeries100, &delta);
+    ApplyPauseDeltaToSeries(&gSeries150, &delta);
+    ApplyPauseDeltaToSeries(&gSeries200, &delta);
+    ApplyPauseDeltaToSeries(&gSeries250, &delta);
+    ApplyPauseDeltaToSeries(&gSeries300, &delta);
+
+    gPaused = FALSE;
 }
 
 BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks, UBYTE *hitScore) {
