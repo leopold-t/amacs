@@ -9,6 +9,7 @@ extern const UWORD TitlePaletteRGB4[16];
 extern const UWORD TrainingInfoPaletteRGB4[32];
 extern const UWORD FundamentalsPaletteRGB4[32];
 extern const UWORD TargetRangesPaletteRGB4[32];
+extern const UWORD PerformancePaletteRGB4[32];
 extern const UWORD RangePaletteRGB4[32];
 
 /* Friendly aliases (use these in code if you prefer) */
@@ -17,6 +18,7 @@ extern const UWORD RangePaletteRGB4[32];
 #define trainingInfoPalette TrainingInfoPaletteRGB4
 #define fundamentalsPalette FundamentalsPaletteRGB4
 #define targetRangesPalette TargetRangesPaletteRGB4
+#define performancePalette PerformancePaletteRGB4
 #define rangePalette RangePaletteRGB4
 
 /* RAW graphics files */
@@ -25,6 +27,7 @@ extern const UWORD RangePaletteRGB4[32];
 #define TRAINING_INFO_FILE "gfx/TrainingInfo.raw"
 #define FUNDAMENTALS_FILE "gfx/Fundamentals.raw"
 #define TARGET_RANGES_FILE "gfx/TargetRanges.raw"
+#define PERFORMANCE_FILE "gfx/Performance.raw"
 #define RANGE_FILE "gfx/OahuRange.raw"
 
 /* RAW sound files */

@@ -37,6 +37,7 @@ extern BOOL Input_Down(void);
 #define TRAINING_INFO_FILE "gfx/TrainingInfo.raw"
 #define FUNDAMENTALS_FILE "gfx/Fundamentals.raw"
 #define TARGET_RANGES_FILE "gfx/TargetRanges.raw"
+#define PERFORMANCE_FILE "gfx/Performance.raw"
 #define RANGE_FILE "gfx/OahuRange.raw"
 
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
@@ -146,6 +147,33 @@ static WaitResult WaitForAdvanceOrTimeout(int seconds) {
     return WAIT_TIMEOUT;
 }
 
+static WaitResult WaitForAdvanceNoTimeout(void) {
+    DrainWindowMessages();
+
+    for (;;) {
+        BOOL adv = FALSE, esc = FALSE;
+
+        PollAdvanceAndEsc(&adv, &esc);
+
+        if (esc) {
+            return WAIT_ESC;
+        }
+
+        if (adv) {
+            WaitTOF();
+            WaitTOF();
+            while (IsJoystickFirePressed()) {
+                WaitTOF();
+            }
+
+            DrainWindowMessages();
+            return WAIT_ADVANCE;
+        }
+
+        WaitTOF();
+    }
+}
+
 /* Check if double buffering is safe on this system (graphics.library >= 39, Kick 3.0+) */
 static BOOL UseDoubleBuffering(void) {
     struct Library *GfxBase = OpenLibrary("graphics.library", 0);
@@ -162,7 +190,7 @@ static BOOL UseDoubleBuffering(void) {
 /* MAIN                                                               */
 /* ------------------------------------------------------------------ */
 
-typedef enum { ATTR_TRAINING_INFO = 0, ATTR_FUNDAMENTALS, ATTR_TARGET_RANGES } AttractScreen;
+typedef enum { ATTR_TRAINING_INFO = 0, ATTR_FUNDAMENTALS } AttractScreen;
 
 int main(void) {
     BOOL engaged = FALSE;
@@ -241,8 +269,7 @@ int main(void) {
 
     AttractScreen attr = ATTR_TRAINING_INFO;
 
-    /* ---------------- Attract loop: TRAINING_INFO -> FUNDAMENTALS -> TARGET_RANGES
-     * ---------------- */
+    /* ---------------- Attract loop: TRAINING_INFO -> FUNDAMENTALS ---------------- */
     for (;;) {
         WaitResult r = WaitForAdvanceOrTimeout(INFO_SECONDS);
         if (r == WAIT_ESC) {
@@ -277,9 +304,24 @@ int main(void) {
                 for (int i = 0; i < 32; i++) {
                     currentLoPal[i] = nextLoPal[i];
                 }
-                attr = ATTR_TARGET_RANGES;
                 {
-                    WaitResult rr = WaitForAdvanceOrTimeout(INFO_SECONDS);
+                    WaitResult rr = WaitForAdvanceNoTimeout();
+                    if (rr == WAIT_ESC) {
+                        goto exit_ok;
+                    }
+                }
+
+                for (int i = 0; i < 32; i++) {
+                    nextLoPal[i] = performancePalette[i];
+                }
+                if (!Gfx_CrossFadeToImage(PERFORMANCE_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                    goto fail;
+                }
+                for (int i = 0; i < 32; i++) {
+                    currentLoPal[i] = nextLoPal[i];
+                }
+                {
+                    WaitResult rr = WaitForAdvanceNoTimeout();
                     if (rr == WAIT_ESC) {
                         goto exit_ok;
                     }
@@ -311,15 +353,6 @@ int main(void) {
                 nextLoPal[i] = fundamentalsPalette[i];
             }
             if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, currentLoPal, 32, nextLoPal, 32)) {
-                goto fail;
-            }
-
-        } else if (attr == ATTR_FUNDAMENTALS) {
-            attr = ATTR_TARGET_RANGES;
-            for (int i = 0; i < 32; i++) {
-                nextLoPal[i] = targetRangesPalette[i];
-            }
-            if (!Gfx_CrossFadeToImage(TARGET_RANGES_FILE, currentLoPal, 32, nextLoPal, 32)) {
                 goto fail;
             }
 
