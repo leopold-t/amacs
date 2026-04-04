@@ -84,6 +84,7 @@ extern BOOL Input_Down(void);
 #define HUD_PAUSED_Y HUD_QUALITY_Y
 #define HUD_TEXT_PEN 25
 #define HUD_SHADOW_PEN 31
+#define HUD_QUALITY_SHADOW_PEN 24
 #define HUD_FONT_NAME "topaz.font"
 #define HUD_FONT_SIZE 8
 #define HUD_SHADOW_OFFSET_X 1
@@ -340,8 +341,8 @@ static void DrawResultFlash(struct RastPort *rp, UWORD colorIndex) {
     RectFill(rp, SCR_W - RESULT_FLASH_THICKNESS, 0, SCR_W - 1, SCR_H - 1);
 }
 
-static void DrawTextWithShadow(struct RastPort *rp, struct TextFont *font, WORD x, WORD y,
-                               UWORD pen, const char *text, UWORD len) {
+static void DrawTextWithShadowEx(struct RastPort *rp, struct TextFont *font, WORD x, WORD y,
+                                 UWORD pen, UWORD shadowColor, const char *text, UWORD len) {
     if (!rp || !text || len == 0) {
         return;
     }
@@ -352,13 +353,18 @@ static void DrawTextWithShadow(struct RastPort *rp, struct TextFont *font, WORD 
 
     SetDrMd(rp, JAM1);
 
-    SetAPen(rp, HUD_SHADOW_PEN);
+    SetAPen(rp, shadowColor);
     Move(rp, x + HUD_SHADOW_OFFSET_X, y + HUD_SHADOW_OFFSET_Y + rp->TxBaseline);
     Text(rp, (STRPTR)text, len);
 
     SetAPen(rp, pen);
     Move(rp, x, y + rp->TxBaseline);
     Text(rp, (STRPTR)text, len);
+}
+
+static void DrawTextWithShadow(struct RastPort *rp, struct TextFont *font, WORD x, WORD y,
+                               UWORD pen, const char *text, UWORD len) {
+    DrawTextWithShadowEx(rp, font, x, y, pen, HUD_SHADOW_PEN, text, len);
 }
 
 static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
@@ -452,8 +458,8 @@ static void DrawShotQuality(struct RastPort *rp, struct TextFont *font, BOOL sho
         return;
     }
 
-    DrawTextWithShadow(rp, font, HUD_TEXT_X, HUD_QUALITY_Y, GetScoreTextPen(lastShotScore), text,
-                       len);
+    DrawTextWithShadowEx(rp, font, HUD_TEXT_X, HUD_QUALITY_Y, GetScoreTextPen(lastShotScore),
+                         HUD_QUALITY_SHADOW_PEN, text, len);
 }
 
 static void DrawPausedText(struct RastPort *rp, struct TextFont *font, BOOL paused) {
