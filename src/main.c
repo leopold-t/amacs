@@ -354,14 +354,11 @@ int main(void) {
                 engaged = FALSE;
                 attr = ATTR_TRAINING_INFO;
 
-                Gfx_CloseScreenAndWindow();
-
-                if (!Gfx_OpenScreenAndWindow(TITLE_WIDTH, TITLE_HEIGHT, TITLE_DEPTH,
-                                            TITLE_DISPLAY_ID)) {
-                    goto fail;
+                if (useDBuf) {
+                    Gfx_DisableDoubleBuffering();
                 }
 
-                if (!Gfx_ShowImageFadeInFromBlack(TITLE_FILE, titlePalette, 32)) {
+                if (!Gfx_CrossFadeToImage(TITLE_FILE, rangePalette, 32, titlePalette, 32)) {
                     goto fail;
                 }
 
@@ -375,13 +372,8 @@ int main(void) {
                     }
                 }
 
-                Gfx_CloseScreenAndWindow();
-
-                if (!Gfx_OpenScreenAndWindow(LO_WIDTH, LO_HEIGHT, LO_DEPTH, LORES_KEY)) {
-                    goto fail;
-                }
-
-                if (!Gfx_ShowImageFadeInFromBlack(TRAINING_INFO_FILE, trainingInfoPalette, 32)) {
+                if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32,
+                                          trainingInfoPalette, 32)) {
                     goto fail;
                 }
 

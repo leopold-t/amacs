@@ -344,7 +344,7 @@ static void DrawMaskedClipped(const struct BitMap *srcBm, PLANEPTR maskPlane,
     WORD dy = dstY;
 
     if (!srcBm || !maskPlane || !dstRP || !dstRP->BitMap) {
-        return FALSE;
+        return;
     }
 
     if (dx < 0) {
@@ -368,7 +368,7 @@ static void DrawMaskedClipped(const struct BitMap *srcBm, PLANEPTR maskPlane,
     }
 
     if (w <= 0 || h <= 0) {
-        return FALSE;
+        return;
     }
 
     BltMaskBitMapRastPort((struct BitMap *)srcBm, sx, sy, dstRP, dx, dy, w, h, 0xE0, maskPlane);
