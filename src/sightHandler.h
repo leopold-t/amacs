@@ -3,6 +3,9 @@
 
 #include <exec/types.h>
 
+#define SCR_W 320
+#define SCR_H 256
+
 /* Runs the range loop with a movable front sight.
  * useDBuf:
  *  - TRUE  => draw to back buffer via Gfx_GetDrawRastPort() and swap

@@ -9,6 +9,8 @@
 #include "gfx.h"
 #include "input.h"
 #include "levelManager.h"
+#include "sightHandler.h"
+#include "targetsHandler.h"
 
 /* If your input.h doesn't expose directions yet, keep these externs here.
    They must exist in input.c (or you'll get linker errors). */
@@ -45,6 +47,18 @@ extern BOOL Input_Down(void);
 #define TARGET_RANGES_FILE "gfx/TargetRanges.raw"
 #define PERFORMANCE_FILE "gfx/Performance.raw"
 #define RANGE_FILE "gfx/OahuRange.raw"
+#define TARGET050_RAW "gfx/Target050.raw"
+#define TARGET050_MASK "gfx/Target050.mask"
+#define TARGET100_RAW "gfx/Target100.raw"
+#define TARGET100_MASK "gfx/Target100.mask"
+#define TARGET150_RAW "gfx/Target150.raw"
+#define TARGET150_MASK "gfx/Target150.mask"
+#define TARGET200_RAW "gfx/Target200.raw"
+#define TARGET200_MASK "gfx/Target200.mask"
+#define TARGET250_RAW "gfx/Target250.raw"
+#define TARGET250_MASK "gfx/Target250.mask"
+#define TARGET300_RAW "gfx/Target300.raw"
+#define TARGET300_MASK "gfx/Target300.mask"
 
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
 #define FRONTSIGHT_MASK "gfx/FrontSight.mask"
@@ -60,6 +74,8 @@ extern BOOL Input_Down(void);
 #define LOGO_SECONDS 3
 #define TITLE_SECONDS 12
 #define INFO_SECONDS 6
+#define TARGETRANGES_DELAY_TICKS 25
+#define TARGETRANGES_RISE_TICKS 15
 
 typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
 
@@ -192,6 +208,171 @@ static BOOL UseDoubleBuffering(void) {
     return safe;
 }
 
+typedef struct TargetRangesBob {
+    AmacsBob bob;
+    WORD x;
+    WORD bottomY;
+} TargetRangesBob;
+
+static void DrawTargetRangesBobReveal(struct RastPort *rp, const TargetRangesBob *tb,
+                                      UWORD revealTicks) {
+    WORD risePx;
+    WORD dstY;
+    WORD visibleH;
+
+    if (!rp || !tb || !tb->bob.mask || !tb->bob.bm.Planes[0]) {
+        return;
+    }
+
+    if (revealTicks >= TARGETRANGES_RISE_TICKS) {
+        risePx = tb->bob.height;
+    } else {
+        risePx = (WORD)((revealTicks * tb->bob.height) / TARGETRANGES_RISE_TICKS);
+    }
+
+    if (risePx <= 0) {
+        return;
+    }
+
+    dstY = (WORD)((tb->bottomY + 1) - risePx);
+    visibleH = risePx;
+
+    if (dstY < 0) {
+        visibleH = (WORD)(visibleH + dstY);
+        dstY = 0;
+    }
+
+    if ((dstY + visibleH) > SCR_H) {
+        visibleH = (WORD)(SCR_H - dstY);
+    }
+
+    if (visibleH <= 0) {
+        return;
+    }
+
+    BltMaskBitMapRastPort((struct BitMap *)&tb->bob.bm, 0, 0, rp, tb->x, dstY, tb->bob.width,
+                          visibleH, 0xE0, tb->bob.mask);
+    WaitBlit();
+}
+
+static void FreeTargetRangesBobs(TargetRangesBob *targets, UWORD count) {
+    UWORD i;
+    if (!targets) {
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        Bob_Free(&targets[i].bob);
+    }
+}
+
+static BOOL LoadTargetRangesBobs(TargetRangesBob *targets) {
+    if (!targets) {
+        return FALSE;
+    }
+
+    targets[0].x = 14;
+    targets[0].bottomY = 187;
+    targets[1].x = 90;
+    targets[1].bottomY = 170;
+    targets[2].x = 148;
+    targets[2].bottomY = 157;
+    targets[3].x = 194;
+    targets[3].bottomY = 147;
+    targets[4].x = 239;
+    targets[4].bottomY = 132;
+    targets[5].x = 280;
+    targets[5].bottomY = 118;
+
+    if (!Bob_LoadRawAndMask(&targets[0].bob, TARGET050_RAW, TARGET050_MASK, T050_W, T050_H, 5)) {
+        FreeTargetRangesBobs(targets, 6);
+        return FALSE;
+    }
+    if (!Bob_LoadRawAndMask(&targets[1].bob, TARGET100_RAW, TARGET100_MASK, T100_W, T100_H, 5)) {
+        FreeTargetRangesBobs(targets, 6);
+        return FALSE;
+    }
+    if (!Bob_LoadRawAndMask(&targets[2].bob, TARGET150_RAW, TARGET150_MASK, T150_W, T150_H, 5)) {
+        FreeTargetRangesBobs(targets, 6);
+        return FALSE;
+    }
+    if (!Bob_LoadRawAndMask(&targets[3].bob, TARGET200_RAW, TARGET200_MASK, T200_W, T200_H, 5)) {
+        FreeTargetRangesBobs(targets, 6);
+        return FALSE;
+    }
+    if (!Bob_LoadRawAndMask(&targets[4].bob, TARGET250_RAW, TARGET250_MASK, T250_W, T250_H, 5)) {
+        FreeTargetRangesBobs(targets, 6);
+        return FALSE;
+    }
+    if (!Bob_LoadRawAndMask(&targets[5].bob, TARGET300_RAW, TARGET300_MASK, T300_W, T300_H, 5)) {
+        FreeTargetRangesBobs(targets, 6);
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static WaitResult WaitForTargetRangesAdvance(void) {
+    TargetRangesBob targets[6] = {0};
+    BOOL loaded = FALSE;
+    UWORD delayTicks = 0;
+    UWORD revealTicks = 0;
+    BOOL inputEnabled = FALSE;
+    struct RastPort *rp;
+    UWORD i;
+
+    DrainWindowMessages();
+
+    if (!LoadTargetRangesBobs(targets)) {
+        return WAIT_ESC;
+    }
+    loaded = TRUE;
+    rp = &Gfx_GetScreen()->RastPort;
+
+    for (;;) {
+        BOOL adv = FALSE, esc = FALSE;
+
+        if (!inputEnabled) {
+            if (delayTicks < TARGETRANGES_DELAY_TICKS) {
+                delayTicks++;
+            } else {
+                if (revealTicks < TARGETRANGES_RISE_TICKS) {
+                    revealTicks++;
+                    for (i = 0; i < 6; i++) {
+                        DrawTargetRangesBobReveal(rp, &targets[i], revealTicks);
+                    }
+                }
+                if (revealTicks >= TARGETRANGES_RISE_TICKS) {
+                    inputEnabled = TRUE;
+                }
+            }
+        }
+
+        PollAdvanceAndEsc(&adv, &esc);
+
+        if (esc) {
+            if (loaded) {
+                FreeTargetRangesBobs(targets, 6);
+            }
+            return WAIT_ESC;
+        }
+
+        if (inputEnabled && adv) {
+            WaitTOF();
+            WaitTOF();
+            while (IsJoystickFirePressed()) {
+                WaitTOF();
+            }
+            DrainWindowMessages();
+            if (loaded) {
+                FreeTargetRangesBobs(targets, 6);
+            }
+            return WAIT_ADVANCE;
+        }
+
+        WaitTOF();
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /* MAIN                                                               */
 /* ------------------------------------------------------------------ */
@@ -314,7 +495,7 @@ int main(void) {
                     currentLoPal[i] = nextLoPal[i];
                 }
                 {
-                    WaitResult rr = WaitForAdvanceNoTimeout();
+                    WaitResult rr = WaitForTargetRangesAdvance();
                     if (rr == WAIT_ESC) {
                         goto exit_ok;
                     }
@@ -372,8 +553,8 @@ int main(void) {
                     }
                 }
 
-                if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32,
-                                          trainingInfoPalette, 32)) {
+                if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32, trainingInfoPalette,
+                                          32)) {
                     goto fail;
                 }
 
