@@ -17,10 +17,16 @@ extern BOOL Input_Right(void);
 extern BOOL Input_Up(void);
 extern BOOL Input_Down(void);
 
-/* HiRes screens (LOGO + TITLE) */
+/* HiRes screen (LOGO only) */
 #define HI_WIDTH 640
 #define HI_HEIGHT 256
 #define HI_DEPTH 4
+
+/* Title screen: standard Low Res 32 colors */
+#define TITLE_WIDTH 320
+#define TITLE_HEIGHT 256
+#define TITLE_DEPTH 5
+#define TITLE_DISPLAY_ID LORES_KEY
 
 /* LoRes screens (TRAINING_INFO + FUNDAMENTALS + TARGET_RANGES + RANGE) */
 #define LO_WIDTH 320
@@ -230,10 +236,19 @@ int main(void) {
         }
     }
 
-    /* ---------------- HiRes: TITLE ---------------- */
-    if (!Gfx_CrossFadeToImage(TITLE_FILE, logoPalette, 16, titlePalette, 16)) {
+    /* ---------------- Title: standard Low Res 32 colors ---------------- */
+    if (!Gfx_SwitchHiResToLoResOnBlack(logoPalette, TITLE_WIDTH, TITLE_HEIGHT, TITLE_DEPTH)) {
         Gfx_CloseScreenAndWindow();
         Gfx_CloseBlackScreen();
+        LevelManager_Shutdown();
+        Input_Shutdown();
+        return RETURN_FAIL;
+    }
+
+    if (!Gfx_ShowImageFadeInFromBlack(TITLE_FILE, titlePalette, 32)) {
+        Gfx_CloseScreenAndWindow();
+        Gfx_CloseBlackScreen();
+        LevelManager_Shutdown();
         Input_Shutdown();
         return RETURN_FAIL;
     }
@@ -248,17 +263,11 @@ int main(void) {
         }
     }
 
-    /* ---------------- Switch to LoRes once ---------------- */
-    if (!Gfx_SwitchHiResToLoResOnBlack(titlePalette, LO_WIDTH, LO_HEIGHT, LO_DEPTH)) {
+    /* ---------------- Switch from title to LoRes gameplay/info ---------------- */
+    if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32, trainingInfoPalette, 32)) {
         Gfx_CloseScreenAndWindow();
         Gfx_CloseBlackScreen();
-        Input_Shutdown();
-        return RETURN_FAIL;
-    }
-
-    if (!Gfx_ShowImageFadeInFromBlack(TRAINING_INFO_FILE, trainingInfoPalette, 32)) {
-        Gfx_CloseScreenAndWindow();
-        Gfx_CloseBlackScreen();
+        LevelManager_Shutdown();
         Input_Shutdown();
         return RETURN_FAIL;
     }
@@ -341,7 +350,47 @@ int main(void) {
                 }
             }
 
-            LevelManager_RunCurrent(useDBuf);
+            if (LevelManager_RunCurrent(useDBuf)) {
+                engaged = FALSE;
+                attr = ATTR_TRAINING_INFO;
+
+                Gfx_CloseScreenAndWindow();
+
+                if (!Gfx_OpenScreenAndWindow(TITLE_WIDTH, TITLE_HEIGHT, TITLE_DEPTH,
+                                            TITLE_DISPLAY_ID)) {
+                    goto fail;
+                }
+
+                if (!Gfx_ShowImageFadeInFromBlack(TITLE_FILE, titlePalette, 32)) {
+                    goto fail;
+                }
+
+                {
+                    WaitResult rr = WaitForAdvanceOrTimeout(TITLE_SECONDS);
+                    if (rr == WAIT_ESC) {
+                        goto exit_ok;
+                    }
+                    if (rr == WAIT_ADVANCE) {
+                        engaged = TRUE;
+                    }
+                }
+
+                Gfx_CloseScreenAndWindow();
+
+                if (!Gfx_OpenScreenAndWindow(LO_WIDTH, LO_HEIGHT, LO_DEPTH, LORES_KEY)) {
+                    goto fail;
+                }
+
+                if (!Gfx_ShowImageFadeInFromBlack(TRAINING_INFO_FILE, trainingInfoPalette, 32)) {
+                    goto fail;
+                }
+
+                for (int i = 0; i < 32; i++) {
+                    currentLoPal[i] = trainingInfoPalette[i];
+                }
+
+                continue;
+            }
 
             goto exit_ok;
         }

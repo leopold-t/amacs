@@ -24,7 +24,13 @@
  * Returns score value (0–5) based on:
  * - target distance
  * - local hit coordinates within target bitmap
+ *
+ * Side effects:
+ * - increments the corresponding hit map cell
+ * - adds the awarded points to the global total score
  */
 UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY);
+void TargetScoring_Reset(void);
+UWORD TargetScoring_GetTotalScore(void);
 
 #endif /* TARGET_SCORING_H */

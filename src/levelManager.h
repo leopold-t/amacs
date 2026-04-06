@@ -12,6 +12,6 @@ void LevelManager_Init(void);
 void LevelManager_Shutdown(void);
 void LevelManager_SetMode(LevelManagerMode mode);
 LevelManagerMode LevelManager_GetMode(void);
-void LevelManager_RunCurrent(BOOL useDBuf);
+BOOL LevelManager_RunCurrent(BOOL useDBuf);
 
 #endif

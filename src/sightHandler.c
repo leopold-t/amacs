@@ -82,6 +82,11 @@ extern BOOL Input_Down(void);
 #define HUD_RESULT_Y 24
 #define HUD_QUALITY_Y 37
 #define HUD_PAUSED_Y HUD_QUALITY_Y
+#define HUD_FINAL_SCORE_Y (HUD_PAUSED_Y + 13)
+#define HUD_ACCURACY_Y (HUD_FINAL_SCORE_Y + 13)
+#define HUD_MAGAZINE_COUNT 2
+#define HUD_MAX_POSSIBLE_SCORE (HUD_MAGAZINE_COUNT * HUD_MAGAZINE_SIZE * SCORE_EXCELLENT)
+#define HUD_AMMO_Y HUD_TEXT_Y
 #define HUD_TEXT_PEN 25
 #define HUD_SHADOW_PEN 31
 #define HUD_QUALITY_SHADOW_PEN 24
@@ -89,6 +94,14 @@ extern BOOL Input_Down(void);
 #define HUD_FONT_SIZE 8
 #define HUD_SHADOW_OFFSET_X 1
 #define HUD_SHADOW_OFFSET_Y 1
+#define HUD_MARGIN_RIGHT 11
+
+// TODO: For testing purposes only, set it to the 30rd in the final release
+#define HUD_MAGAZINE_SIZE 10
+
+#define HUD_AMMO_MAX (HUD_MAGAZINE_COUNT * HUD_MAGAZINE_SIZE)
+#define HUD_AMMO_BLOCK_CHAR ((char)0xDB)
+#define HUD_AMMO_BLOCK_COUNT HUD_MAGAZINE_COUNT
 
 static const struct TextAttr gHudFontAttr = {HUD_FONT_NAME, HUD_FONT_SIZE, FS_NORMAL, FPF_ROMFONT};
 
@@ -139,6 +152,80 @@ static UWORD BuildHitCounterText(char *buf, UWORD value) {
 
     buf[pos] = '\0';
     return pos;
+}
+
+static UWORD BuildFinalScoreText(char *buf, UWORD value) {
+    static const char prefix[] = "YOUR SCORE: ";
+    char digits[5];
+    UWORD digitCount = 0;
+    UWORD pos = 0;
+    UWORD i;
+    UWORD temp = value;
+
+    for (i = 0; i < (sizeof(prefix) - 1); i++) {
+        buf[pos++] = prefix[i];
+    }
+
+    if (temp == 0) {
+        buf[pos++] = '0';
+        buf[pos] = '\0';
+        return pos;
+    }
+
+    while (temp > 0 && digitCount < 5) {
+        digits[digitCount++] = (char)('0' + (temp % 10));
+        temp /= 10;
+    }
+
+    for (i = 0; i < digitCount; i++) {
+        buf[pos++] = digits[digitCount - 1 - i];
+    }
+
+    buf[pos] = '\0';
+    return pos;
+}
+
+static UWORD BuildAccuracyText(char *buf, UWORD value) {
+    static const char prefix[] = "ACCURACY: ";
+    char digits[3];
+    UWORD digitCount = 0;
+    UWORD pos = 0;
+    UWORD i;
+    UWORD temp = value;
+
+    for (i = 0; i < (sizeof(prefix) - 1); i++) {
+        buf[pos++] = prefix[i];
+    }
+
+    if (temp == 0) {
+        buf[pos++] = '0';
+        buf[pos++] = '%';
+        buf[pos] = '\0';
+        return pos;
+    }
+
+    while (temp > 0 && digitCount < 3) {
+        digits[digitCount++] = (char)('0' + (temp % 10));
+        temp /= 10;
+    }
+
+    for (i = 0; i < digitCount; i++) {
+        buf[pos++] = digits[digitCount - 1 - i];
+    }
+
+    buf[pos++] = '%';
+    buf[pos] = '\0';
+    return pos;
+}
+
+static UWORD CalculateAccuracyPercent(UWORD score) {
+    ULONG percent = ((ULONG)score * 100UL) / (ULONG)HUD_MAX_POSSIBLE_SCORE;
+
+    if (percent > 100UL) {
+        percent = 100UL;
+    }
+
+    return (UWORD)percent;
 }
 
 static UWORD TextLen(const char *text) {
@@ -257,7 +344,7 @@ static void DrawMaskedClipped(const struct BitMap *srcBm, PLANEPTR maskPlane,
     WORD dy = dstY;
 
     if (!srcBm || !maskPlane || !dstRP || !dstRP->BitMap) {
-        return;
+        return FALSE;
     }
 
     if (dx < 0) {
@@ -281,7 +368,7 @@ static void DrawMaskedClipped(const struct BitMap *srcBm, PLANEPTR maskPlane,
     }
 
     if (w <= 0 || h <= 0) {
-        return;
+        return FALSE;
     }
 
     BltMaskBitMapRastPort((struct BitMap *)srcBm, sx, sy, dstRP, dx, dy, w, h, 0xE0, maskPlane);
@@ -375,6 +462,42 @@ static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
     DrawTextWithShadow(rp, font, HUD_TEXT_X, HUD_TEXT_Y, HUD_TEXT_PEN, text, len);
 }
 
+static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD ammoCount) {
+    char text[(HUD_AMMO_BLOCK_COUNT * 3) + 1];
+    UWORD blocksVisible;
+    UWORD i;
+    UWORD pos = 0;
+    WORD x;
+    WORD width;
+
+    if (!rp) {
+        return;
+    }
+
+    if (ammoCount > HUD_AMMO_MAX) {
+        ammoCount = HUD_AMMO_MAX;
+    }
+
+    blocksVisible = (UWORD)((ammoCount + (HUD_MAGAZINE_SIZE - 1)) / HUD_MAGAZINE_SIZE);
+
+    for (i = 0; i < HUD_AMMO_BLOCK_COUNT; i++) {
+        text[pos++] = '[';
+        text[pos++] = (i >= (HUD_AMMO_BLOCK_COUNT - blocksVisible)) ? '\x7F' : ' ';
+        text[pos++] = ']';
+    }
+
+    text[pos] = '\0';
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    width = TextLength(rp, (STRPTR)text, pos);
+    x = (WORD)(SCR_W - HUD_MARGIN_RIGHT - width);
+
+    DrawTextWithShadow(rp, font, x, HUD_AMMO_Y, HUD_TEXT_PEN, text, pos);
+}
+
 static void DrawLastShotResult(struct RastPort *rp, struct TextFont *font, BOOL shotTaken,
                                BOOL lastShotHit) {
     static const char gHitText[] = "HIT";
@@ -462,13 +585,38 @@ static void DrawShotQuality(struct RastPort *rp, struct TextFont *font, BOOL sho
                          HUD_QUALITY_SHADOW_PEN, text, len);
 }
 
-static void DrawPausedText(struct RastPort *rp, struct TextFont *font, BOOL paused) {
+static void DrawCenterStatusText(struct RastPort *rp, struct TextFont *font, BOOL paused,
+                                 BOOL showFinalScore) {
     static const char gPausedText[] = "PAUSED";
+    static const char gSummaryText[] = "SUMMARY";
+    const char *text;
     UWORD len;
     WORD x;
     WORD width;
 
-    if (!paused || !rp) {
+    if (!rp || (!paused && !showFinalScore)) {
+        return;
+    }
+
+    text = showFinalScore ? gSummaryText : gPausedText;
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    len = TextLen(text);
+    width = TextLength(rp, (STRPTR)text, len);
+    x = (WORD)((SCR_W - width) / 2);
+    DrawTextWithShadow(rp, font, x, HUD_PAUSED_Y, HUD_TEXT_PEN, text, len);
+}
+
+static void DrawFinalScore(struct RastPort *rp, struct TextFont *font, BOOL showFinalScore) {
+    char text[24];
+    UWORD len;
+    WORD x;
+    WORD width;
+
+    if (!showFinalScore || !rp) {
         return;
     }
 
@@ -476,10 +624,32 @@ static void DrawPausedText(struct RastPort *rp, struct TextFont *font, BOOL paus
         SetFont(rp, font);
     }
 
-    len = 6;
-    width = TextLength(rp, (STRPTR)gPausedText, len);
+    len = BuildFinalScoreText(text, TargetScoring_GetTotalScore());
+    width = TextLength(rp, (STRPTR)text, len);
     x = (WORD)((SCR_W - width) / 2);
-    DrawTextWithShadow(rp, font, x, HUD_PAUSED_Y, HUD_TEXT_PEN, gPausedText, len);
+    DrawTextWithShadow(rp, font, x, HUD_FINAL_SCORE_Y, HUD_TEXT_PEN, text, len);
+}
+
+static void DrawAccuracy(struct RastPort *rp, struct TextFont *font, BOOL showFinalScore) {
+    char text[24];
+    UWORD len;
+    WORD x;
+    WORD width;
+    UWORD accuracy;
+
+    if (!showFinalScore || !rp) {
+        return;
+    }
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    accuracy = CalculateAccuracyPercent(TargetScoring_GetTotalScore());
+    len = BuildAccuracyText(text, accuracy);
+    width = TextLength(rp, (STRPTR)text, len);
+    x = (WORD)((SCR_W - width) / 2);
+    DrawTextWithShadow(rp, font, x, HUD_ACCURACY_Y, HUD_TEXT_PEN, text, len);
 }
 
 static LONG ClampLeadFP(LONG v) {
@@ -494,7 +664,7 @@ static LONG ClampLeadFP(LONG v) {
     return v;
 }
 
-void RunRangeWithFrontSight(BOOL useDBuf) {
+BOOL RunRangeWithFrontSight(BOOL useDBuf) {
     AmacsBob frontSight;
     AmacsBob rearSight;
     struct TextFont *hudFont = NULL;
@@ -537,26 +707,42 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     UBYTE lastShotScore = SCORE_MISS;
     WORD currentFrontRecoilY = 0;
     WORD currentRearRecoilY = 0;
+    UWORD ammoCount = HUD_AMMO_MAX;
+    BOOL showFinalScore = FALSE;
+    BOOL sessionComplete = FALSE;
 
     if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, FRONTSIGHT_W,
                             FRONTSIGHT_H, 5)) {
-        return;
+        return FALSE;
     }
 
     if (!Bob_LoadRawAndMask(&rearSight, REARSIGHT_RAW, REARSIGHT_MASK, REARSIGHT_W, REARSIGHT_H,
                             5)) {
         Bob_Free(&frontSight);
-        return;
+        return FALSE;
     }
 
     hudFont = OpenFont((struct TextAttr *)&gHudFontAttr);
     ResetHitCounter();
+    TargetScoring_Reset();
 
-    TargetsHandler_Init();
+    if (!TargetsHandler_Init()) {
+        if (hudFont) {
+            CloseFont(hudFont);
+        }
+        Bob_Free(&frontSight);
+        Bob_Free(&rearSight);
+        return FALSE;
+    }
 
     if (!Sound_Init()) {
         DebugBeepError(Sound_GetLastError());
     }
+
+    /* ensure a clean session state even when coming back from a previous run */
+    TargetsHandler_Reset();
+    TargetsHandler_SetPaused(FALSE);
+    Sound_SetPaused(FALSE);
 
     tempMaskPlane = (PLANEPTR)AllocRaster(FRONTSIGHT_W, FRONTSIGHT_H);
     if (!tempMaskPlane) {
@@ -567,7 +753,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
         }
         Bob_Free(&frontSight);
         Bob_Free(&rearSight);
-        return;
+        return FALSE;
     }
 
     InitBitMap(&maskSrcBm, 1, FRONTSIGHT_W, FRONTSIGHT_H);
@@ -603,7 +789,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                 }
                 Bob_Free(&frontSight);
                 Bob_Free(&rearSight);
-                return;
+                return FALSE;
             }
         }
     }
@@ -632,7 +818,7 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
     for (;;) {
         Input_PollWindow(Gfx_GetWindow());
 
-        if (!paused) {
+        if (!paused && !showFinalScore) {
             Sound_Update();
         }
 
@@ -640,24 +826,40 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             break;
         }
 
-        if (Input_KeyPressed(0x19)) {
+        if (!showFinalScore && Input_KeyPressed(0x19)) {
             paused = (BOOL)!paused;
             Sound_SetPaused(paused);
             TargetsHandler_SetPaused(paused);
         }
 
-        if (!paused) {
+        if (showFinalScore) {
+            if (!Input_IsFireDown()) {
+                shotNeedsRelease = FALSE;
+            }
+
+            if (Input_FirePressed() && !shotNeedsRelease) {
+                shotNeedsRelease = TRUE;
+                Sound_SetPaused(FALSE);
+                TargetsHandler_SetPaused(FALSE);
+                sessionComplete = TRUE;
+                break;
+            }
+        }
+
+        if (!paused && !showFinalScore) {
             if (!Input_IsFireDown()) {
                 shotNeedsRelease = FALSE;
             }
 
             if (Input_FirePressed()) {
-                if (!shotNeedsRelease && ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
+                if (ammoCount > 0 && !shotNeedsRelease &&
+                    ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
                     WORD aimX;
                     WORD aimY;
                     UWORD hitDelayTicks;
                     UBYTE hitScore = SCORE_MISS;
 
+                    ammoCount--;
                     Sound_PlayShot();
                     MarkShotFired(&shotCooldownActive, &lastShotStamp);
                     shotNeedsRelease = TRUE;
@@ -681,6 +883,12 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
                     }
 
                     resultFlashTicks = RESULT_FLASH_TICKS;
+
+                    if (ammoCount == 0) {
+                        showFinalScore = TRUE;
+                        Sound_SetPaused(TRUE);
+                        TargetsHandler_SetPaused(TRUE);
+                    }
                 }
             }
 
@@ -909,9 +1117,12 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
             }
 
             DrawHitCounter(rp, hudFont);
+            DrawAmmoBlocks(rp, hudFont, ammoCount);
             DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
             DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
-            DrawPausedText(rp, hudFont, paused);
+            DrawCenterStatusText(rp, hudFont, paused, showFinalScore);
+            DrawFinalScore(rp, hudFont, showFinalScore);
+            DrawAccuracy(rp, hudFont, showFinalScore);
 
             if (useDBuf) {
                 Gfx_SwapBuffers();
@@ -945,4 +1156,6 @@ void RunRangeWithFrontSight(BOOL useDBuf) {
 
     Bob_Free(&frontSight);
     Bob_Free(&rearSight);
+
+    return sessionComplete;
 }

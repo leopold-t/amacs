@@ -4,6 +4,24 @@
 #include <exec/types.h>
 #include <graphics/rastport.h>
 
+#define T050_W 48
+#define T050_H 23
+
+#define T100_W 24
+#define T100_H 11
+
+#define T150_W 9
+#define T150_H 17
+
+#define T200_W 8
+#define T200_H 15
+
+#define T250_W 7
+#define T250_H 14
+
+#define T300_W 5
+#define T300_H 10
+
 typedef enum TargetDistance {
     TARGET_DISTANCE_050 = 50,
     TARGET_DISTANCE_100 = 100,

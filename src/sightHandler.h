@@ -8,6 +8,6 @@
  *  - TRUE  => draw to back buffer via Gfx_GetDrawRastPort() and swap
  *  - FALSE => draw directly to screen RastPort (no DBuf)
  */
-void RunRangeWithFrontSight(BOOL useDBuf);
+BOOL RunRangeWithFrontSight(BOOL useDBuf);
 
 #endif /* SIGHTHANDLER_H */

@@ -5,7 +5,7 @@
 
 /* Canonical palette symbols (defined in assets.c) */
 extern const UWORD LogoPaletteRGB4[16];
-extern const UWORD TitlePaletteRGB4[16];
+extern const UWORD Title_ScreenPaletteRGB4[32];
 extern const UWORD TrainingInfoPaletteRGB4[32];
 extern const UWORD FundamentalsPaletteRGB4[32];
 extern const UWORD TargetRangesPaletteRGB4[32];
@@ -14,7 +14,7 @@ extern const UWORD RangePaletteRGB4[32];
 
 /* Friendly aliases (use these in code if you prefer) */
 #define logoPalette LogoPaletteRGB4
-#define titlePalette TitlePaletteRGB4
+#define titlePalette Title_ScreenPaletteRGB4
 #define trainingInfoPalette TrainingInfoPaletteRGB4
 #define fundamentalsPalette FundamentalsPaletteRGB4
 #define targetRangesPalette TargetRangesPaletteRGB4

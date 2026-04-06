@@ -28,24 +28,6 @@
 #define TARGET300_RAW "gfx/Target300.raw"
 #define TARGET300_MASK "gfx/Target300.mask"
 
-#define T050_W 48
-#define T050_H 23
-
-#define T100_W 24
-#define T100_H 11
-
-#define T150_W 9
-#define T150_H 17
-
-#define T200_W 8
-#define T200_H 15
-
-#define T250_W 7
-#define T250_H 14
-
-#define T300_W 5
-#define T300_H 10
-
 #define SCR_W 320
 #define SCR_H 256
 
@@ -406,6 +388,11 @@ static void DrawSeries(TargetSeries *s, struct RastPort *rp) {
 
 BOOL TargetsHandler_Init(void) {
     if (gInited) {
+        gPaused = FALSE;
+        gPauseStamp.ds_Days = 0;
+        gPauseStamp.ds_Minute = 0;
+        gPauseStamp.ds_Tick = 0;
+        TargetsHandler_Reset();
         return TRUE;
     }
     gInited = TRUE;
@@ -489,6 +476,11 @@ void TargetsHandler_Reset(void) {
     if (!gReady) {
         return;
     }
+
+    gPaused = FALSE;
+    gPauseStamp.ds_Days = 0;
+    gPauseStamp.ds_Minute = 0;
+    gPauseStamp.ds_Tick = 0;
 
     StartSlot(&gSeries050, 0);
     gSeries050.startDelayTicks = SERIES050_DELAY;
