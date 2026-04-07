@@ -32,6 +32,9 @@ BOOL Gfx_CrossFadeToImage(const char *file, const UWORD *fromPal, UWORD fromColo
 BOOL Gfx_SwitchHiResToLoResOnBlack(const UWORD *currentHiPal16, UWORD loWidth, UWORD loHeight,
                                    UBYTE loDepth);
 
+/* Fades the current screen out to black using the supplied palette. */
+void Gfx_FadeOutCurrentScreenToBlack(const UWORD *currentPal, UWORD colors);
+
 /* Enable double buffering on current screen (LoRes range). */
 BOOL Gfx_EnableDoubleBuffering(void);
 

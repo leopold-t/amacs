@@ -395,6 +395,16 @@ void Gfx_CloseScreenAndWindow(void) {
     }
 }
 
+void Gfx_FadeOutCurrentScreenToBlack(const UWORD *currentPal, UWORD colors) {
+    if (!screen || !currentPal || colors == 0) {
+        return;
+    }
+
+    FadeOutToBlack(screen, currentPal, colors);
+    WaitBlit();
+    SettleDisplay(1);
+}
+
 BOOL Gfx_ShowImageFadeInFromBlack(const char *file, const UWORD *targetPal, UWORD colors) {
     UWORD black[32] = {0};
 
