@@ -32,6 +32,9 @@ extern BOOL Input_Down(void);
 #define REARSIGHT_W 115
 #define REARSIGHT_H 115
 
+#define SCR_W 320
+#define SCR_H 256
+
 #define OVERSCAN_X 41
 #define OVERSCAN_X_EXTRA 16
 #define OVERSCAN_X_TOTAL (OVERSCAN_X + OVERSCAN_X_EXTRA)
@@ -94,7 +97,7 @@ extern BOOL Input_Down(void);
 #define HUD_MARGIN_RIGHT 11
 
 // TODO: For testing purposes only, set it to the 30rd in the final release
-#define HUD_MAGAZINE_SIZE 10
+#define HUD_MAGAZINE_SIZE 5
 
 #define HUD_AMMO_MAX (HUD_MAGAZINE_COUNT * HUD_MAGAZINE_SIZE)
 #define HUD_AMMO_BLOCK_CHAR ((char)0xDB)

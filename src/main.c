@@ -9,7 +9,6 @@
 #include "gfx.h"
 #include "input.h"
 #include "levelManager.h"
-#include "sightHandler.h"
 #include "targetsHandler.h"
 
 /* If your input.h doesn't expose directions yet, keep these externs here.
@@ -208,6 +207,8 @@ static BOOL UseDoubleBuffering(void) {
     return safe;
 }
 
+
+
 typedef struct TargetRangesBob {
     AmacsBob bob;
     WORD x;
@@ -242,8 +243,8 @@ static void DrawTargetRangesBobReveal(struct RastPort *rp, const TargetRangesBob
         dstY = 0;
     }
 
-    if ((dstY + visibleH) > SCR_H) {
-        visibleH = (WORD)(SCR_H - dstY);
+    if ((dstY + visibleH) > LO_HEIGHT) {
+        visibleH = (WORD)(LO_HEIGHT - dstY);
     }
 
     if (visibleH <= 0) {
@@ -283,27 +284,12 @@ static BOOL LoadTargetRangesBobs(TargetRangesBob *targets) {
     targets[5].x = 280;
     targets[5].bottomY = 118;
 
-    if (!Bob_LoadRawAndMask(&targets[0].bob, TARGET050_RAW, TARGET050_MASK, T050_W, T050_H, 5)) {
-        FreeTargetRangesBobs(targets, 6);
-        return FALSE;
-    }
-    if (!Bob_LoadRawAndMask(&targets[1].bob, TARGET100_RAW, TARGET100_MASK, T100_W, T100_H, 5)) {
-        FreeTargetRangesBobs(targets, 6);
-        return FALSE;
-    }
-    if (!Bob_LoadRawAndMask(&targets[2].bob, TARGET150_RAW, TARGET150_MASK, T150_W, T150_H, 5)) {
-        FreeTargetRangesBobs(targets, 6);
-        return FALSE;
-    }
-    if (!Bob_LoadRawAndMask(&targets[3].bob, TARGET200_RAW, TARGET200_MASK, T200_W, T200_H, 5)) {
-        FreeTargetRangesBobs(targets, 6);
-        return FALSE;
-    }
-    if (!Bob_LoadRawAndMask(&targets[4].bob, TARGET250_RAW, TARGET250_MASK, T250_W, T250_H, 5)) {
-        FreeTargetRangesBobs(targets, 6);
-        return FALSE;
-    }
-    if (!Bob_LoadRawAndMask(&targets[5].bob, TARGET300_RAW, TARGET300_MASK, T300_W, T300_H, 5)) {
+    if (!Bob_LoadRawAndMask(&targets[0].bob, TARGET050_RAW, TARGET050_MASK, T050_W, T050_H, LO_DEPTH) ||
+        !Bob_LoadRawAndMask(&targets[1].bob, TARGET100_RAW, TARGET100_MASK, T100_W, T100_H, LO_DEPTH) ||
+        !Bob_LoadRawAndMask(&targets[2].bob, TARGET150_RAW, TARGET150_MASK, T150_W, T150_H, LO_DEPTH) ||
+        !Bob_LoadRawAndMask(&targets[3].bob, TARGET200_RAW, TARGET200_MASK, T200_W, T200_H, LO_DEPTH) ||
+        !Bob_LoadRawAndMask(&targets[4].bob, TARGET250_RAW, TARGET250_MASK, T250_W, T250_H, LO_DEPTH) ||
+        !Bob_LoadRawAndMask(&targets[5].bob, TARGET300_RAW, TARGET300_MASK, T300_W, T300_H, LO_DEPTH)) {
         FreeTargetRangesBobs(targets, 6);
         return FALSE;
     }
@@ -317,8 +303,13 @@ static WaitResult WaitForTargetRangesAdvance(void) {
     UWORD delayTicks = 0;
     UWORD revealTicks = 0;
     BOOL inputEnabled = FALSE;
+    struct Screen *screen = Gfx_GetScreen();
     struct RastPort *rp;
     UWORD i;
+
+    if (!screen) {
+        return WAIT_ESC;
+    }
 
     DrainWindowMessages();
 
@@ -326,7 +317,7 @@ static WaitResult WaitForTargetRangesAdvance(void) {
         return WAIT_ESC;
     }
     loaded = TRUE;
-    rp = &Gfx_GetScreen()->RastPort;
+    rp = &screen->RastPort;
 
     for (;;) {
         BOOL adv = FALSE, esc = FALSE;
@@ -535,11 +526,14 @@ int main(void) {
                 engaged = FALSE;
                 attr = ATTR_TRAINING_INFO;
 
-                if (useDBuf) {
-                    Gfx_DisableDoubleBuffering();
+                Gfx_CloseScreenAndWindow();
+
+                if (!Gfx_OpenScreenAndWindow(TITLE_WIDTH, TITLE_HEIGHT, TITLE_DEPTH,
+                                            TITLE_DISPLAY_ID)) {
+                    goto fail;
                 }
 
-                if (!Gfx_CrossFadeToImage(TITLE_FILE, rangePalette, 32, titlePalette, 32)) {
+                if (!Gfx_ShowImageFadeInFromBlack(TITLE_FILE, titlePalette, 32)) {
                     goto fail;
                 }
 
@@ -553,8 +547,13 @@ int main(void) {
                     }
                 }
 
-                if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32, trainingInfoPalette,
-                                          32)) {
+                Gfx_CloseScreenAndWindow();
+
+                if (!Gfx_OpenScreenAndWindow(LO_WIDTH, LO_HEIGHT, LO_DEPTH, LORES_KEY)) {
+                    goto fail;
+                }
+
+                if (!Gfx_ShowImageFadeInFromBlack(TRAINING_INFO_FILE, trainingInfoPalette, 32)) {
                     goto fail;
                 }
 
