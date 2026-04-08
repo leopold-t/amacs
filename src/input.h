@@ -13,6 +13,7 @@ BOOL Input_Left(void);
 BOOL Input_Right(void);
 BOOL Input_Up(void);
 BOOL Input_Down(void);
+void Input_ResetState(void);
 
 void Input_PollWindow(struct Window *win);
 

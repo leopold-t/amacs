@@ -1,5 +1,5 @@
-#ifndef SIGHTHANDLER_H
-#define SIGHTHANDLER_H
+#ifndef RANGEHANDLER_H
+#define RANGEHANDLER_H
 
 #include <exec/types.h>
 
@@ -10,4 +10,4 @@
  */
 BOOL RunRangeWithFrontSight(BOOL useDBuf);
 
-#endif /* SIGHTHANDLER_H */
+#endif /* RANGEHANDLER_H */

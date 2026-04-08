@@ -1,4 +1,4 @@
-#include "sightHandler.h"
+#include "rangeHandler.h"
 
 #include <dos/dos.h>
 #include <exec/types.h>
@@ -7,10 +7,12 @@
 #include <proto/dos.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
+#include <string.h>
 
 #include "bob.h"
 #include "gfx.h"
 #include "input.h"
+#include "levelManager.h"
 #include "soundHandler.h"
 #include "targetScoring.h"
 #include "targetsHandler.h"
@@ -106,6 +108,77 @@ extern BOOL Input_Down(void);
 static const struct TextAttr gHudFontAttr = {HUD_FONT_NAME, HUD_FONT_SIZE, FS_NORMAL, FPF_ROMFONT};
 
 static UWORD gHitCount = 0;
+
+static void ResetHitCounter(void);
+static UWORD CalculateAccuracyPercent(UWORD score);
+
+/* Record containing range state flags */
+typedef struct RangeSessionState {
+    WORD ringX;
+    WORD ringY;
+    LONG ax;
+    LONG ay;
+    LONG vx;
+    LONG vy;
+    LONG leadX;
+    LONG leadY;
+
+    int prevDirX;
+    int prevDirY;
+    UWORD holdX;
+    UWORD holdY;
+
+    BOOL shotCooldownActive;
+    BOOL shotNeedsRelease;
+    BOOL recoilActive;
+    UWORD recoilTick;
+    struct DateStamp lastShotStamp;
+
+    WORD rearRecoilHistory[RECOIL_REAR_DELAY_TICKS];
+    WORD currentFrontRecoilY;
+    WORD currentRearRecoilY;
+
+    BOOL paused;
+    BOOL shotTaken;
+    BOOL lastShotHit;
+    UBYTE lastShotScore;
+
+    UWORD resultFlashTicks;
+    UWORD resultFlashColor;
+
+    UWORD ammoCount;
+
+    BOOL showFinalScore;
+    BOOL sessionComplete;
+
+    struct DateStamp finalScoreStamp;
+    BOOL finalScoreStampValid;
+} RangeSessionState;
+
+/* Mandatory function to reset and restore range state */
+static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSession) {
+    memset(state, 0, sizeof(*state));
+
+    state->ringX = (SCR_W - REARSIGHT_W) / 2;
+    state->ringY = (SCR_H - REARSIGHT_H) / 2;
+    state->lastShotScore = SCORE_MISS;
+    state->ammoCount = HUD_AMMO_MAX;
+    state->resultFlashColor = SCORE_FLASH_MISS_COLOR;
+    state->paused = FALSE;
+    state->showFinalScore = FALSE;
+    state->sessionComplete = FALSE;
+
+    Input_ResetState();
+    ResetHitCounter();
+    TargetScoring_Reset();
+    TargetsHandler_Reset();
+
+    if (isNewGameSession) {
+        /* total score / campaign reset later */
+    }
+
+    IS_NEW_GAME_SESSION = FALSE;
+}
 
 static void ResetHitCounter(void) {
     gHitCount = 0;
@@ -665,15 +738,13 @@ static LONG ClampLeadFP(LONG v) {
 }
 
 BOOL RunRangeWithFrontSight(BOOL useDBuf) {
+    RangeSessionState state;
+    InitRangeSessionState(&state, IS_NEW_GAME_SESSION);
+
     AmacsBob frontSight;
     AmacsBob rearSight;
     struct TextFont *hudFont = NULL;
-    WORD ringX = (SCR_W - REARSIGHT_W) / 2;
-    WORD ringY = (SCR_H - REARSIGHT_H) / 2;
-    LONG ax = 0;
-    LONG ay = 0;
-    LONG vx = 0;
-    LONG vy = 0;
+
     const LONG V_MAX = 8192;
     const LONG V_MIN = 96;
     const LONG V_STOP = 32;
@@ -681,35 +752,42 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
     const LONG DECAY_NUM = 64;
     const LONG DECAY_DEN = 256;
     const UWORD START_DELAY = 3;
-    static int prevDirX = 0;
-    static int prevDirY = 0;
-    static UWORD holdX = 0;
-    static UWORD holdY = 0;
-    LONG leadX = 0;
-    LONG leadY = 0;
     struct BitMap bg;
     BOOL haveBg = FALSE;
     PLANEPTR tempMaskPlane = NULL;
     struct BitMap maskSrcBm;
     struct BitMap maskTmpBm;
     struct RastPort maskTmpRP;
-    BOOL shotCooldownActive = FALSE;
-    BOOL shotNeedsRelease = FALSE;
-    BOOL recoilActive = FALSE;
-    UWORD recoilTick = 0;
-    WORD rearRecoilHistory[RECOIL_REAR_DELAY_TICKS] = {0};
-    UWORD resultFlashTicks = 0;
-    UWORD resultFlashColor = SCORE_FLASH_MISS_COLOR;
-    struct DateStamp lastShotStamp;
-    BOOL paused = FALSE;
-    BOOL shotTaken = FALSE;
-    BOOL lastShotHit = FALSE;
-    UBYTE lastShotScore = SCORE_MISS;
-    WORD currentFrontRecoilY = 0;
-    WORD currentRearRecoilY = 0;
-    UWORD ammoCount = HUD_AMMO_MAX;
-    BOOL showFinalScore = FALSE;
-    BOOL sessionComplete = FALSE;
+
+#define ringX state.ringX
+#define ringY state.ringY
+#define ax state.ax
+#define ay state.ay
+#define vx state.vx
+#define vy state.vy
+#define prevDirX state.prevDirX
+#define prevDirY state.prevDirY
+#define holdX state.holdX
+#define holdY state.holdY
+#define leadX state.leadX
+#define leadY state.leadY
+#define shotCooldownActive state.shotCooldownActive
+#define shotNeedsRelease state.shotNeedsRelease
+#define recoilActive state.recoilActive
+#define recoilTick state.recoilTick
+#define rearRecoilHistory state.rearRecoilHistory
+#define resultFlashTicks state.resultFlashTicks
+#define resultFlashColor state.resultFlashColor
+#define lastShotStamp state.lastShotStamp
+#define paused state.paused
+#define shotTaken state.shotTaken
+#define lastShotHit state.lastShotHit
+#define lastShotScore state.lastShotScore
+#define currentFrontRecoilY state.currentFrontRecoilY
+#define currentRearRecoilY state.currentRearRecoilY
+#define ammoCount state.ammoCount
+#define showFinalScore state.showFinalScore
+#define sessionComplete state.sessionComplete
 
     if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, FRONTSIGHT_W,
                             FRONTSIGHT_H, 5)) {
@@ -723,8 +801,6 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
     }
 
     hudFont = OpenFont((struct TextAttr *)&gHudFontAttr);
-    ResetHitCounter();
-    TargetScoring_Reset();
 
     if (!TargetsHandler_Init()) {
         if (hudFont) {
@@ -803,17 +879,6 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
             haveBg = TRUE;
         }
     }
-
-    prevDirX = 0;
-    prevDirY = 0;
-    holdX = 0;
-    holdY = 0;
-    ax = 0;
-    ay = 0;
-    vx = 0;
-    vy = 0;
-    leadX = 0;
-    leadY = 0;
 
     for (;;) {
         Input_PollWindow(Gfx_GetWindow());
@@ -1157,5 +1222,35 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
     Bob_Free(&frontSight);
     Bob_Free(&rearSight);
 
-    return sessionComplete;
+#undef ringX
+#undef ringY
+#undef ax
+#undef ay
+#undef vx
+#undef vy
+#undef prevDirX
+#undef prevDirY
+#undef holdX
+#undef holdY
+#undef leadX
+#undef leadY
+#undef shotCooldownActive
+#undef shotNeedsRelease
+#undef recoilActive
+#undef recoilTick
+#undef rearRecoilHistory
+#undef resultFlashTicks
+#undef resultFlashColor
+#undef lastShotStamp
+#undef paused
+#undef shotTaken
+#undef lastShotHit
+#undef lastShotScore
+#undef currentFrontRecoilY
+#undef currentRearRecoilY
+#undef ammoCount
+#undef showFinalScore
+#undef sessionComplete
+
+    return state.sessionComplete;
 }

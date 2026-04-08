@@ -207,8 +207,6 @@ static BOOL UseDoubleBuffering(void) {
     return safe;
 }
 
-
-
 typedef struct TargetRangesBob {
     AmacsBob bob;
     WORD x;
@@ -284,12 +282,18 @@ static BOOL LoadTargetRangesBobs(TargetRangesBob *targets) {
     targets[5].x = 280;
     targets[5].bottomY = 118;
 
-    if (!Bob_LoadRawAndMask(&targets[0].bob, TARGET050_RAW, TARGET050_MASK, T050_W, T050_H, LO_DEPTH) ||
-        !Bob_LoadRawAndMask(&targets[1].bob, TARGET100_RAW, TARGET100_MASK, T100_W, T100_H, LO_DEPTH) ||
-        !Bob_LoadRawAndMask(&targets[2].bob, TARGET150_RAW, TARGET150_MASK, T150_W, T150_H, LO_DEPTH) ||
-        !Bob_LoadRawAndMask(&targets[3].bob, TARGET200_RAW, TARGET200_MASK, T200_W, T200_H, LO_DEPTH) ||
-        !Bob_LoadRawAndMask(&targets[4].bob, TARGET250_RAW, TARGET250_MASK, T250_W, T250_H, LO_DEPTH) ||
-        !Bob_LoadRawAndMask(&targets[5].bob, TARGET300_RAW, TARGET300_MASK, T300_W, T300_H, LO_DEPTH)) {
+    if (!Bob_LoadRawAndMask(&targets[0].bob, TARGET050_RAW, TARGET050_MASK, T050_W, T050_H,
+                            LO_DEPTH) ||
+        !Bob_LoadRawAndMask(&targets[1].bob, TARGET100_RAW, TARGET100_MASK, T100_W, T100_H,
+                            LO_DEPTH) ||
+        !Bob_LoadRawAndMask(&targets[2].bob, TARGET150_RAW, TARGET150_MASK, T150_W, T150_H,
+                            LO_DEPTH) ||
+        !Bob_LoadRawAndMask(&targets[3].bob, TARGET200_RAW, TARGET200_MASK, T200_W, T200_H,
+                            LO_DEPTH) ||
+        !Bob_LoadRawAndMask(&targets[4].bob, TARGET250_RAW, TARGET250_MASK, T250_W, T250_H,
+                            LO_DEPTH) ||
+        !Bob_LoadRawAndMask(&targets[5].bob, TARGET300_RAW, TARGET300_MASK, T300_W, T300_H,
+                            LO_DEPTH)) {
         FreeTargetRangesBobs(targets, 6);
         return FALSE;
     }
@@ -425,6 +429,8 @@ int main(void) {
         return RETURN_FAIL;
     }
 
+    IS_NEW_GAME_SESSION = TRUE;
+
     {
         WaitResult r = WaitForAdvanceOrTimeout(TITLE_SECONDS);
         if (r == WAIT_ESC) {
@@ -435,7 +441,6 @@ int main(void) {
         }
     }
 
-    /* ---------------- Switch from title to LoRes gameplay/info ---------------- */
     if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32, trainingInfoPalette, 32)) {
         Gfx_CloseScreenAndWindow();
         Gfx_CloseBlackScreen();
@@ -544,8 +549,8 @@ int main(void) {
                     }
                 }
 
-                if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32,
-                                          trainingInfoPalette, 32)) {
+                if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32, trainingInfoPalette,
+                                          32)) {
                     goto fail;
                 }
 

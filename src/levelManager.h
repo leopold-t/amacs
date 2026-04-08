@@ -3,6 +3,8 @@
 
 #include <exec/types.h>
 
+extern BOOL IS_NEW_GAME_SESSION;
+
 typedef enum LevelManagerMode {
     LEVEL_MANAGER_MODE_DEMO = 0,
     LEVEL_MANAGER_MODE_LEVEL1

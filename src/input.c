@@ -138,3 +138,13 @@ BOOL Input_FirePressed(void) {
 BOOL Input_IsFireDown(void) {
     return (joyFireDown || mouseFireDown) ? TRUE : FALSE;
 }
+void Input_ResetState(void) {
+    UWORD i;
+    firePressedEdge = FALSE;
+    joyFireDown = FALSE;
+    mouseFireDown = FALSE;
+    for (i = 0; i < 256; i++) {
+        keyDown[i] = FALSE;
+        keyPressed[i] = FALSE;
+    }
+}

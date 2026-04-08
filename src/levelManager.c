@@ -1,6 +1,9 @@
 #include "levelManager.h"
 
-#include "sightHandler.h"
+BOOL IS_NEW_GAME_SESSION = TRUE;
+
+
+#include "rangeHandler.h"
 
 typedef struct LevelManagerState {
     LevelManagerMode mode;
@@ -12,8 +15,7 @@ void LevelManager_Init(void) {
     gLevelManager.mode = LEVEL_MANAGER_MODE_DEMO;
 }
 
-void LevelManager_Shutdown(void) {
-}
+void LevelManager_Shutdown(void) {}
 
 void LevelManager_SetMode(LevelManagerMode mode) {
     gLevelManager.mode = mode;
