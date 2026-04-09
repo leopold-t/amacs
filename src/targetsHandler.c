@@ -51,6 +51,8 @@
 #define HIT_DELAY_250 50
 #define HIT_DELAY_300 60
 
+#define DEMO_TARGET_LIMIT 10
+
 #define SLOT050_COUNT 5
 static const WORD gSlot050X[SLOT050_COUNT] = {17, 77, 136, 195, 255};
 static const WORD gSlot050Y[SLOT050_COUNT] = {215, 215, 215, 215, 215};
@@ -95,6 +97,8 @@ static BOOL gInited = FALSE;
 static BOOL gReady = FALSE;
 static BOOL gPaused = FALSE;
 static struct DateStamp gPauseStamp;
+static ULONG gRandomState = 1;
+static UWORD gSpawnedTargets = 0;
 
 static TargetSeries gSeries050;
 static TargetSeries gSeries100;
@@ -180,7 +184,142 @@ static ULONG ElapsedTicks(const struct DateStamp *start) {
     return (ULONG)total;
 }
 
+static ULONG NextRandom(void) {
+    struct DateStamp now;
+
+    DateStamp(&now);
+    gRandomState ^= (ULONG)now.ds_Tick;
+    gRandomState ^= ((ULONG)now.ds_Minute << 8);
+    gRandomState = (gRandomState * 1103515245UL) + 12345UL;
+    return gRandomState;
+}
+
+static BOOL ConsumeTargetBudget(void) {
+    if (gSpawnedTargets >= DEMO_TARGET_LIMIT) {
+        return FALSE;
+    }
+
+    gSpawnedTargets++;
+    return TRUE;
+}
+
+static BOOL GetSlotRect(const TargetSeries *s, WORD slot, WORD *outLeft, WORD *outTop,
+                        WORD *outRight, WORD *outBottom) {
+    WORD left;
+    WORD top;
+
+    if (!s || slot < 0 || slot >= s->slotCount) {
+        return FALSE;
+    }
+
+    left = s->slotX[slot];
+    top = (WORD)(s->slotY[slot] - s->height + 1);
+
+    if (outLeft) {
+        *outLeft = left;
+    }
+    if (outTop) {
+        *outTop = top;
+    }
+    if (outRight) {
+        *outRight = (WORD)(left + s->width - 1);
+    }
+    if (outBottom) {
+        *outBottom = s->slotY[slot];
+    }
+
+    return TRUE;
+}
+
+static BOOL RectsOverlap(WORD l1, WORD t1, WORD r1, WORD b1, WORD l2, WORD t2, WORD r2, WORD b2) {
+    if (r1 < l2 || r2 < l1) {
+        return FALSE;
+    }
+    if (b1 < t2 || b2 < t1) {
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static BOOL IsSlotOccupied(const TargetSeries *self, WORD slot) {
+    TargetSeries *series[6] = {&gSeries050, &gSeries100, &gSeries150, &gSeries200, &gSeries250, &gSeries300};
+    WORD l1, t1, r1, b1;
+    int i;
+
+    if (!GetSlotRect(self, slot, &l1, &t1, &r1, &b1)) {
+        return TRUE;
+    }
+
+    for (i = 0; i < 6; i++) {
+        TargetSeries *other = series[i];
+        WORD l2, t2, r2, b2;
+
+        if (other == self || !other->loaded || !other->visible || other->hit) {
+            continue;
+        }
+
+        if (!GetSlotRect(other, other->activeSlot, &l2, &t2, &r2, &b2)) {
+            continue;
+        }
+
+        if (RectsOverlap(l1, t1, r1, b1, l2, t2, r2, b2)) {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static WORD PickRandomFreeSlot(TargetSeries *s) {
+    WORD candidates[16];
+    WORD count = 0;
+    WORD i;
+
+    if (!s || s->slotCount <= 0) {
+        return 0;
+    }
+
+    for (i = 0; i < s->slotCount && i < 16; i++) {
+        if (!IsSlotOccupied(s, i)) {
+            candidates[count++] = i;
+        }
+    }
+
+    if (count == 0) {
+        return 0;
+    }
+
+    return candidates[NextRandom() % count];
+}
+
+static BOOL SpawnSeries(TargetSeries *s, ULONG delayTicks) {
+    WORD slot;
+
+    if (!s || !s->loaded) {
+        return FALSE;
+    }
+
+    if (!ConsumeTargetBudget()) {
+        s->visible = FALSE;
+        s->hit = FALSE;
+        s->startDelayTicks = 0;
+        return FALSE;
+    }
+
+    slot = PickRandomFreeSlot(s);
+    s->activeSlot = slot;
+    s->visible = TRUE;
+    s->hit = FALSE;
+    s->startDelayTicks = delayTicks;
+    DateStamp(&s->startStamp);
+    return TRUE;
+}
+
 static void StartSlot(TargetSeries *s, WORD slot) {
+    if (!s) {
+        return;
+    }
+
     if (slot >= s->slotCount) {
         slot = 0;
     }
@@ -188,6 +327,7 @@ static void StartSlot(TargetSeries *s, WORD slot) {
     s->activeSlot = slot;
     s->visible = TRUE;
     s->hit = FALSE;
+    s->startDelayTicks = 0;
     DateStamp(&s->startStamp);
 }
 
@@ -257,7 +397,7 @@ static BOOL GetSeriesVisibleRect(TargetSeries *s, WORD *outX, WORD *outY, WORD *
 
     t -= s->startDelayTicks;
     if (t >= SLOT_TOTAL_TICKS) {
-        return FALSE;
+        t = SLOT_TOTAL_TICKS - 1;
     }
 
     left = s->slotX[s->activeSlot];
@@ -355,22 +495,28 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, UBYTE *hitScore) {
 static void TickSeries(TargetSeries *s) {
     ULONG t;
 
-    if (!s->loaded) {
+    if (!s || !s->loaded) {
         return;
     }
 
     t = ElapsedTicks(&s->startStamp);
 
+    if (s->hit) {
+        if (t >= s->hitDelayTicks) {
+            SpawnSeries(s, 0);
+        }
+        return;
+    }
+
+    if (!s->visible) {
+        return;
+    }
+
     if (t < s->startDelayTicks) {
         return;
     }
 
-    t -= s->startDelayTicks;
-
-    if (t >= SLOT_TOTAL_TICKS) {
-        StartSlot(s, s->activeSlot + 1);
-        s->startDelayTicks = 0;
-    }
+    /* Once spawned, the target stays in its slot until hit. */
 }
 
 static void DrawSeries(TargetSeries *s, struct RastPort *rp) {
@@ -439,6 +585,14 @@ BOOL TargetsHandler_Init(void) {
     gPauseStamp.ds_Days = 0;
     gPauseStamp.ds_Minute = 0;
     gPauseStamp.ds_Tick = 0;
+    gSpawnedTargets = 0;
+    NextRandom();
+    SpawnSeries(&gSeries050, SERIES050_DELAY);
+    SpawnSeries(&gSeries100, SERIES100_DELAY);
+    SpawnSeries(&gSeries150, SERIES150_DELAY);
+    SpawnSeries(&gSeries200, SERIES200_DELAY);
+    SpawnSeries(&gSeries250, SERIES250_DELAY);
+    SpawnSeries(&gSeries300, SERIES300_DELAY);
     gReady = TRUE;
     return TRUE;
 }
@@ -473,24 +627,26 @@ void TargetsHandler_Shutdown(void) {
 }
 
 void TargetsHandler_Reset(void) {
+    if (!gInited) {
+        return;
+    }
+
     gPaused = FALSE;
     gPauseStamp.ds_Days = 0;
     gPauseStamp.ds_Minute = 0;
     gPauseStamp.ds_Tick = 0;
 
-    StartSlot(&gSeries050, 0);
-    gSeries050.startDelayTicks = SERIES050_DELAY;
-    StartSlot(&gSeries100, 0);
-    gSeries100.startDelayTicks = SERIES100_DELAY;
-    StartSlot(&gSeries150, 0);
-    gSeries150.startDelayTicks = SERIES150_DELAY;
-    StartSlot(&gSeries200, 0);
-    gSeries200.startDelayTicks = SERIES200_DELAY;
-    StartSlot(&gSeries250, 0);
-    gSeries250.startDelayTicks = SERIES250_DELAY;
-    StartSlot(&gSeries300, 0);
-    gSeries300.startDelayTicks = SERIES300_DELAY;
+    gSpawnedTargets = 0;
+    NextRandom();
+
+    SpawnSeries(&gSeries050, SERIES050_DELAY);
+    SpawnSeries(&gSeries100, SERIES100_DELAY);
+    SpawnSeries(&gSeries150, SERIES150_DELAY);
+    SpawnSeries(&gSeries200, SERIES200_DELAY);
+    SpawnSeries(&gSeries250, SERIES250_DELAY);
+    SpawnSeries(&gSeries300, SERIES300_DELAY);
 }
+
 
 void TargetsHandler_ToggleSlot(UWORD slot) {
     (void)slot;

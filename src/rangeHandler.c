@@ -151,6 +151,7 @@ typedef struct RangeSessionState {
 
     BOOL showFinalScore;
     BOOL sessionComplete;
+    BOOL roundEnding;
 
     struct DateStamp finalScoreStamp;
     BOOL finalScoreStampValid;
@@ -168,6 +169,7 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
     state->paused = FALSE;
     state->showFinalScore = FALSE;
     state->sessionComplete = FALSE;
+    state->roundEnding = FALSE;
 
     Input_ResetState();
     ResetHitCounter();
@@ -805,6 +807,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
 #define ammoCount state.ammoCount
 #define showFinalScore state.showFinalScore
 #define sessionComplete state.sessionComplete
+#define roundEnding state.roundEnding
 #define finalScoreStamp state.finalScoreStamp
 #define finalScoreStampValid state.finalScoreStampValid
 
@@ -917,17 +920,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
             break;
         }
 
-        if (!showFinalScore && Input_KeyPressed(0x19)) {
+        if (!roundEnding && !showFinalScore && Input_KeyPressed(0x19)) {
             paused = (BOOL)!paused;
             Sound_SetPaused(paused);
             TargetsHandler_SetPaused(paused);
-        }
-
-        if (showFinalScore) {
-            if (finalScoreStampValid && ElapsedSecondsSince(&finalScoreStamp) >= 4UL) {
-                sessionComplete = TRUE;
-                break;
-            }
         }
 
         if (!paused) {
@@ -935,7 +931,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
                 shotNeedsRelease = FALSE;
             }
 
-            if (!showFinalScore && Input_FirePressed()) {
+            if (!roundEnding && !showFinalScore && Input_FirePressed()) {
                 if (ammoCount > 0 && !shotNeedsRelease &&
                     ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
                     WORD aimX;
@@ -957,26 +953,28 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
                     if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks, &hitScore)) {
                         RegisterHit();
                         Sound_PlayHit(hitDelayTicks);
-                        lastShotHit = TRUE;
-                        lastShotScore = hitScore;
-                        resultFlashColor = GetFlashColorForScore(hitScore);
-                    } else {
+                        if (ammoCount > 0) {
+                            lastShotHit = TRUE;
+                            lastShotScore = hitScore;
+                            resultFlashColor = GetFlashColorForScore(hitScore);
+                        }
+                    } else if (ammoCount > 0) {
                         lastShotHit = FALSE;
                         lastShotScore = SCORE_MISS;
                         resultFlashColor = SCORE_FLASH_MISS_COLOR;
                     }
 
-                    resultFlashTicks = RESULT_FLASH_TICKS;
+                    resultFlashTicks = (ammoCount > 0) ? RESULT_FLASH_TICKS : 0;
 
                     if (ammoCount == 0) {
-                        showFinalScore = TRUE;
-                        DateStamp(&finalScoreStamp);
-                        finalScoreStampValid = TRUE;
+                        roundEnding = TRUE;
                     }
                 }
             }
 
-            TargetsHandler_Tick();
+            if (!roundEnding) {
+                TargetsHandler_Tick();
+            }
 
             {
                 int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
@@ -1193,24 +1191,31 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
             DrawMaskedClipped(&rearSight.bm, rearSight.mask, rp, ringX, (WORD)(ringY + rearRecoilY),
                               REARSIGHT_W, REARSIGHT_H);
 
-            if (resultFlashTicks > 0) {
-                DrawResultFlash(rp, resultFlashColor);
-                if (!paused) {
-                    resultFlashTicks--;
+            if (!roundEnding) {
+                if (resultFlashTicks > 0) {
+                    DrawResultFlash(rp, resultFlashColor);
+                    if (!paused) {
+                        resultFlashTicks--;
+                    }
+                }
+
+                DrawHitCounter(rp, hudFont);
+                DrawAmmoBlocks(rp, hudFont, ammoCount);
+                DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
+                DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
+                DrawCenterStatusText(rp, hudFont, paused, showFinalScore);
+                DrawFinalScore(rp, hudFont, showFinalScore);
+                DrawAccuracy(rp, hudFont, showFinalScore);
+
+                if (useDBuf) {
+                    Gfx_SwapBuffers();
                 }
             }
+        }
 
-            DrawHitCounter(rp, hudFont);
-            DrawAmmoBlocks(rp, hudFont, ammoCount);
-            DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
-            DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
-            DrawCenterStatusText(rp, hudFont, paused, showFinalScore);
-            DrawFinalScore(rp, hudFont, showFinalScore);
-            DrawAccuracy(rp, hudFont, showFinalScore);
-
-            if (useDBuf) {
-                Gfx_SwapBuffers();
-            }
+        if (roundEnding && !recoilActive && ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
+            sessionComplete = TRUE;
+            break;
         }
 
         WaitTOF();
@@ -1233,6 +1238,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
         FreeRaster(tempMaskPlane, FRONTSIGHT_W, FRONTSIGHT_H);
         tempMaskPlane = NULL;
     }
+
+range_done:
 
     if (hudFont) {
         CloseFont(hudFont);
@@ -1270,6 +1277,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
 #undef ammoCount
 #undef showFinalScore
 #undef sessionComplete
+#undef roundEnding
 
     return state.sessionComplete;
 }
