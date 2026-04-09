@@ -1,9 +1,9 @@
 #include "levelManager.h"
+#include "rangeHandler.h"
+
+#include <intuition/intuition.h>
 
 BOOL IS_NEW_GAME_SESSION = TRUE;
-
-
-#include "rangeHandler.h"
 
 typedef struct LevelManagerState {
     LevelManagerMode mode;

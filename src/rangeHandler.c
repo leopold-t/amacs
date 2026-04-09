@@ -111,6 +111,7 @@ static UWORD gHitCount = 0;
 
 static void ResetHitCounter(void);
 static UWORD CalculateAccuracyPercent(UWORD score);
+static ULONG ElapsedSecondsSince(const struct DateStamp *start);
 
 /* Record containing range state flags */
 typedef struct RangeSessionState {
@@ -182,6 +183,23 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
 
 static void ResetHitCounter(void) {
     gHitCount = 0;
+}
+
+static ULONG ElapsedSecondsSince(const struct DateStamp *start) {
+    struct DateStamp now;
+    LONG totalTicks;
+
+    DateStamp(&now);
+
+    totalTicks = (now.ds_Days - start->ds_Days) * 24 * 60 * 60 * DOS_TICKS_PER_SEC;
+    totalTicks += (now.ds_Minute - start->ds_Minute) * 60 * DOS_TICKS_PER_SEC;
+    totalTicks += (now.ds_Tick - start->ds_Tick);
+
+    if (totalTicks <= 0) {
+        return 0;
+    }
+
+    return (ULONG)(totalTicks / DOS_TICKS_PER_SEC);
 }
 
 static void RegisterHit(void) {
@@ -347,8 +365,7 @@ static void DebugBeepError(SoundError err) {
     }
 
     for (i = 0; i < count; i++) {
-        DisplayBeep(Gfx_GetScreen());
-        Delay(8);
+                Delay(8);
     }
 }
 
@@ -788,6 +805,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
 #define ammoCount state.ammoCount
 #define showFinalScore state.showFinalScore
 #define sessionComplete state.sessionComplete
+#define finalScoreStamp state.finalScoreStamp
+#define finalScoreStampValid state.finalScoreStampValid
 
     if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, FRONTSIGHT_W,
                             FRONTSIGHT_H, 5)) {
@@ -821,12 +840,15 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
     Sound_SetPaused(FALSE);
 
     tempMaskPlane = (PLANEPTR)AllocRaster(FRONTSIGHT_W, FRONTSIGHT_H);
+
     if (!tempMaskPlane) {
         Sound_Shutdown();
         TargetsHandler_Shutdown();
+
         if (hudFont) {
             CloseFont(hudFont);
         }
+
         Bob_Free(&frontSight);
         Bob_Free(&rearSight);
         return FALSE;
@@ -847,8 +869,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
         UWORD p;
         for (p = 0; p < 5; p++) {
             bg.Planes[p] = (PLANEPTR)AllocRaster(SCR_W, SCR_H);
+
             if (!bg.Planes[p]) {
                 UWORD q;
+
                 for (q = 0; q < 5; q++) {
                     if (bg.Planes[q]) {
                         FreeRaster(bg.Planes[q], SCR_W, SCR_H);
@@ -860,9 +884,11 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
                 tempMaskPlane = NULL;
                 Sound_Shutdown();
                 TargetsHandler_Shutdown();
+
                 if (hudFont) {
                     CloseFont(hudFont);
                 }
+
                 Bob_Free(&frontSight);
                 Bob_Free(&rearSight);
                 return FALSE;
@@ -883,7 +909,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
     for (;;) {
         Input_PollWindow(Gfx_GetWindow());
 
-        if (!paused && !showFinalScore) {
+        if (!paused) {
             Sound_Update();
         }
 
@@ -898,25 +924,18 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
         }
 
         if (showFinalScore) {
-            if (!Input_IsFireDown()) {
-                shotNeedsRelease = FALSE;
-            }
-
-            if (Input_FirePressed() && !shotNeedsRelease) {
-                shotNeedsRelease = TRUE;
-                Sound_SetPaused(FALSE);
-                TargetsHandler_SetPaused(FALSE);
+            if (finalScoreStampValid && ElapsedSecondsSince(&finalScoreStamp) >= 4UL) {
                 sessionComplete = TRUE;
                 break;
             }
         }
 
-        if (!paused && !showFinalScore) {
+        if (!paused) {
             if (!Input_IsFireDown()) {
                 shotNeedsRelease = FALSE;
             }
 
-            if (Input_FirePressed()) {
+            if (!showFinalScore && Input_FirePressed()) {
                 if (ammoCount > 0 && !shotNeedsRelease &&
                     ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
                     WORD aimX;
@@ -951,8 +970,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
 
                     if (ammoCount == 0) {
                         showFinalScore = TRUE;
-                        Sound_SetPaused(TRUE);
-                        TargetsHandler_SetPaused(TRUE);
+                        DateStamp(&finalScoreStamp);
+                        finalScoreStampValid = TRUE;
                     }
                 }
             }

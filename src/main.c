@@ -429,13 +429,21 @@ int main(void) {
         return RETURN_FAIL;
     }
 
+    for (int i = 0; i < 32; i++) {
+        currentLoPal[i] = titlePalette[i];
+    }
+
+show_title:
     IS_NEW_GAME_SESSION = TRUE;
+    engaged = FALSE;
 
     {
         WaitResult r = WaitForAdvanceOrTimeout(TITLE_SECONDS);
+
         if (r == WAIT_ESC) {
             goto exit_ok;
         }
+
         if (r == WAIT_ADVANCE) {
             engaged = TRUE;
         }
@@ -458,9 +466,11 @@ int main(void) {
     /* ---------------- Attract loop: TRAINING_INFO -> FUNDAMENTALS ---------------- */
     for (;;) {
         WaitResult r = WaitForAdvanceOrTimeout(INFO_SECONDS);
+
         if (r == WAIT_ESC) {
             goto exit_ok;
         }
+
         if (r == WAIT_ADVANCE) {
             engaged = TRUE;
         }
@@ -528,10 +538,7 @@ int main(void) {
             }
 
             if (LevelManager_RunCurrent(useDBuf)) {
-                engaged = FALSE;
-                attr = ATTR_TRAINING_INFO;
-
-                if (Gfx_IsDoubleBufferingEnabled()) {
+                if (useDBuf) {
                     Gfx_DisableDoubleBuffering();
                 }
 
@@ -539,26 +546,11 @@ int main(void) {
                     goto fail;
                 }
 
-                {
-                    WaitResult rr = WaitForAdvanceOrTimeout(TITLE_SECONDS);
-                    if (rr == WAIT_ESC) {
-                        goto exit_ok;
-                    }
-                    if (rr == WAIT_ADVANCE) {
-                        engaged = TRUE;
-                    }
-                }
-
-                if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32, trainingInfoPalette,
-                                          32)) {
-                    goto fail;
-                }
-
                 for (int i = 0; i < 32; i++) {
-                    currentLoPal[i] = trainingInfoPalette[i];
+                    currentLoPal[i] = titlePalette[i];
                 }
 
-                continue;
+                goto show_title;
             }
 
             goto exit_ok;

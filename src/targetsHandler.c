@@ -473,10 +473,6 @@ void TargetsHandler_Shutdown(void) {
 }
 
 void TargetsHandler_Reset(void) {
-    if (!gReady) {
-        return;
-    }
-
     gPaused = FALSE;
     gPauseStamp.ds_Days = 0;
     gPauseStamp.ds_Minute = 0;
