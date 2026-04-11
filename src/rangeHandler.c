@@ -97,6 +97,11 @@ extern BOOL Input_Down(void);
 #define HUD_SHADOW_OFFSET_X 1
 #define HUD_SHADOW_OFFSET_Y 1
 #define HUD_MARGIN_RIGHT 11
+#define ENDROUND_TITLE_Y 61
+#define ENDROUND_RESULT_Y 48
+#define ENDROUND_QUALITY_Y 68
+#define ENDROUND_HITS_Y 116
+#define ENDROUND_SCORE_Y 132
 
 // TODO: For testing purposes only, set it to the 30rd in the final release
 #define HUD_MAGAZINE_SIZE 5
@@ -367,7 +372,7 @@ static void DebugBeepError(SoundError err) {
     }
 
     for (i = 0; i < count; i++) {
-                Delay(8);
+        Delay(8);
     }
 }
 
@@ -756,8 +761,57 @@ static LONG ClampLeadFP(LONG v) {
     return v;
 }
 
+static void DrawCenteredTextWithShadow(struct RastPort *rp, struct TextFont *font, WORD y,
+                                       UWORD pen, UWORD shadowPenValue, const char *text) {
+    WORD width;
+    WORD x;
+    UWORD len;
+
+    if (!rp || !text) {
+        return;
+    }
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    len = TextLen(text);
+    width = TextLength(rp, (STRPTR)text, len);
+    x = (WORD)((SCR_W - width) / 2);
+    DrawTextWithShadowEx(rp, font, x, y, pen, shadowPenValue, text, len);
+}
+
+static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL lastShotHit,
+                                UBYTE lastShotScore) {
+    const char *qualityText;
+
+    if (!rp) {
+        return;
+    }
+
+    DrawCenteredTextWithShadow(rp, font, ENDROUND_TITLE_Y, HUD_TEXT_PEN, HUD_SHADOW_PEN,
+                               "LEVEL COMPLETED");
+
+    DrawHitCounter(rp, font);
+
+    if (lastShotHit) {
+        DrawLastShotResult(rp, font, TRUE, TRUE);
+        qualityText = GetScoreText(lastShotScore);
+        if (qualityText) {
+            DrawTextWithShadowEx(rp, font, HUD_TEXT_X, HUD_QUALITY_Y,
+                                 GetScoreTextPen(lastShotScore), HUD_QUALITY_SHADOW_PEN,
+                                 qualityText, (UWORD)strlen(qualityText));
+        }
+    } else {
+        DrawLastShotResult(rp, font, TRUE, FALSE);
+    }
+}
+
 BOOL RunRangeWithFrontSight(BOOL useDBuf) {
     RangeSessionState state;
+    BOOL endScreenDrawn = FALSE;
+    BOOL finalShotHitSnap = FALSE;
+    UBYTE finalShotScoreSnap = SCORE_MISS;
     InitRangeSessionState(&state, IS_NEW_GAME_SESSION);
 
     AmacsBob frontSight;
@@ -953,21 +1007,23 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
                     if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks, &hitScore)) {
                         RegisterHit();
                         Sound_PlayHit(hitDelayTicks);
-                        if (ammoCount > 0) {
-                            lastShotHit = TRUE;
-                            lastShotScore = hitScore;
-                            resultFlashColor = GetFlashColorForScore(hitScore);
-                        }
-                    } else if (ammoCount > 0) {
+                        lastShotHit = TRUE;
+                        lastShotScore = hitScore;
+                        resultFlashColor = GetFlashColorForScore(hitScore);
+                    } else {
                         lastShotHit = FALSE;
                         lastShotScore = SCORE_MISS;
                         resultFlashColor = SCORE_FLASH_MISS_COLOR;
                     }
 
-                    resultFlashTicks = (ammoCount > 0) ? RESULT_FLASH_TICKS : 0;
+                    resultFlashTicks = RESULT_FLASH_TICKS;
 
                     if (ammoCount == 0) {
+                        finalShotHitSnap = lastShotHit;
+                        finalShotScoreSnap = lastShotScore;
                         roundEnding = TRUE;
+                        DateStamp(&finalScoreStamp);
+                        finalScoreStampValid = TRUE;
                     }
                 }
             }
@@ -1161,7 +1217,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
                 WaitBlit();
             }
 
-            TargetsHandler_Draw(rp);
+            if (!roundEnding) {
+                TargetsHandler_Draw(rp);
+            }
 
             WaitBlit();
             BltBitMap(&maskSrcBm, 0, 0, &maskTmpBm, 0, 0, FRONTSIGHT_W, FRONTSIGHT_H, 0xC0, 0xFF,
@@ -1210,10 +1268,25 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
                 if (useDBuf) {
                     Gfx_SwapBuffers();
                 }
+            } else if (!endScreenDrawn) {
+                if (haveBg) {
+                    WaitBlit();
+                    BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, SCR_W, SCR_H, 0xC0, 0xFF, NULL);
+                    WaitBlit();
+                }
+
+                DrawEndRoundOverlay(rp, hudFont, finalShotHitSnap, finalShotScoreSnap);
+
+                if (useDBuf) {
+                    Gfx_SwapBuffers();
+                }
+
+                endScreenDrawn = TRUE;
             }
         }
 
-        if (roundEnding && !recoilActive && ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
+        if (roundEnding && !recoilActive && ShotCooldownReady(shotCooldownActive, &lastShotStamp) &&
+            finalScoreStampValid && ElapsedSecondsSince(&finalScoreStamp) >= 4UL) {
             sessionComplete = TRUE;
             break;
         }
@@ -1238,8 +1311,6 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
         FreeRaster(tempMaskPlane, FRONTSIGHT_W, FRONTSIGHT_H);
         tempMaskPlane = NULL;
     }
-
-range_done:
 
     if (hudFont) {
         CloseFont(hudFont);
