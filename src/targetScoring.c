@@ -117,7 +117,8 @@ static void ClearHitMap(UWORD *map, UWORD width, UWORD height) {
     }
 }
 
-static UBYTE RegisterScore(UWORD *hitMap, UWORD width, WORD localX, WORD localY, const UBYTE *scoreMap) {
+static UBYTE RegisterScore(UWORD *hitMap, UWORD width, WORD localX, WORD localY,
+                           const UBYTE *scoreMap) {
     UBYTE score = GetScoreFromMap(scoreMap, width, localX, localY);
 
     hitMap[(localY * width) + localX]++;
@@ -134,22 +135,28 @@ static UBYTE RegisterScore(UWORD *hitMap, UWORD width, WORD localX, WORD localY,
 UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY) {
     switch (distance) {
         case 300:
-            return RegisterScore((UWORD *)gHitMap300, T300_W, localX, localY, (const UBYTE *)gScoreMap300);
+            return RegisterScore((UWORD *)gHitMap300, T300_W, localX, localY,
+                                 (const UBYTE *)gScoreMap300);
 
         case 250:
-            return RegisterScore((UWORD *)gHitMap250, T250_W, localX, localY, (const UBYTE *)gScoreMap250);
+            return RegisterScore((UWORD *)gHitMap250, T250_W, localX, localY,
+                                 (const UBYTE *)gScoreMap250);
 
         case 200:
-            return RegisterScore((UWORD *)gHitMap200, T200_W, localX, localY, (const UBYTE *)gScoreMap200);
+            return RegisterScore((UWORD *)gHitMap200, T200_W, localX, localY,
+                                 (const UBYTE *)gScoreMap200);
 
         case 150:
-            return RegisterScore((UWORD *)gHitMap150, T150_W, localX, localY, (const UBYTE *)gScoreMap150);
+            return RegisterScore((UWORD *)gHitMap150, T150_W, localX, localY,
+                                 (const UBYTE *)gScoreMap150);
 
         case 100:
-            return RegisterScore((UWORD *)gHitMap100, T100_W, localX, localY, (const UBYTE *)gScoreMap100);
+            return RegisterScore((UWORD *)gHitMap100, T100_W, localX, localY,
+                                 (const UBYTE *)gScoreMap100);
 
         case 50:
-            return RegisterScore((UWORD *)gHitMap050, T050_W, localX, localY, (const UBYTE *)gScoreMap050);
+            return RegisterScore((UWORD *)gHitMap050, T050_W, localX, localY,
+                                 (const UBYTE *)gScoreMap050);
 
         default:
             break;
@@ -171,4 +178,3 @@ void TargetScoring_Reset(void) {
 UWORD TargetScoring_GetTotalScore(void) {
     return gTotalScore;
 }
-

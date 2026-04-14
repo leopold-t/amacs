@@ -118,7 +118,8 @@ static void ResetHitCounter(void);
 static UWORD CalculateAccuracyPercent(UWORD score);
 static ULONG ElapsedSecondsSince(const struct DateStamp *start);
 
-/* Record containing range state flags */
+/* Record containing range state flags
+ * TODO: Turn it into global pseudo-object gState */
 typedef struct RangeSessionState {
     WORD ringX;
     WORD ringY;
@@ -153,36 +154,58 @@ typedef struct RangeSessionState {
     UWORD resultFlashColor;
 
     UWORD ammoCount;
+    UWORD sessionScore;
 
     BOOL showFinalScore;
     BOOL sessionComplete;
     BOOL roundEnding;
+
+    /* Frozen snapshot of the last shot, used by the end-of-round screen. */
+    BOOL finalShotValid;
+    BOOL finalShotHitSnap;
+    UBYTE finalShotScoreSnap;
 
     struct DateStamp finalScoreStamp;
     BOOL finalScoreStampValid;
 } RangeSessionState;
 
 /* Mandatory function to reset and restore range state */
+
 static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSession) {
+    if (!state) {
+        return;
+    }
+
     memset(state, 0, sizeof(*state));
 
     state->ringX = (SCR_W - REARSIGHT_W) / 2;
     state->ringY = (SCR_H - REARSIGHT_H) / 2;
+    state->ammoCount = HUD_MAGAZINE_COUNT * HUD_MAGAZINE_SIZE;
+    state->sessionScore = 0;
     state->lastShotScore = SCORE_MISS;
-    state->ammoCount = HUD_AMMO_MAX;
     state->resultFlashColor = SCORE_FLASH_MISS_COLOR;
     state->paused = FALSE;
     state->showFinalScore = FALSE;
     state->sessionComplete = FALSE;
     state->roundEnding = FALSE;
+    state->finalShotValid = FALSE;
+    state->finalShotHitSnap = FALSE;
+    state->finalShotScoreSnap = SCORE_MISS;
 
     Input_ResetState();
-    ResetHitCounter();
-    TargetScoring_Reset();
     TargetsHandler_Reset();
 
     if (isNewGameSession) {
-        /* total score / campaign reset later */
+        ResetHitCounter();
+        TargetScoring_Reset();
+
+        state->lastShotHit = FALSE;
+        state->lastShotScore = SCORE_MISS;
+        state->resultFlashTicks = 0;
+        state->resultFlashColor = SCORE_FLASH_MISS_COLOR;
+        state->finalShotValid = FALSE;
+        state->finalShotHitSnap = FALSE;
+        state->finalShotScoreSnap = SCORE_MISS;
     }
 
     IS_NEW_GAME_SESSION = FALSE;
@@ -782,8 +805,12 @@ static void DrawCenteredTextWithShadow(struct RastPort *rp, struct TextFont *fon
 }
 
 static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL lastShotHit,
-                                UBYTE lastShotScore) {
+                                UBYTE lastShotScore, UWORD sessionScore) {
     const char *qualityText;
+    char scoreText[24];
+    UWORD scoreLen;
+    WORD scoreWidth;
+    WORD scoreX;
 
     if (!rp) {
         return;
@@ -805,13 +832,17 @@ static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL
     } else {
         DrawLastShotResult(rp, font, TRUE, FALSE);
     }
+
+    /* TODO: Consider permanently removing this part and any functions that are no longer needed
+    scoreLen = BuildFinalScoreText(scoreText, sessionScore);
+    scoreWidth = TextLength(rp, (STRPTR)scoreText, scoreLen);
+    scoreX = (WORD)((SCR_W - scoreWidth) / 2);
+    DrawTextWithShadow(rp, font, scoreX, ENDROUND_SCORE_Y, HUD_TEXT_PEN, scoreText, scoreLen);*/
 }
 
-BOOL RunRangeWithFrontSight(BOOL useDBuf) {
+BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     RangeSessionState state;
     BOOL endScreenDrawn = FALSE;
-    BOOL finalShotHitSnap = FALSE;
-    UBYTE finalShotScoreSnap = SCORE_MISS;
     InitRangeSessionState(&state, IS_NEW_GAME_SESSION);
 
     AmacsBob frontSight;
@@ -1010,6 +1041,12 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
                         lastShotHit = TRUE;
                         lastShotScore = hitScore;
                         resultFlashColor = GetFlashColorForScore(hitScore);
+
+                        if (state.sessionScore <= (65535 - hitScore)) {
+                            state.sessionScore = (UWORD)(state.sessionScore + hitScore);
+                        } else {
+                            state.sessionScore = 65535;
+                        }
                     } else {
                         lastShotHit = FALSE;
                         lastShotScore = SCORE_MISS;
@@ -1019,9 +1056,20 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
                     resultFlashTicks = RESULT_FLASH_TICKS;
 
                     if (ammoCount == 0) {
-                        finalShotHitSnap = lastShotHit;
-                        finalShotScoreSnap = lastShotScore;
+                        state.finalShotValid = TRUE;
+                        state.finalShotHitSnap = lastShotHit;
+                        state.finalShotScoreSnap = lastShotScore;
+
+                        if (outSummary) {
+                            outSummary->score = state.sessionScore;
+                            outSummary->accuracy = CalculateAccuracyPercent(outSummary->score);
+                            outSummary->summaryLastShotHit = state.finalShotHitSnap;
+                            outSummary->summaryLastShotScore = state.finalShotScoreSnap;
+                        }
+
                         roundEnding = TRUE;
+                        sessionComplete = TRUE;
+
                         DateStamp(&finalScoreStamp);
                         finalScoreStampValid = TRUE;
                     }
@@ -1262,7 +1310,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
                 DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
                 DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
                 DrawCenterStatusText(rp, hudFont, paused, showFinalScore);
-                DrawFinalScore(rp, hudFont, showFinalScore);
+                // TODO: Is this DrawFinalScore function needed at all?
+                // DrawFinalScore(rp, hudFont, showFinalScore);
                 DrawAccuracy(rp, hudFont, showFinalScore);
 
                 if (useDBuf) {
@@ -1275,7 +1324,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
                     WaitBlit();
                 }
 
-                DrawEndRoundOverlay(rp, hudFont, finalShotHitSnap, finalShotScoreSnap);
+                DrawEndRoundOverlay(rp, hudFont, state.finalShotHitSnap, state.finalShotScoreSnap,
+                                    state.sessionScore);
 
                 if (useDBuf) {
                     Gfx_SwapBuffers();
@@ -1349,6 +1399,15 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf) {
 #undef showFinalScore
 #undef sessionComplete
 #undef roundEnding
+
+    /* TODO: Is this IF block really needed?
+     * Safety-net – wykonuje się ZAWSZE przed wyjściem z funkcji */
+    if (outSummary) {
+        outSummary->score = state.sessionScore; // Might be 0 at this point
+        outSummary->accuracy = CalculateAccuracyPercent(outSummary->score);
+        outSummary->summaryLastShotHit = state.finalShotHitSnap;
+        outSummary->summaryLastShotScore = state.finalShotScoreSnap;
+    }
 
     return state.sessionComplete;
 }

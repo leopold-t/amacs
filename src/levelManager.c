@@ -25,12 +25,12 @@ LevelManagerMode LevelManager_GetMode(void) {
     return gLevelManager.mode;
 }
 
-BOOL LevelManager_RunCurrent(BOOL useDBuf) {
+BOOL LevelManager_RunCurrent(BOOL useDBuf, RangeSummaryData *outSummary) {
     switch (gLevelManager.mode) {
         case LEVEL_MANAGER_MODE_LEVEL1:
         case LEVEL_MANAGER_MODE_DEMO:
         default:
-            return RunRangeWithFrontSight(useDBuf);
+            return RunRangeWithFrontSight(useDBuf, outSummary);
     }
 
     return FALSE;

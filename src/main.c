@@ -1,14 +1,19 @@
 #include <exec/types.h>
+#include <graphics/text.h>
 #include <intuition/intuition.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
+#include <stdio.h>
+#include <string.h>
 
 #include "assets.h"
 #include "bob.h"
 #include "gfx.h"
 #include "input.h"
 #include "levelManager.h"
+#include "rangeHandler.h"
+#include "targetScoring.h"
 #include "targetsHandler.h"
 
 /* If your input.h doesn't expose directions yet, keep these externs here.
@@ -46,6 +51,19 @@ extern BOOL Input_Down(void);
 #define TARGET_RANGES_FILE "gfx/TargetRanges.raw"
 #define PERFORMANCE_FILE "gfx/Performance.raw"
 #define RANGE_FILE "gfx/OahuRange.raw"
+#define SUMMARY_FILE "gfx/Summary.raw"
+
+static const UWORD SummaryPaletteRGB4[32] = {
+    0x0000, 0x0005, 0x000C, 0x010D, 0x0119, 0x010B, 0x0113, 0x0C00, 0x0555, 0x0557, 0x055A,
+    0x0D61, 0x065D, 0x0DC1, 0x01A0, 0x088E, 0x0DC1, 0x0999, 0x099C, 0x0A9E, 0x0CCC, 0x0CCE,
+    0x01F0, 0x099C, 0x0222, 0x03C2, 0x088E, 0x065D, 0x0005, 0x0119, 0x010B, 0x0EEE};
+
+#define SUMMARY_TEXT_PEN 25
+#define SUMMARY_SHADOW_PEN 31
+#define SUMMARY_TITLE_Y 96
+#define SUMMARY_SCORE_Y 120
+#define SUMMARY_ACCURACY_Y 136
+#define SUMMARY_HOLD_WAIT 0
 #define TARGET050_RAW "gfx/Target050.raw"
 #define TARGET050_MASK "gfx/Target050.mask"
 #define TARGET100_RAW "gfx/Target100.raw"
@@ -77,6 +95,175 @@ extern BOOL Input_Down(void);
 #define TARGETRANGES_RISE_TICKS 15
 
 typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
+
+static void DrainWindowMessages(void);
+static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc);
+
+static const struct TextAttr gSummaryFontAttr = {"topaz.font", 8, FS_NORMAL, FPF_ROMFONT};
+
+static UWORD AppendUnsignedMain(char *buf, UWORD pos, UWORD value) {
+    char digits[5];
+    UWORD count = 0;
+
+    if (!buf) {
+        return pos;
+    }
+
+    if (value == 0) {
+        buf[pos++] = '0';
+        buf[pos] = '\0';
+        return pos;
+    }
+
+    while (value > 0 && count < 5) {
+        digits[count++] = (char)('0' + (value % 10));
+        value = (UWORD)(value / 10);
+    }
+
+    while (count > 0) {
+        buf[pos++] = digits[--count];
+    }
+
+    buf[pos] = '\0';
+    return pos;
+}
+
+static void BuildSummaryScoreLine(char *buf, UWORD score) {
+    static const char prefix[] = "TOTAL SCORE: ";
+    UWORD i = 0;
+    UWORD pos = 0;
+
+    if (!buf) {
+        return;
+    }
+
+    while (prefix[i] != '\0') {
+        buf[pos++] = prefix[i++];
+    }
+
+    buf[pos] = '\0';
+    AppendUnsignedMain(buf, pos, score);
+}
+
+static void BuildSummaryAccuracyLine(char *buf, UWORD accuracy) {
+    static const char prefix[] = "ACCURACY: ";
+    UWORD i = 0;
+    UWORD pos = 0;
+
+    if (!buf) {
+        return;
+    }
+
+    while (prefix[i] != '\0') {
+        buf[pos++] = prefix[i++];
+    }
+
+    buf[pos] = '\0';
+    pos = AppendUnsignedMain(buf, pos, accuracy);
+    buf[pos++] = '%';
+    buf[pos] = '\0';
+}
+
+static void DrawTextWithShadowExMain(struct RastPort *rp, struct TextFont *font, WORD x, WORD y,
+                                     UWORD pen, UWORD shadowPenValue, const char *text, UWORD len) {
+    if (!rp || !text || len == 0) {
+        return;
+    }
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    SetDrMd(rp, JAM1);
+
+    SetAPen(rp, shadowPenValue);
+    Move(rp, x + 1, y + 1 + rp->TxBaseline);
+    Text(rp, (STRPTR)text, len);
+
+    SetAPen(rp, pen);
+    Move(rp, x, y + rp->TxBaseline);
+    Text(rp, (STRPTR)text, len);
+}
+
+static void DrawCenteredTextWithShadowMain(struct RastPort *rp, struct TextFont *font, WORD y,
+                                           UWORD pen, UWORD shadowPenValue, const char *text) {
+    UWORD len;
+    WORD width;
+    WORD x;
+
+    if (!rp || !text) {
+        return;
+    }
+
+    len = (UWORD)strlen(text);
+    if (font) {
+        SetFont(rp, font);
+    }
+    width = TextLength(rp, (STRPTR)text, len);
+    x = (WORD)((LO_WIDTH - width) / 2);
+    DrawTextWithShadowExMain(rp, font, x, y, pen, shadowPenValue, text, len);
+}
+
+static WaitResult WaitForAdvanceOnly(void) {
+    DrainWindowMessages();
+
+    for (;;) {
+        BOOL adv = FALSE, esc = FALSE;
+        PollAdvanceAndEsc(&adv, &esc);
+
+        if (esc) {
+            return WAIT_ESC;
+        }
+        if (adv) {
+            return WAIT_ADVANCE;
+        }
+        WaitTOF();
+    }
+}
+
+static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
+    struct RastPort *rp;
+    struct TextFont *font = NULL;
+    char line[32];
+    UWORD score;
+    UWORD acc;
+
+    if (!Gfx_CrossFadeToImage(SUMMARY_FILE, rangePalette, 32, SummaryPaletteRGB4, 32)) {
+        return FALSE;
+    }
+
+    rp = Gfx_GetDrawRastPort();
+    if (!rp)
+        return FALSE;
+
+    font = OpenFont(&gSummaryFontAttr);
+
+    score = summary ? summary->score : 0;
+    acc = summary ? summary->accuracy : 0;
+
+    BuildSummaryScoreLine(line, score);
+    DrawCenteredTextWithShadowMain(rp, font, SUMMARY_SCORE_Y, 31, 24, line);
+
+    BuildSummaryAccuracyLine(line, acc);
+    DrawCenteredTextWithShadowMain(rp, font, SUMMARY_ACCURACY_Y, 31, 24, line);
+
+    if (font)
+        CloseFont(font);
+
+    switch (WaitForAdvanceOnly()) {
+        case WAIT_ESC:
+            return FALSE;
+        case WAIT_ADVANCE:
+        default:
+            break;
+    }
+
+    if (!Gfx_CrossFadeToImage(TITLE_FILE, SummaryPaletteRGB4, 32, titlePalette, 32)) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
 
 /* ---------- Helpers ---------- */
 
@@ -481,12 +668,15 @@ show_title:
                 for (int i = 0; i < 32; i++) {
                     nextLoPal[i] = fundamentalsPalette[i];
                 }
+
                 if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, currentLoPal, 32, nextLoPal, 32)) {
                     goto fail;
                 }
+
                 for (int i = 0; i < 32; i++) {
                     currentLoPal[i] = nextLoPal[i];
                 }
+
                 attr = ATTR_FUNDAMENTALS;
             }
 
@@ -494,9 +684,11 @@ show_title:
                 for (int i = 0; i < 32; i++) {
                     nextLoPal[i] = targetRangesPalette[i];
                 }
+
                 if (!Gfx_CrossFadeToImage(TARGET_RANGES_FILE, currentLoPal, 32, nextLoPal, 32)) {
                     goto fail;
                 }
+
                 for (int i = 0; i < 32; i++) {
                     currentLoPal[i] = nextLoPal[i];
                 }
@@ -510,9 +702,11 @@ show_title:
                 for (int i = 0; i < 32; i++) {
                     nextLoPal[i] = performancePalette[i];
                 }
+
                 if (!Gfx_CrossFadeToImage(PERFORMANCE_FILE, currentLoPal, 32, nextLoPal, 32)) {
                     goto fail;
                 }
+
                 for (int i = 0; i < 32; i++) {
                     currentLoPal[i] = nextLoPal[i];
                 }
@@ -530,6 +724,8 @@ show_title:
             }
 
             BOOL useDBuf = UseDoubleBuffering();
+            RangeSummaryData summaryData;
+            memset(&summaryData, 0, sizeof(summaryData));
 
             if (useDBuf) {
                 if (!Gfx_EnableDoubleBuffering()) {
@@ -537,13 +733,13 @@ show_title:
                 }
             }
 
-            if (LevelManager_RunCurrent(useDBuf)) {
+            if (LevelManager_RunCurrent(useDBuf, &summaryData)) {
                 if (useDBuf) {
                     Gfx_DisableDoubleBuffering();
                 }
 
-                if (!Gfx_CrossFadeToImage(TITLE_FILE, rangePalette, 32, titlePalette, 32)) {
-                    goto fail;
+                if (!ShowSummaryScreen(&summaryData)) {
+                    goto exit_ok;
                 }
 
                 for (int i = 0; i < 32; i++) {
