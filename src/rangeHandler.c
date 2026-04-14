@@ -170,7 +170,6 @@ typedef struct RangeSessionState {
 } RangeSessionState;
 
 /* Mandatory function to reset and restore range state */
-
 static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSession) {
     if (!state) {
         return;
@@ -857,6 +856,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         if (hudFont) {
             CloseFont(hudFont);
         }
+
         Bob_Free(&frontSight);
         Bob_Free(&rearSight);
         return FALSE;
@@ -866,7 +866,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         DebugBeepError(Sound_GetLastError());
     }
 
-    /* ensure a clean session state even when coming back from a previous run */
+    /* Ensure a clean session state even when coming back from a previous run */
     TargetsHandler_Reset();
     TargetsHandler_SetPaused(FALSE);
     Sound_SetPaused(FALSE);
@@ -930,6 +930,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
     {
         struct Screen *scr = Gfx_GetScreen();
+
         if (scr && scr->RastPort.BitMap) {
             WaitBlit();
             BltBitMap(scr->RastPort.BitMap, 0, 0, &bg, 0, 0, SCR_W, SCR_H, 0xC0, 0xFF, NULL);
@@ -1137,6 +1138,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         ay -= 256;
                         ringY++;
                     }
+
                     while (ay <= -256) {
                         ay += 256;
                         ringY--;
@@ -1250,6 +1252,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             if (!roundEnding) {
                 if (resultFlashTicks > 0) {
                     DrawResultFlash(rp, resultFlashColor);
+
                     if (!paused) {
                         resultFlashTicks--;
                     }
@@ -1347,15 +1350,6 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #undef showFinalScore
 #undef sessionComplete
 #undef roundEnding
-
-    /* TODO: Is this IF block really needed?
-     * Safety-net – wykonuje się ZAWSZE przed wyjściem z funkcji */
-    /*if (outSummary) {
-        outSummary->score = state.sessionScore; // Might be 0 at this point
-        outSummary->accuracy = CalculateAccuracyPercent(outSummary->score);
-        outSummary->summaryLastShotHit = state.finalShotHitSnap;
-        outSummary->summaryLastShotScore = state.finalShotScoreSnap;
-    }*/
 
     return state.sessionComplete;
 }
