@@ -78,9 +78,11 @@ void Input_PollWindow(struct Window *win) {
     BOOL joyNow;
 
     joyNow = IsJoystickFirePressed();
+
     if (joyNow && !joyFireDown) {
         firePressedEdge = TRUE;
     }
+
     joyFireDown = joyNow;
 
     if (!win || !win->UserPort) {
@@ -98,6 +100,7 @@ void Input_PollWindow(struct Window *win) {
                 if (!keyDown[code]) {
                     keyPressed[code] = 1;
                 }
+
                 keyDown[code] = 1;
             }
         }
@@ -107,6 +110,7 @@ void Input_PollWindow(struct Window *win) {
                 if (!mouseFireDown) {
                     firePressedEdge = TRUE;
                 }
+
                 mouseFireDown = TRUE;
             } else if (msg->Code == SELECTUP) {
                 mouseFireDown = FALSE;
@@ -143,6 +147,7 @@ void Input_ResetState(void) {
     firePressedEdge = FALSE;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;
+
     for (i = 0; i < 256; i++) {
         keyDown[i] = FALSE;
         keyPressed[i] = FALSE;

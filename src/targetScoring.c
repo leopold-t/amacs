@@ -15,7 +15,6 @@ static UWORD gHitMap300[T300_H][T300_W];
  * [row][column] = [y][x]
  * =====================================================================
  */
-
 static const UBYTE gScoreMap300[T300_H][T300_W] = {
     {0, 1, 1, 1, 0}, {0, 1, 1, 1, 0}, {1, 1, 1, 1, 1}, {1, 2, 2, 2, 1}, {2, 3, 4, 3, 2},
     {2, 4, 5, 4, 2}, {2, 3, 4, 3, 2}, {1, 2, 2, 2, 1}, {1, 1, 1, 1, 1}, {1, 1, 1, 1, 1}};
@@ -120,7 +119,6 @@ static void ClearHitMap(UWORD *map, UWORD width, UWORD height) {
 static UBYTE RegisterScore(UWORD *hitMap, UWORD width, WORD localX, WORD localY,
                            const UBYTE *scoreMap) {
     UBYTE score = GetScoreFromMap(scoreMap, width, localX, localY);
-
     hitMap[(localY * width) + localX]++;
 
     if (gTotalScore <= (65535 - score)) {

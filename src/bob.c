@@ -26,6 +26,7 @@ BOOL Bob_LoadRawAndMask(AmacsBob *b, const char *rawFile, const char *maskFile, 
     /* allocate planes */
     for (UWORD p = 0; p < depth; p++) {
         b->bm.Planes[p] = (PLANEPTR)AllocRaster(width, height);
+
         if (!b->bm.Planes[p]) {
             Bob_Free(b);
             return FALSE;
@@ -34,6 +35,7 @@ BOOL Bob_LoadRawAndMask(AmacsBob *b, const char *rawFile, const char *maskFile, 
 
     /* allocate mask plane (1-bit) */
     b->mask = (PLANEPTR)AllocRaster(width, height);
+
     if (!b->mask) {
         Bob_Free(b);
         return FALSE;
@@ -45,6 +47,7 @@ BOOL Bob_LoadRawAndMask(AmacsBob *b, const char *rawFile, const char *maskFile, 
     /* read RAW planes */
     {
         BPTR fh = Open((STRPTR)rawFile, MODE_OLDFILE);
+
         if (!fh) {
             Bob_Free(b);
             return FALSE;
@@ -63,6 +66,7 @@ BOOL Bob_LoadRawAndMask(AmacsBob *b, const char *rawFile, const char *maskFile, 
     /* read MASK (1-bit plane) */
     {
         BPTR fh = Open((STRPTR)maskFile, MODE_OLDFILE);
+
         if (!fh) {
             Bob_Free(b);
             return FALSE;
@@ -73,6 +77,7 @@ BOOL Bob_LoadRawAndMask(AmacsBob *b, const char *rawFile, const char *maskFile, 
             Bob_Free(b);
             return FALSE;
         }
+
         Close(fh);
     }
 
@@ -135,6 +140,7 @@ void Bob_DrawMaskedToRastPort(const AmacsBob *b, struct RastPort *rp, WORD x, WO
         w = (WORD)(w - srcX);
         dstX = 0;
     }
+
     if (dstY < 0) {
         srcY = (WORD)(-dstY);
         h = (WORD)(h - srcY);
@@ -145,6 +151,7 @@ void Bob_DrawMaskedToRastPort(const AmacsBob *b, struct RastPort *rp, WORD x, WO
     if (dstX + w > dstW) {
         w = (WORD)(dstW - dstX);
     }
+
     if (dstY + h > dstH) {
         h = (WORD)(dstH - dstY);
     }
@@ -153,8 +160,7 @@ void Bob_DrawMaskedToRastPort(const AmacsBob *b, struct RastPort *rp, WORD x, WO
         return;
     }
 
-    BltMaskBitMapRastPort((struct BitMap *)&b->bm, srcX, srcY, rp, dstX, dstY, (UWORD)w,
-                          (UWORD)h,
+    BltMaskBitMapRastPort((struct BitMap *)&b->bm, srcX, srcY, rp, dstX, dstY, (UWORD)w, (UWORD)h,
                           0xE0, /* masked copy */
                           b->mask);
     WaitBlit();

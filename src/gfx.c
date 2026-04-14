@@ -15,9 +15,9 @@ static struct Window *window = NULL;
 /* Double buffering */
 static BOOL dbufEnabled = FALSE;
 static struct ScreenBuffer *screenBuffers[2] = {NULL, NULL};
-/* sbIndex = index aktualnie WYŚWIETLANEGO bufora */
+/* sbIndex = index of the currently DISPLAYED buffer */
 static WORD sbIndex = 0;
-static struct RastPort drawRP; /* RastPort podpięty pod back buffer */
+static struct RastPort drawRP; /* RastPort attached to the back buffer */
 
 /* DBufInfo messages */
 static struct MsgPort *dbufPort = NULL;
@@ -63,7 +63,6 @@ static void ShowPointer(struct Window *win) {
 }
 
 /* ---- Stability helpers ---- */
-
 static void SettleDisplay(int frames) {
     for (int i = 0; i < frames; i++) {
         WaitTOF();
@@ -76,13 +75,13 @@ static void DrainIDCMP(struct Window *win) {
     }
 
     struct IntuiMessage *msg;
+
     while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
         ReplyMsg((struct Message *)msg);
     }
 }
 
 /* ---------------- Fade helpers (RGB4 up to 32 colors) ---------------- */
-
 static UWORD LerpRGB4(UWORD a, UWORD b, int step, int steps) {
     int ar = (a >> 8) & 0xF, ag = (a >> 4) & 0xF, ab = a & 0xF;
     int br = (b >> 8) & 0xF, bg = (b >> 4) & 0xF, bb = b & 0xF;
@@ -124,13 +123,13 @@ static void FadeInFromBlack(struct Screen *scr, const UWORD *targetPal, UWORD co
 }
 
 /* ---------------- Double buffering helpers ---------------- */
-
 static void WaitSafe(struct ScreenBuffer *sb) {
     if (!sb || !sb->sb_DBufInfo) {
         return;
     }
 
     struct MsgPort *port = sb->sb_DBufInfo->dbi_SafeMessage.mn_ReplyPort;
+
     if (!port) {
         return;
     }
@@ -144,32 +143,36 @@ BOOL Gfx_EnableDoubleBuffering(void) {
     if (dbufEnabled) {
         return TRUE;
     }
+
     if (!screen) {
         return FALSE;
     }
 
     if (!dbufPort) {
         dbufPort = CreateMsgPort();
+
         if (!dbufPort) {
             return FALSE;
         }
     }
 
-    /* buffer 0 = bitmap ekranu */
+    /* buffer 0 = Screen bitmap */
     screenBuffers[0] = AllocScreenBuffer(screen, NULL, SB_SCREEN_BITMAP);
+
     if (!screenBuffers[0]) {
         Gfx_DisableDoubleBuffering();
         return FALSE;
     }
 
-    /* buffer 1 = NOWY dodatkowy bitmap (to jest klucz!) */
+    /* buffer 1 = NEW additional bitmap (this is the key!) */
     screenBuffers[1] = AllocScreenBuffer(screen, NULL, 0);
+
     if (!screenBuffers[1]) {
         Gfx_DisableDoubleBuffering();
         return FALSE;
     }
 
-    /* Podpinamy MsgPort do DBufInfo */
+    /* Attach MsgPort to DBufInfo */
     for (int i = 0; i < 2; i++) {
         if (screenBuffers[i] && screenBuffers[i]->sb_DBufInfo) {
             screenBuffers[i]->sb_DBufInfo->dbi_SafeMessage.mn_ReplyPort = dbufPort;
@@ -177,13 +180,13 @@ BOOL Gfx_EnableDoubleBuffering(void) {
         }
     }
 
-    sbIndex = 0; /* pokazujemy buffer 0 */
+    sbIndex = 0; /* display buffer 0 */
     dbufPrimed = FALSE;
 
     InitRastPort(&drawRP);
-    drawRP.BitMap = screenBuffers[1]->sb_BitMap; /* rysujemy do back buffera */
+    drawRP.BitMap = screenBuffers[1]->sb_BitMap; /* draw to back buffer */
 
-    /* wyczyść back buffer */
+    /* clear back buffer */
     SetRast(&drawRP, 0);
     WaitBlit();
 
@@ -196,7 +199,7 @@ void Gfx_DisableDoubleBuffering(void) {
         return;
     }
 
-    /* Wróć na buffer 0 (bitmap ekranu) */
+    /* Return to buffer 0 (screen bitmap) */
     if (screen && screenBuffers[0]) {
         ChangeScreenBuffer(screen, screenBuffers[0]);
         WaitTOF();
@@ -207,6 +210,7 @@ void Gfx_DisableDoubleBuffering(void) {
         FreeScreenBuffer(screen, screenBuffers[1]);
         screenBuffers[1] = NULL;
     }
+
     if (screenBuffers[0]) {
         FreeScreenBuffer(screen, screenBuffers[0]);
         screenBuffers[0] = NULL;
@@ -229,9 +233,11 @@ struct RastPort *Gfx_GetDrawRastPort(void) {
     if (dbufEnabled) {
         return &drawRP;
     }
+
     if (screen) {
         return &screen->RastPort;
     }
+
     return NULL;
 }
 
@@ -240,7 +246,7 @@ void Gfx_SwapBuffers(void) {
         return;
     }
 
-    WORD newShow = 1 - sbIndex; /* ten, który chcemy pokazać */
+    WORD newShow = 1 - sbIndex; /* the one we want to display */
     struct ScreenBuffer *showBuf = screenBuffers[newShow];
 
     /* Flip */
@@ -248,13 +254,13 @@ void Gfx_SwapBuffers(void) {
         return;
     }
 
-    /* Po flipie: ten bufor staje się wyświetlany */
+    /* After flip: this buffer becomes displayed */
     sbIndex = newShow;
 
-    /* NOWY back buffer = przeciwny do wyświetlanego */
+    /* NEW back buffer = opposite of the displayed one */
     drawRP.BitMap = screenBuffers[1 - sbIndex]->sb_BitMap;
 
-    /* I dopiero TERAZ czekamy aż back buffer będzie „safe” do rysowania */
+    /* Only NOW we wait until the back buffer is safe for drawing */
     if (dbufPrimed) {
         WaitSafe(screenBuffers[1 - sbIndex]);
     } else {
@@ -263,7 +269,6 @@ void Gfx_SwapBuffers(void) {
 }
 
 /* ---------------- Public API ---------------- */
-
 struct Screen *Gfx_GetScreen(void) {
     return screen;
 }
@@ -286,6 +291,7 @@ BOOL Gfx_OpenBlackScreen(UWORD width, UWORD height, UBYTE depth) {
                              {TAG_DONE, 0}};
 
     blackScreen = OpenScreenTagList(NULL, tags);
+
     if (!blackScreen) {
         return FALSE;
     }
@@ -326,6 +332,7 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
                                    {SA_Interleaved, FALSE}, {TAG_DONE, 0}};
 
     screen = OpenScreenTagList(NULL, screenTags);
+
     if (!screen) {
         return FALSE;
     }
@@ -346,6 +353,7 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
                                    {TAG_DONE, 0}};
 
     window = OpenWindowTagList(NULL, windowTags);
+
     if (!window) {
         WaitBlit();
         SettleDisplay(1);

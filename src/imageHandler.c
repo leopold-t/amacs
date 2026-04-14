@@ -50,8 +50,10 @@ BOOL LoadRawImageToScreen(const char *filename, struct Screen *screen) {
     for (UWORD p = 0; p < depth; p++) {
         if (Read(fh, tmp.Planes[p], planeSize) != (LONG)planeSize) {
             Close(fh);
+
             for (UWORD p2 = 0; p2 < depth; p2++)
                 FreeRaster(tmp.Planes[p2], width, height);
+
             return FALSE;
         }
     }

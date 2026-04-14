@@ -275,37 +275,6 @@ static UWORD BuildHitCounterText(char *buf, UWORD value) {
     return pos;
 }
 
-static UWORD BuildFinalScoreText(char *buf, UWORD value) {
-    static const char prefix[] = "YOUR SCORE: ";
-    char digits[5];
-    UWORD digitCount = 0;
-    UWORD pos = 0;
-    UWORD i;
-    UWORD temp = value;
-
-    for (i = 0; i < (sizeof(prefix) - 1); i++) {
-        buf[pos++] = prefix[i];
-    }
-
-    if (temp == 0) {
-        buf[pos++] = '0';
-        buf[pos] = '\0';
-        return pos;
-    }
-
-    while (temp > 0 && digitCount < 5) {
-        digits[digitCount++] = (char)('0' + (temp % 10));
-        temp /= 10;
-    }
-
-    for (i = 0; i < digitCount; i++) {
-        buf[pos++] = digits[digitCount - 1 - i];
-    }
-
-    buf[pos] = '\0';
-    return pos;
-}
-
 static UWORD BuildAccuracyText(char *buf, UWORD value) {
     static const char prefix[] = "ACCURACY: ";
     char digits[3];
@@ -504,18 +473,21 @@ static WORD RecoilOffsetY(BOOL *active, UWORD *tick) {
 
     if (*tick < RECOIL_UP_TICKS) {
         offset = (WORD)(*tick + 1);
+
         if (offset > RECOIL_PIXELS) {
             offset = RECOIL_PIXELS;
         }
     } else if (*tick < RECOIL_TOTAL_TICKS) {
         UWORD downTick = (UWORD)(*tick - RECOIL_UP_TICKS);
         offset = (WORD)(RECOIL_PIXELS - (downTick + 1));
+
         if (offset < 0) {
             offset = 0;
         }
     }
 
     (*tick)++;
+
     if (*tick >= RECOIL_TOTAL_TICKS) {
         *tick = 0;
         *active = FALSE;
@@ -697,6 +669,7 @@ static void DrawShotQuality(struct RastPort *rp, struct TextFont *font, BOOL sho
 
     text = GetScoreText(lastShotScore);
     len = TextLen(text);
+
     if (len == 0) {
         return;
     }
@@ -728,26 +701,6 @@ static void DrawCenterStatusText(struct RastPort *rp, struct TextFont *font, BOO
     width = TextLength(rp, (STRPTR)text, len);
     x = (WORD)((SCR_W - width) / 2);
     DrawTextWithShadow(rp, font, x, HUD_PAUSED_Y, HUD_TEXT_PEN, text, len);
-}
-
-static void DrawFinalScore(struct RastPort *rp, struct TextFont *font, BOOL showFinalScore) {
-    char text[24];
-    UWORD len;
-    WORD x;
-    WORD width;
-
-    if (!showFinalScore || !rp) {
-        return;
-    }
-
-    if (font) {
-        SetFont(rp, font);
-    }
-
-    len = BuildFinalScoreText(text, TargetScoring_GetTotalScore());
-    width = TextLength(rp, (STRPTR)text, len);
-    x = (WORD)((SCR_W - width) / 2);
-    DrawTextWithShadow(rp, font, x, HUD_FINAL_SCORE_Y, HUD_TEXT_PEN, text, len);
 }
 
 static void DrawAccuracy(struct RastPort *rp, struct TextFont *font, BOOL showFinalScore) {
@@ -807,10 +760,6 @@ static void DrawCenteredTextWithShadow(struct RastPort *rp, struct TextFont *fon
 static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL lastShotHit,
                                 UBYTE lastShotScore, UWORD sessionScore) {
     const char *qualityText;
-    char scoreText[24];
-    UWORD scoreLen;
-    WORD scoreWidth;
-    WORD scoreX;
 
     if (!rp) {
         return;
@@ -824,6 +773,7 @@ static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL
     if (lastShotHit) {
         DrawLastShotResult(rp, font, TRUE, TRUE);
         qualityText = GetScoreText(lastShotScore);
+
         if (qualityText) {
             DrawTextWithShadowEx(rp, font, HUD_TEXT_X, HUD_QUALITY_Y,
                                  GetScoreTextPen(lastShotScore), HUD_QUALITY_SHADOW_PEN,
@@ -832,12 +782,6 @@ static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL
     } else {
         DrawLastShotResult(rp, font, TRUE, FALSE);
     }
-
-    /* TODO: Consider permanently removing this part and any functions that are no longer needed
-    scoreLen = BuildFinalScoreText(scoreText, sessionScore);
-    scoreWidth = TextLength(rp, (STRPTR)scoreText, scoreLen);
-    scoreX = (WORD)((SCR_W - scoreWidth) / 2);
-    DrawTextWithShadow(rp, font, scoreX, ENDROUND_SCORE_Y, HUD_TEXT_PEN, scoreText, scoreLen);*/
 }
 
 BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
@@ -1111,6 +1055,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                                 ax -= 256;
                                 ringX++;
                             }
+
                             while (ax <= -256) {
                                 ax += 256;
                                 ringX--;
@@ -1132,6 +1077,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         ax -= 256;
                         ringX++;
                     }
+
                     while (ax <= -256) {
                         ax += 256;
                         ringX--;
@@ -1169,6 +1115,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                                 ay -= 256;
                                 ringY++;
                             }
+
                             while (ay <= -256) {
                                 ay += 256;
                                 ringY--;
@@ -1207,6 +1154,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             if (ringX < -OVERSCAN_X_TOTAL) {
                 ringX = -OVERSCAN_X_TOTAL;
             }
+
             if (ringX > SCR_W - REARSIGHT_W + OVERSCAN_X_TOTAL) {
                 ringX = (SCR_W - REARSIGHT_W + OVERSCAN_X_TOTAL);
             }
@@ -1214,6 +1162,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             if (ringY < 0) {
                 ringY = 0;
             }
+
             if (ringY > SCR_H - REARSIGHT_H + OVERSCAN_Y) {
                 ringY = (SCR_H - REARSIGHT_H + OVERSCAN_Y);
             }
@@ -1235,6 +1184,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     if (leadX < LEAD_STOP_FP && leadX > -LEAD_STOP_FP) {
                         leadX = 0;
                     }
+
                     if (leadY < LEAD_STOP_FP && leadY > -LEAD_STOP_FP) {
                         leadY = 0;
                     }
@@ -1310,8 +1260,6 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
                 DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
                 DrawCenterStatusText(rp, hudFont, paused, showFinalScore);
-                // TODO: Is this DrawFinalScore function needed at all?
-                // DrawFinalScore(rp, hudFont, showFinalScore);
                 DrawAccuracy(rp, hudFont, showFinalScore);
 
                 if (useDBuf) {
@@ -1402,12 +1350,12 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
     /* TODO: Is this IF block really needed?
      * Safety-net – wykonuje się ZAWSZE przed wyjściem z funkcji */
-    if (outSummary) {
+    /*if (outSummary) {
         outSummary->score = state.sessionScore; // Might be 0 at this point
         outSummary->accuracy = CalculateAccuracyPercent(outSummary->score);
         outSummary->summaryLastShotHit = state.finalShotHitSnap;
         outSummary->summaryLastShotScore = state.finalShotScoreSnap;
-    }
+    }*/
 
     return state.sessionComplete;
 }

@@ -218,12 +218,15 @@ static BOOL GetSlotRect(const TargetSeries *s, WORD slot, WORD *outLeft, WORD *o
     if (outLeft) {
         *outLeft = left;
     }
+
     if (outTop) {
         *outTop = top;
     }
+
     if (outRight) {
         *outRight = (WORD)(left + s->width - 1);
     }
+
     if (outBottom) {
         *outBottom = s->slotY[slot];
     }
@@ -235,14 +238,17 @@ static BOOL RectsOverlap(WORD l1, WORD t1, WORD r1, WORD b1, WORD l2, WORD t2, W
     if (r1 < l2 || r2 < l1) {
         return FALSE;
     }
+
     if (b1 < t2 || b2 < t1) {
         return FALSE;
     }
+
     return TRUE;
 }
 
 static BOOL IsSlotOccupied(const TargetSeries *self, WORD slot) {
-    TargetSeries *series[6] = {&gSeries050, &gSeries100, &gSeries150, &gSeries200, &gSeries250, &gSeries300};
+    TargetSeries *series[6] = {&gSeries050, &gSeries100, &gSeries150,
+                               &gSeries200, &gSeries250, &gSeries300};
     WORD l1, t1, r1, b1;
     int i;
 
@@ -358,14 +364,17 @@ static void BltMaskClipped(const struct BitMap *bm, PLANEPTR mask, struct RastPo
         w += dx;
         dx = 0;
     }
+
     if (dy < 0) {
         sy -= dy;
         h += dy;
         dy = 0;
     }
+
     if ((dx + w) > SCR_W) {
         w = SCR_W - dx;
     }
+
     if ((dy + h) > SCR_H) {
         h = SCR_H - dy;
     }
@@ -391,25 +400,28 @@ static BOOL GetSeriesVisibleRect(TargetSeries *s, WORD *outX, WORD *outY, WORD *
     }
 
     t = ElapsedTicks(&s->startStamp);
+
     if (t < s->startDelayTicks) {
         return FALSE;
     }
 
     t -= s->startDelayTicks;
+
     if (t >= SLOT_TOTAL_TICKS) {
         t = SLOT_TOTAL_TICKS - 1;
     }
 
     left = s->slotX[s->activeSlot];
     bottom = s->slotY[s->activeSlot];
-
     risePx = (t >= RISE_TICKS) ? s->height : (WORD)((t * s->height) / RISE_TICKS);
+
     if (risePx <= 0) {
         return FALSE;
     }
 
     dstY = (bottom + 1) - risePx;
     visibleH = bottom - dstY + 1;
+
     if (visibleH > s->height) {
         visibleH = s->height;
     }
@@ -441,18 +453,23 @@ static UWORD GetDistanceForSeries(const TargetSeries *s) {
     if (s == &gSeries050) {
         return 50;
     }
+
     if (s == &gSeries100) {
         return 100;
     }
+
     if (s == &gSeries150) {
         return 150;
     }
+
     if (s == &gSeries200) {
         return 200;
     }
+
     if (s == &gSeries250) {
         return 250;
     }
+
     if (s == &gSeries300) {
         return 300;
     }
@@ -505,6 +522,7 @@ static void TickSeries(TargetSeries *s) {
         if (t >= s->hitDelayTicks) {
             SpawnSeries(s, 0);
         }
+
         return;
     }
 
@@ -560,22 +578,27 @@ BOOL TargetsHandler_Init(void) {
         gSeries050.loaded = TRUE;
         StartSlot(&gSeries050, 0);
     }
+
     if (Bob_LoadRawAndMask(&gSeries100.bob, TARGET100_RAW, TARGET100_MASK, T100_W, T100_H, 5)) {
         gSeries100.loaded = TRUE;
         StartSlot(&gSeries100, 0);
     }
+
     if (Bob_LoadRawAndMask(&gSeries150.bob, TARGET150_RAW, TARGET150_MASK, T150_W, T150_H, 5)) {
         gSeries150.loaded = TRUE;
         StartSlot(&gSeries150, 0);
     }
+
     if (Bob_LoadRawAndMask(&gSeries200.bob, TARGET200_RAW, TARGET200_MASK, T200_W, T200_H, 5)) {
         gSeries200.loaded = TRUE;
         StartSlot(&gSeries200, 0);
     }
+
     if (Bob_LoadRawAndMask(&gSeries250.bob, TARGET250_RAW, TARGET250_MASK, T250_W, T250_H, 5)) {
         gSeries250.loaded = TRUE;
         StartSlot(&gSeries250, 0);
     }
+
     if (Bob_LoadRawAndMask(&gSeries300.bob, TARGET300_RAW, TARGET300_MASK, T300_W, T300_H, 5)) {
         gSeries300.loaded = TRUE;
         StartSlot(&gSeries300, 0);
@@ -605,18 +628,23 @@ void TargetsHandler_Shutdown(void) {
     if (gSeries050.loaded) {
         Bob_Free(&gSeries050.bob);
     }
+
     if (gSeries100.loaded) {
         Bob_Free(&gSeries100.bob);
     }
+
     if (gSeries150.loaded) {
         Bob_Free(&gSeries150.bob);
     }
+
     if (gSeries200.loaded) {
         Bob_Free(&gSeries200.bob);
     }
+
     if (gSeries250.loaded) {
         Bob_Free(&gSeries250.bob);
     }
+
     if (gSeries300.loaded) {
         Bob_Free(&gSeries300.bob);
     }
@@ -646,7 +674,6 @@ void TargetsHandler_Reset(void) {
     SpawnSeries(&gSeries250, SERIES250_DELAY);
     SpawnSeries(&gSeries300, SERIES300_DELAY);
 }
-
 
 void TargetsHandler_ToggleSlot(UWORD slot) {
     (void)slot;
@@ -794,36 +821,47 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks, UBYTE *hitSco
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries050.hitDelayTicks;
         }
+
         return TRUE;
     }
+
     if (CheckSeriesHit(&gSeries100, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries100.hitDelayTicks;
         }
+
         return TRUE;
     }
+
     if (CheckSeriesHit(&gSeries150, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries150.hitDelayTicks;
         }
+
         return TRUE;
     }
+
     if (CheckSeriesHit(&gSeries200, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries200.hitDelayTicks;
         }
+
         return TRUE;
     }
+
     if (CheckSeriesHit(&gSeries250, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries250.hitDelayTicks;
         }
+
         return TRUE;
     }
+
     if (CheckSeriesHit(&gSeries300, x, y, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries300.hitDelayTicks;
         }
+
         return TRUE;
     }
 

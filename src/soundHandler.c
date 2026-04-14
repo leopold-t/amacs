@@ -83,6 +83,7 @@ static void DeleteVoiceIO(AudioVoice *voice) {
     if (voice->port) {
         while (GetMsg(voice->port)) {
         }
+
         DeleteMsgPort(voice->port);
         voice->port = NULL;
     }
@@ -135,8 +136,8 @@ static BOOL LoadSample(const char *path, Sample *sample) {
 
     sample->data = NULL;
     sample->length = 0;
-
     fh = Open((STRPTR)path, MODE_OLDFILE);
+
     if (!fh) {
         gLastError = SOUND_ERR_OPENFILE;
         return FALSE;
@@ -149,6 +150,7 @@ static BOOL LoadSample(const char *path, Sample *sample) {
     }
 
     size = Seek(fh, 0, OFFSET_CURRENT);
+
     if (size <= 1) {
         Close(fh);
         gLastError = SOUND_ERR_FILESIZE;
@@ -172,6 +174,7 @@ static BOOL LoadSample(const char *path, Sample *sample) {
     }
 
     buf = (BYTE *)AllocMem((ULONG)size, MEMF_CHIP);
+
     if (!buf) {
         Close(fh);
         gLastError = SOUND_ERR_ALLOCMEM;
@@ -199,12 +202,14 @@ static BOOL InitVoice(AudioVoice *voice) {
     }
 
     voice->port = CreateMsgPort();
+
     if (!voice->port) {
         gLastError = SOUND_ERR_PORT;
         return FALSE;
     }
 
     voice->io = (struct IOAudio *)CreateIORequest(voice->port, sizeof(struct IOAudio));
+
     if (!voice->io) {
         gLastError = SOUND_ERR_IOREQ;
         DeleteVoiceIO(voice);

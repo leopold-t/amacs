@@ -28,13 +28,12 @@ extern BOOL Input_Down(void);
 #define HI_HEIGHT 256
 #define HI_DEPTH 4
 
-/* Title screen: standard Low Res 32 colors */
+/* LoRes screens (TITLE SCREEN, TRAINING_INFO, FUNDAMENTALS, TARGET_RANGES, RANGE) */
 #define TITLE_WIDTH 320
 #define TITLE_HEIGHT 256
 #define TITLE_DEPTH 5
 #define TITLE_DISPLAY_ID LORES_KEY
 
-/* LoRes screens (TRAINING_INFO + FUNDAMENTALS + TARGET_RANGES + RANGE) */
 #define LO_WIDTH 320
 #define LO_HEIGHT 256
 #define LO_DEPTH 5
@@ -80,7 +79,7 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
 #define FRONTSIGHT_MASK "gfx/FrontSight.mask"
 
-/* Front sight (muszka) dimensions (planar RAW + 1-bit MASK)
+/* Front sight dimensions (planar RAW + 1-bit MASK)
  * Updated: trimmed sprite to save memory.
  */
 #define FRONTSIGHT_W 83
@@ -196,9 +195,11 @@ static void DrawCenteredTextWithShadowMain(struct RastPort *rp, struct TextFont 
     }
 
     len = (UWORD)strlen(text);
+
     if (font) {
         SetFont(rp, font);
     }
+
     width = TextLength(rp, (STRPTR)text, len);
     x = (WORD)((LO_WIDTH - width) / 2);
     DrawTextWithShadowExMain(rp, font, x, y, pen, shadowPenValue, text, len);
@@ -214,9 +215,11 @@ static WaitResult WaitForAdvanceOnly(void) {
         if (esc) {
             return WAIT_ESC;
         }
+
         if (adv) {
             return WAIT_ADVANCE;
         }
+
         WaitTOF();
     }
 }
@@ -233,6 +236,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     }
 
     rp = Gfx_GetDrawRastPort();
+
     if (!rp)
         return FALSE;
 
@@ -443,9 +447,11 @@ static void DrawTargetRangesBobReveal(struct RastPort *rp, const TargetRangesBob
 
 static void FreeTargetRangesBobs(TargetRangesBob *targets, UWORD count) {
     UWORD i;
+
     if (!targets) {
         return;
     }
+
     for (i = 0; i < count; i++) {
         Bob_Free(&targets[i].bob);
     }
@@ -507,6 +513,7 @@ static WaitResult WaitForTargetRangesAdvance(void) {
     if (!LoadTargetRangesBobs(targets)) {
         return WAIT_ESC;
     }
+
     loaded = TRUE;
     rp = &screen->RastPort;
 
@@ -519,10 +526,12 @@ static WaitResult WaitForTargetRangesAdvance(void) {
             } else {
                 if (revealTicks < TARGETRANGES_RISE_TICKS) {
                     revealTicks++;
+
                     for (i = 0; i < 6; i++) {
                         DrawTargetRangesBobReveal(rp, &targets[i], revealTicks);
                     }
                 }
+
                 if (revealTicks >= TARGETRANGES_RISE_TICKS) {
                     inputEnabled = TRUE;
                 }
@@ -535,19 +544,24 @@ static WaitResult WaitForTargetRangesAdvance(void) {
             if (loaded) {
                 FreeTargetRangesBobs(targets, 6);
             }
+
             return WAIT_ESC;
         }
 
         if (inputEnabled && adv) {
             WaitTOF();
             WaitTOF();
+
             while (IsJoystickFirePressed()) {
                 WaitTOF();
             }
+
             DrainWindowMessages();
+
             if (loaded) {
                 FreeTargetRangesBobs(targets, 6);
             }
+
             return WAIT_ADVANCE;
         }
 
@@ -556,7 +570,7 @@ static WaitResult WaitForTargetRangesAdvance(void) {
 }
 
 /* ------------------------------------------------------------------ */
-/* MAIN                                                               */
+/*                            MAIN                                    */
 /* ------------------------------------------------------------------ */
 
 typedef enum { ATTR_TRAINING_INFO = 0, ATTR_FUNDAMENTALS } AttractScreen;
@@ -594,6 +608,7 @@ int main(void) {
 
     {
         WaitResult r = WaitForAdvanceOrTimeout(LOGO_SECONDS);
+
         if (r == WAIT_ESC) {
             goto exit_ok;
         }
@@ -694,6 +709,7 @@ show_title:
                 }
                 {
                     WaitResult rr = WaitForTargetRangesAdvance();
+
                     if (rr == WAIT_ESC) {
                         goto exit_ok;
                     }
@@ -712,6 +728,7 @@ show_title:
                 }
                 {
                     WaitResult rr = WaitForAdvanceNoTimeout();
+
                     if (rr == WAIT_ESC) {
                         goto exit_ok;
                     }
@@ -755,18 +772,22 @@ show_title:
         /* Not engaged: carousel advance */
         if (attr == ATTR_TRAINING_INFO) {
             attr = ATTR_FUNDAMENTALS;
+
             for (int i = 0; i < 32; i++) {
                 nextLoPal[i] = fundamentalsPalette[i];
             }
+
             if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, currentLoPal, 32, nextLoPal, 32)) {
                 goto fail;
             }
 
         } else {
             attr = ATTR_TRAINING_INFO;
+
             for (int i = 0; i < 32; i++) {
                 nextLoPal[i] = trainingInfoPalette[i];
             }
+
             if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, currentLoPal, 32, nextLoPal, 32)) {
                 goto fail;
             }
