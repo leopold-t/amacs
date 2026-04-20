@@ -221,6 +221,7 @@ static WaitResult WaitForAdvanceOnly(void) {
             return WAIT_ADVANCE;
         }
 
+        Sound_Update();
         WaitTOF();
     }
 }
@@ -354,6 +355,7 @@ static WaitResult WaitForAdvanceOrTimeout(int seconds) {
             return WAIT_ADVANCE;
         }
 
+        Sound_Update();
         WaitTOF();
     }
 
@@ -383,6 +385,7 @@ static WaitResult WaitForAdvanceNoTimeout(void) {
             return WAIT_ADVANCE;
         }
 
+        Sound_Update();
         WaitTOF();
     }
 }
@@ -566,6 +569,7 @@ static WaitResult WaitForTargetRangesAdvance(void) {
             return WAIT_ADVANCE;
         }
 
+        Sound_Update();
         WaitTOF();
     }
 }
@@ -659,6 +663,10 @@ show_title:
 
     Sound_StopTitleMusic(TRUE);
 
+    if (Sound_InitAmbientLoop()) {
+        Sound_PlayAmbientLoop();
+    }
+
     if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32, trainingInfoPalette, 32)) {
         Gfx_CloseScreenAndWindow();
         Gfx_CloseBlackScreen();
@@ -744,6 +752,8 @@ show_title:
             }
 
             /* Enter RANGE */
+            Sound_StopAmbientLoop(TRUE);
+
             if (!Gfx_CrossFadeToImage(RANGE_FILE, currentLoPal, 32, rangePalette, 32)) {
                 goto fail;
             }
@@ -807,6 +817,8 @@ show_title:
     }
 
 fail:
+    Sound_StopAmbientLoop(FALSE);
+    Sound_ShutdownAmbientLoop();
     Sound_StopTitleMusic(FALSE);
     Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();
@@ -816,6 +828,8 @@ fail:
     return RETURN_FAIL;
 
 exit_ok:
+    Sound_StopAmbientLoop(FALSE);
+    Sound_ShutdownAmbientLoop();
     Sound_StopTitleMusic(FALSE);
     Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();

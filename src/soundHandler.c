@@ -36,13 +36,17 @@ typedef struct AudioVoice {
 static AudioVoice gShotVoice = {NULL, NULL, FALSE, {AUDIO_CH_SHOT}};
 static AudioVoice gHitVoice = {NULL, NULL, FALSE, {AUDIO_CH_HIT}};
 static AudioVoice gTitleVoice = {NULL, NULL, FALSE, {4}};
+static AudioVoice gAmbientVoice = {NULL, NULL, FALSE, {8}};
 
 static Sample gShot = {NULL, 0};
 static Sample gHit = {NULL, 0};
 static Sample gTitleMusic = {NULL, 0};
+static Sample gAmbientLoop = {NULL, 0};
 
 static BOOL gSoundInited = FALSE;
 static BOOL gTitleMusicInited = FALSE;
+static BOOL gAmbientLoopInited = FALSE;
+static BOOL gAmbientLoopEnabled = FALSE;
 static BOOL gHitPending = FALSE;
 static BOOL gSoundPaused = FALSE;
 static struct DateStamp gHitDueStamp;
@@ -381,6 +385,82 @@ BOOL Sound_IsTitleMusicPlaying(void) {
     return gTitleVoice.playing;
 }
 
+BOOL Sound_InitAmbientLoop(void) {
+    if (gAmbientLoopInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gLastError = SOUND_OK;
+
+    if (!LoadSample(AMBIENT_LOOP_FILE, &gAmbientLoop)) {
+        return FALSE;
+    }
+
+    if (!InitVoice(&gAmbientVoice)) {
+        FreeSample(&gAmbientLoop);
+        return FALSE;
+    }
+
+    gAmbientLoopInited = TRUE;
+    gAmbientLoopEnabled = FALSE;
+    gLastError = SOUND_OK;
+    return TRUE;
+}
+
+void Sound_PlayAmbientLoop(void) {
+    if (!gAmbientLoopInited) {
+        if (!Sound_InitAmbientLoop()) {
+            return;
+        }
+    }
+
+    ReapVoice(&gAmbientVoice);
+
+    gAmbientLoopEnabled = TRUE;
+
+    if (!gAmbientVoice.playing) {
+        StartVoiceSample(&gAmbientVoice, &gAmbientLoop, SOUND_11KHZ_PERIOD, 48, 1);
+    }
+}
+
+void Sound_StopAmbientLoop(BOOL fadeOut) {
+    (void)fadeOut;
+
+    if (!gAmbientLoopInited) {
+        return;
+    }
+
+    gAmbientLoopEnabled = FALSE;
+    ReapVoice(&gAmbientVoice);
+
+    if (gAmbientVoice.playing) {
+        StopVoice(&gAmbientVoice);
+    }
+}
+
+void Sound_ShutdownAmbientLoop(void) {
+    if (!gAmbientLoopInited) {
+        return;
+    }
+
+    gAmbientLoopEnabled = FALSE;
+    StopVoice(&gAmbientVoice);
+    CloseVoice(&gAmbientVoice);
+    FreeSample(&gAmbientLoop);
+    gAmbientLoopInited = FALSE;
+    gLastError = SOUND_OK;
+}
+
+BOOL Sound_IsAmbientLoopPlaying(void) {
+    if (!gAmbientLoopInited) {
+        return FALSE;
+    }
+
+    ReapVoice(&gAmbientVoice);
+    return gAmbientVoice.playing;
+}
+
 SoundError Sound_GetLastError(void) {
     return gLastError;
 }
@@ -435,7 +515,19 @@ void Sound_Shutdown(void) {
 void Sound_Update(void) {
     struct DateStamp now;
 
+    if (gAmbientLoopInited) {
+        ReapVoice(&gAmbientVoice);
+
+        if (!gSoundPaused && gAmbientLoopEnabled && !gAmbientVoice.playing) {
+            StartVoiceSample(&gAmbientVoice, &gAmbientLoop, SOUND_11KHZ_PERIOD, 48, 1);
+        }
+    }
+
     if (gSoundPaused) {
+        return;
+    }
+
+    if (!gSoundInited) {
         return;
     }
 

@@ -27,6 +27,12 @@ void Sound_StopTitleMusic(BOOL fadeOut);
 void Sound_ShutdownTitleMusic(void);
 BOOL Sound_IsTitleMusicPlaying(void);
 
+BOOL Sound_InitAmbientLoop(void);
+void Sound_PlayAmbientLoop(void);
+void Sound_StopAmbientLoop(BOOL fadeOut);
+void Sound_ShutdownAmbientLoop(void);
+BOOL Sound_IsAmbientLoopPlaying(void);
+
 SoundError Sound_GetLastError(void);
 
 #endif
