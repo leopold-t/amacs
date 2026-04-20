@@ -21,6 +21,12 @@ void Sound_PlayShot(void);
 void Sound_PlayHit(UWORD delayTicks);
 void Sound_SetPaused(BOOL paused);
 
+BOOL Sound_InitTitleMusic(void);
+void Sound_PlayTitleMusic(void);
+void Sound_StopTitleMusic(BOOL fadeOut);
+void Sound_ShutdownTitleMusic(void);
+BOOL Sound_IsTitleMusicPlaying(void);
+
 SoundError Sound_GetLastError(void);
 
 #endif

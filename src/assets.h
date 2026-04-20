@@ -33,5 +33,6 @@ extern const UWORD RangePaletteRGB4[32];
 /* RAW sound files */
 #define SHOT_FILE "audio/Shot.raw"
 #define TARGET_HIT_FILE "audio/TargetHit.raw"
+#define TITLE_MUSIC_FILE "audio/Adjutants_Call.raw"
 
 #endif

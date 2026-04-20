@@ -35,11 +35,14 @@ typedef struct AudioVoice {
 
 static AudioVoice gShotVoice = {NULL, NULL, FALSE, {AUDIO_CH_SHOT}};
 static AudioVoice gHitVoice = {NULL, NULL, FALSE, {AUDIO_CH_HIT}};
+static AudioVoice gTitleVoice = {NULL, NULL, FALSE, {4}};
 
 static Sample gShot = {NULL, 0};
 static Sample gHit = {NULL, 0};
+static Sample gTitleMusic = {NULL, 0};
 
 static BOOL gSoundInited = FALSE;
+static BOOL gTitleMusicInited = FALSE;
 static BOOL gHitPending = FALSE;
 static BOOL gSoundPaused = FALSE;
 static struct DateStamp gHitDueStamp;
@@ -235,7 +238,7 @@ static BOOL InitVoice(AudioVoice *voice) {
 
 static void StartVoiceSample(AudioVoice *voice, const Sample *sample, UWORD period, UBYTE volume,
                              UBYTE cycles) {
-    if (!gSoundInited || !voice || !voice->io || !sample || !sample->data || sample->length == 0) {
+    if (!voice || !voice->io || !sample || !sample->data || sample->length == 0) {
         return;
     }
 
@@ -303,6 +306,79 @@ static void AddDateStampDelta(struct DateStamp *stamp, const struct DateStamp *d
     stamp->ds_Days = days;
     stamp->ds_Minute = minutes;
     stamp->ds_Tick = ticks;
+}
+
+BOOL Sound_InitTitleMusic(void) {
+    if (gTitleMusicInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gLastError = SOUND_OK;
+
+    if (!LoadSample(TITLE_MUSIC_FILE, &gTitleMusic)) {
+        return FALSE;
+    }
+
+    if (!InitVoice(&gTitleVoice)) {
+        FreeSample(&gTitleMusic);
+        return FALSE;
+    }
+
+    gTitleMusicInited = TRUE;
+    gLastError = SOUND_OK;
+    return TRUE;
+}
+
+void Sound_PlayTitleMusic(void) {
+    if (!gTitleMusicInited) {
+        if (!Sound_InitTitleMusic()) {
+            return;
+        }
+    }
+
+    ReapVoice(&gTitleVoice);
+
+    if (gTitleVoice.playing) {
+        StopVoice(&gTitleVoice);
+    }
+
+    StartVoiceSample(&gTitleVoice, &gTitleMusic, SOUND_11KHZ_PERIOD, 64, 1);
+}
+
+void Sound_StopTitleMusic(BOOL fadeOut) {
+    (void)fadeOut;
+
+    if (!gTitleMusicInited) {
+        return;
+    }
+
+    ReapVoice(&gTitleVoice);
+
+    if (gTitleVoice.playing) {
+        StopVoice(&gTitleVoice);
+    }
+}
+
+void Sound_ShutdownTitleMusic(void) {
+    if (!gTitleMusicInited) {
+        return;
+    }
+
+    StopVoice(&gTitleVoice);
+    CloseVoice(&gTitleVoice);
+    FreeSample(&gTitleMusic);
+    gTitleMusicInited = FALSE;
+    gLastError = SOUND_OK;
+}
+
+BOOL Sound_IsTitleMusicPlaying(void) {
+    if (!gTitleMusicInited) {
+        return FALSE;
+    }
+
+    ReapVoice(&gTitleVoice);
+    return gTitleVoice.playing;
 }
 
 SoundError Sound_GetLastError(void) {

@@ -13,6 +13,7 @@
 #include "input.h"
 #include "levelManager.h"
 #include "rangeHandler.h"
+#include "soundHandler.h"
 #include "targetScoring.h"
 #include "targetsHandler.h"
 
@@ -639,10 +640,15 @@ show_title:
     IS_NEW_GAME_SESSION = TRUE;
     engaged = FALSE;
 
+    if (Sound_InitTitleMusic()) {
+        Sound_PlayTitleMusic();
+    }
+
     {
         WaitResult r = WaitForAdvanceOrTimeout(TITLE_SECONDS);
 
         if (r == WAIT_ESC) {
+            Sound_StopTitleMusic(FALSE);
             goto exit_ok;
         }
 
@@ -650,6 +656,8 @@ show_title:
             engaged = TRUE;
         }
     }
+
+    Sound_StopTitleMusic(TRUE);
 
     if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32, trainingInfoPalette, 32)) {
         Gfx_CloseScreenAndWindow();
@@ -799,6 +807,8 @@ show_title:
     }
 
 fail:
+    Sound_StopTitleMusic(FALSE);
+    Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();
     Gfx_CloseBlackScreen();
     LevelManager_Shutdown();
@@ -806,6 +816,8 @@ fail:
     return RETURN_FAIL;
 
 exit_ok:
+    Sound_StopTitleMusic(FALSE);
+    Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();
     Gfx_CloseBlackScreen();
     LevelManager_Shutdown();
