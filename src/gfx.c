@@ -199,6 +199,19 @@ void Gfx_DisableDoubleBuffering(void) {
         return;
     }
 
+    /*
+     * Preserve the currently displayed frame before returning to buffer 0.
+     * Otherwise, if buffer 1 is on screen, switching back to the screen bitmap
+     * can briefly reveal an older range frame under the end-of-round overlay.
+     */
+    if (screen && screenBuffers[0] && screenBuffers[1] && sbIndex != 0) {
+        WaitSafe(screenBuffers[sbIndex]);
+        WaitBlit();
+        BltBitMap(screenBuffers[sbIndex]->sb_BitMap, 0, 0, screenBuffers[0]->sb_BitMap, 0, 0,
+                  screen->Width, screen->Height, 0xC0, 0xFF, NULL);
+        WaitBlit();
+    }
+
     /* Return to buffer 0 (screen bitmap) */
     if (screen && screenBuffers[0]) {
         ChangeScreenBuffer(screen, screenBuffers[0]);
