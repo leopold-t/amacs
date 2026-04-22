@@ -54,16 +54,23 @@ extern BOOL Input_Down(void);
 #define SUMMARY_FILE "gfx/Summary.raw"
 
 static const UWORD SummaryPaletteRGB4[32] = {
-    0x0000, 0x0005, 0x000C, 0x010D, 0x0119, 0x010B, 0x0113, 0x0C00, 0x0555, 0x0557, 0x055A,
+    0x0000, 0x0005, 0x000C, 0x010D, 0x0119, 0x010B, 0x0113, 0x0C00, 0x0666, 0x0557, 0x055A,
     0x0D61, 0x065D, 0x0DC1, 0x01A0, 0x088E, 0x0DC1, 0x0999, 0x099C, 0x0A9E, 0x0CCC, 0x0CCE,
     0x01F0, 0x099C, 0x0222, 0x03C2, 0x088E, 0x065D, 0x0005, 0x0119, 0x010B, 0x0EEE};
 
 #define SUMMARY_TEXT_PEN 25
 #define SUMMARY_SHADOW_PEN 31
 #define SUMMARY_TITLE_Y 96
-#define SUMMARY_SCORE_Y 120
-#define SUMMARY_ACCURACY_Y 136
+#define SUMMARY_SCORE_Y 16
+#define SUMMARY_ACCURACY_Y 32
 #define SUMMARY_HOLD_WAIT 0
+#define SUMMARY_SCORING_ETYPE_RAW "gfx/ScoringEType.raw"
+#define SUMMARY_SCORING_ETYPE_MASK "gfx/ScoringEType.mask"
+#define SUMMARY_SCORING_ETYPE_W 38
+#define SUMMARY_SCORING_ETYPE_H 68
+#define SUMMARY_SCORING_ETYPE_X 141
+#define SUMMARY_SCORING_ETYPE_BOTTOM_Y 147
+#define SUMMARY_SCORING_ETYPE_Y (SUMMARY_SCORING_ETYPE_BOTTOM_Y - SUMMARY_SCORING_ETYPE_H)
 #define TARGET050_RAW "gfx/Target050.raw"
 #define TARGET050_MASK "gfx/Target050.mask"
 #define TARGET100_RAW "gfx/Target100.raw"
@@ -229,9 +236,13 @@ static WaitResult WaitForAdvanceOnly(void) {
 static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     struct RastPort *rp;
     struct TextFont *font = NULL;
+    AmacsBob scoringETypeBob;
+    BOOL scoringETypeLoaded = FALSE;
     char line[32];
     UWORD score;
     UWORD acc;
+
+    memset(&scoringETypeBob, 0, sizeof(scoringETypeBob));
 
     if (!Gfx_CrossFadeToImage(SUMMARY_FILE, rangePalette, 32, SummaryPaletteRGB4, 32)) {
         return FALSE;
@@ -241,6 +252,13 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
 
     if (!rp)
         return FALSE;
+
+    if (Bob_LoadRawAndMask(&scoringETypeBob, SUMMARY_SCORING_ETYPE_RAW, SUMMARY_SCORING_ETYPE_MASK,
+                           SUMMARY_SCORING_ETYPE_W, SUMMARY_SCORING_ETYPE_H, 5)) {
+        Bob_DrawMaskedToRastPort(&scoringETypeBob, rp, SUMMARY_SCORING_ETYPE_X,
+                                 SUMMARY_SCORING_ETYPE_Y);
+        scoringETypeLoaded = TRUE;
+    }
 
     font = OpenFont(&gSummaryFontAttr);
 
@@ -255,6 +273,10 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
 
     if (font)
         CloseFont(font);
+
+    if (scoringETypeLoaded) {
+        Bob_Free(&scoringETypeBob);
+    }
 
     switch (WaitForAdvanceOnly()) {
         case WAIT_ESC:
