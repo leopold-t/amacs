@@ -12,6 +12,7 @@
 #include "gfx.h"
 #include "input.h"
 #include "levelManager.h"
+#include "imageHandler.h"
 #include "rangeHandler.h"
 #include "soundHandler.h"
 #include "targetScoring.h"
@@ -54,12 +55,12 @@ extern BOOL Input_Down(void);
 #define SUMMARY_FILE "gfx/Summary.raw"
 
 static const UWORD SummaryPaletteRGB4[32] = {
-    0x0000, 0x0005, 0x000C, 0x010D, 0x0119, 0x010B, 0x0113, 0x0C00, 0x0666, 0x0557, 0x055A,
+    0x0000, 0x0005, 0x000C, 0x010D, 0x0119, 0x010B, 0x0113, 0x0C00, 0x099C, 0x0557, 0x055A,
     0x0D61, 0x065D, 0x0DC1, 0x01A0, 0x088E, 0x0DC1, 0x0999, 0x099C, 0x0A9E, 0x0CCC, 0x0CCE,
-    0x01F0, 0x099C, 0x0222, 0x03C2, 0x088E, 0x065D, 0x0005, 0x0119, 0x010B, 0x0EEE};
+    0x01F0, 0x0666, 0x0222, 0x03C2, 0x088E, 0x065D, 0x0005, 0x0119, 0x010B, 0x0EEE};
 
 #define SUMMARY_TEXT_PEN 25
-#define SUMMARY_SHADOW_PEN 31
+#define SUMMARY_SHADOW_PEN 24
 #define SUMMARY_TITLE_Y 96
 #define SUMMARY_SCORE_Y 16
 #define SUMMARY_ACCURACY_Y 32
@@ -73,6 +74,16 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define SUMMARY_SCORING_ETYPE_Y (SUMMARY_SCORING_ETYPE_BOTTOM_Y - SUMMARY_SCORING_ETYPE_H)
 #define TARGET050_RAW "gfx/Target050.raw"
 #define TARGET050_MASK "gfx/Target050.mask"
+
+#define SUMMARY_TARGET050_RAW "gfx/Target050.raw"
+#define SUMMARY_TARGET050_MASK "gfx/Target050.mask"
+#define SUMMARY_TARGET050_W 48
+#define SUMMARY_TARGET050_H 23
+#define SUMMARY_TARGET050_X 136
+#define SUMMARY_TARGET050_BOTTOM_Y 147
+#define SUMMARY_TARGET050_Y (SUMMARY_TARGET050_BOTTOM_Y - SUMMARY_TARGET050_H)
+#define SUMMARY_DISTANCE_Y 48
+#define SUMMARY_DISTANCE_PEN 16
 #define TARGET100_RAW "gfx/Target100.raw"
 #define TARGET100_MASK "gfx/Target100.mask"
 #define TARGET150_RAW "gfx/Target150.raw"
@@ -234,29 +245,49 @@ static WaitResult WaitForAdvanceOnly(void) {
 }
 
 static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
+    typedef struct SummaryStep {
+        const char *distanceText;
+        const AmacsBob *bob;
+        WORD x;
+        WORD y;
+        BOOL showTotals;
+    } SummaryStep;
+
     struct RastPort *rp;
+    struct Screen *scr;
     struct TextFont *font = NULL;
     AmacsBob scoringETypeBob;
+    AmacsBob target050Bob;
     BOOL scoringETypeLoaded = FALSE;
+    BOOL target050Loaded = FALSE;
+    SummaryStep steps[6];
+    UWORD stepIndex = 0;
     char line[32];
     UWORD score;
     UWORD acc;
+    WaitResult waitResult;
 
     memset(&scoringETypeBob, 0, sizeof(scoringETypeBob));
+    memset(&target050Bob, 0, sizeof(target050Bob));
 
     if (!Gfx_CrossFadeToImage(SUMMARY_FILE, rangePalette, 32, SummaryPaletteRGB4, 32)) {
         return FALSE;
     }
 
+    scr = Gfx_GetScreen();
     rp = Gfx_GetDrawRastPort();
 
-    if (!rp)
+    if (!scr || !rp) {
         return FALSE;
+    }
+
+    if (Bob_LoadRawAndMask(&target050Bob, SUMMARY_TARGET050_RAW, SUMMARY_TARGET050_MASK,
+                           SUMMARY_TARGET050_W, SUMMARY_TARGET050_H, 5)) {
+        target050Loaded = TRUE;
+    }
 
     if (Bob_LoadRawAndMask(&scoringETypeBob, SUMMARY_SCORING_ETYPE_RAW, SUMMARY_SCORING_ETYPE_MASK,
                            SUMMARY_SCORING_ETYPE_W, SUMMARY_SCORING_ETYPE_H, 5)) {
-        Bob_DrawMaskedToRastPort(&scoringETypeBob, rp, SUMMARY_SCORING_ETYPE_X,
-                                 SUMMARY_SCORING_ETYPE_Y);
         scoringETypeLoaded = TRUE;
     }
 
@@ -265,25 +296,106 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     score = summary ? summary->score : 0;
     acc = summary ? summary->accuracy : 0;
 
-    BuildSummaryScoreLine(line, score);
-    DrawCenteredTextWithShadowMain(rp, font, SUMMARY_SCORE_Y, 31, 24, line);
+    steps[0].distanceText = "50 Meter";
+    steps[0].bob = target050Loaded ? &target050Bob : NULL;
+    steps[0].x = SUMMARY_TARGET050_X;
+    steps[0].y = SUMMARY_TARGET050_Y;
+    steps[0].showTotals = FALSE;
 
-    BuildSummaryAccuracyLine(line, acc);
-    DrawCenteredTextWithShadowMain(rp, font, SUMMARY_ACCURACY_Y, 31, 24, line);
+    steps[1].distanceText = "100 Meter";
+    steps[1].bob = target050Loaded ? &target050Bob : NULL;
+    steps[1].x = SUMMARY_TARGET050_X;
+    steps[1].y = SUMMARY_TARGET050_Y;
+    steps[1].showTotals = FALSE;
+
+    steps[2].distanceText = "150 Meter";
+    steps[2].bob = scoringETypeLoaded ? &scoringETypeBob : NULL;
+    steps[2].x = SUMMARY_SCORING_ETYPE_X;
+    steps[2].y = SUMMARY_SCORING_ETYPE_Y;
+    steps[2].showTotals = FALSE;
+
+    steps[3].distanceText = "200 Meter";
+    steps[3].bob = scoringETypeLoaded ? &scoringETypeBob : NULL;
+    steps[3].x = SUMMARY_SCORING_ETYPE_X;
+    steps[3].y = SUMMARY_SCORING_ETYPE_Y;
+    steps[3].showTotals = FALSE;
+
+    steps[4].distanceText = "250 Meter";
+    steps[4].bob = scoringETypeLoaded ? &scoringETypeBob : NULL;
+    steps[4].x = SUMMARY_SCORING_ETYPE_X;
+    steps[4].y = SUMMARY_SCORING_ETYPE_Y;
+    steps[4].showTotals = FALSE;
+
+    steps[5].distanceText = "300 Meter";
+    steps[5].bob = scoringETypeLoaded ? &scoringETypeBob : NULL;
+    steps[5].x = SUMMARY_SCORING_ETYPE_X;
+    steps[5].y = SUMMARY_SCORING_ETYPE_Y;
+    steps[5].showTotals = TRUE;
+
+    for (;;) {
+        if (!LoadRawImageToScreen(SUMMARY_FILE, scr)) {
+            if (font)
+                CloseFont(font);
+            if (target050Loaded)
+                Bob_Free(&target050Bob);
+            if (scoringETypeLoaded)
+                Bob_Free(&scoringETypeBob);
+            return FALSE;
+        }
+
+        rp = Gfx_GetDrawRastPort();
+        if (!rp) {
+            if (font)
+                CloseFont(font);
+            if (target050Loaded)
+                Bob_Free(&target050Bob);
+            if (scoringETypeLoaded)
+                Bob_Free(&scoringETypeBob);
+            return FALSE;
+        }
+
+        if (steps[stepIndex].bob) {
+            Bob_DrawMaskedToRastPort(steps[stepIndex].bob, rp, steps[stepIndex].x, steps[stepIndex].y);
+        }
+
+        DrawCenteredTextWithShadowMain(rp, font, SUMMARY_DISTANCE_Y, SUMMARY_DISTANCE_PEN,
+                                       SUMMARY_SHADOW_PEN, steps[stepIndex].distanceText);
+
+        if (steps[stepIndex].showTotals) {
+            BuildSummaryScoreLine(line, score);
+            DrawCenteredTextWithShadowMain(rp, font, SUMMARY_SCORE_Y, 31, 24, line);
+
+            BuildSummaryAccuracyLine(line, acc);
+            DrawCenteredTextWithShadowMain(rp, font, SUMMARY_ACCURACY_Y, 31, 24, line);
+        }
+
+        waitResult = WaitForAdvanceOnly();
+        if (waitResult == WAIT_ESC) {
+            if (font)
+                CloseFont(font);
+            if (target050Loaded)
+                Bob_Free(&target050Bob);
+            if (scoringETypeLoaded)
+                Bob_Free(&scoringETypeBob);
+            return FALSE;
+        }
+
+        if (stepIndex >= 5) {
+            break;
+        }
+
+        stepIndex++;
+    }
 
     if (font)
         CloseFont(font);
 
-    if (scoringETypeLoaded) {
-        Bob_Free(&scoringETypeBob);
+    if (target050Loaded) {
+        Bob_Free(&target050Bob);
     }
 
-    switch (WaitForAdvanceOnly()) {
-        case WAIT_ESC:
-            return FALSE;
-        case WAIT_ADVANCE:
-        default:
-            break;
+    if (scoringETypeLoaded) {
+        Bob_Free(&scoringETypeBob);
     }
 
     if (!Gfx_CrossFadeToImage(TITLE_FILE, SummaryPaletteRGB4, 32, titlePalette, 32)) {
