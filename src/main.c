@@ -266,6 +266,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     UWORD score;
     UWORD acc;
     WaitResult waitResult;
+    BOOL summaryDbufEnabled = FALSE;
 
     memset(&scoringETypeBob, 0, sizeof(scoringETypeBob));
     memset(&target050Bob, 0, sizeof(target050Bob));
@@ -295,6 +296,10 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
 
     score = summary ? summary->score : 0;
     acc = summary ? summary->accuracy : 0;
+
+    if (Gfx_EnableDoubleBuffering()) {
+        summaryDbufEnabled = TRUE;
+    }
 
     steps[0].distanceText = "50 Meter";
     steps[0].bob = target050Loaded ? &target050Bob : NULL;
@@ -333,7 +338,12 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     steps[5].showTotals = TRUE;
 
     for (;;) {
-        if (!LoadRawImageToScreen(SUMMARY_FILE, scr)) {
+        rp = Gfx_GetDrawRastPort();
+        if (!rp) {
+            if (summaryDbufEnabled) {
+                Gfx_DisableDoubleBuffering();
+                summaryDbufEnabled = FALSE;
+            }
             if (font)
                 CloseFont(font);
             if (target050Loaded)
@@ -343,8 +353,11 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             return FALSE;
         }
 
-        rp = Gfx_GetDrawRastPort();
-        if (!rp) {
+        if (!LoadRawImageToRastPort(SUMMARY_FILE, rp, LO_WIDTH, LO_HEIGHT)) {
+            if (summaryDbufEnabled) {
+                Gfx_DisableDoubleBuffering();
+                summaryDbufEnabled = FALSE;
+            }
             if (font)
                 CloseFont(font);
             if (target050Loaded)
@@ -369,8 +382,16 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             DrawCenteredTextWithShadowMain(rp, font, SUMMARY_ACCURACY_Y, 31, 24, line);
         }
 
+        if (summaryDbufEnabled) {
+            Gfx_SwapBuffers();
+        }
+
         waitResult = WaitForAdvanceOnly();
         if (waitResult == WAIT_ESC) {
+            if (summaryDbufEnabled) {
+                Gfx_DisableDoubleBuffering();
+                summaryDbufEnabled = FALSE;
+            }
             if (font)
                 CloseFont(font);
             if (target050Loaded)
@@ -385,6 +406,11 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         }
 
         stepIndex++;
+    }
+
+    if (summaryDbufEnabled) {
+        Gfx_DisableDoubleBuffering();
+        summaryDbufEnabled = FALSE;
     }
 
     if (font)
