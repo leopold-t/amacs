@@ -84,6 +84,8 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define SUMMARY_TARGET050_Y (SUMMARY_TARGET050_BOTTOM_Y - SUMMARY_TARGET050_H)
 #define SUMMARY_DISTANCE_Y 48
 #define SUMMARY_DISTANCE_PEN 16
+#define SUMMARY_HIT_MARK_PEN 20
+#define SUMMARY_HIT_MARK_CENTER_PEN 24
 #define TARGET100_RAW "gfx/Target100.raw"
 #define TARGET100_MASK "gfx/Target100.mask"
 #define TARGET150_RAW "gfx/Target150.raw"
@@ -222,6 +224,78 @@ static void DrawCenteredTextWithShadowMain(struct RastPort *rp, struct TextFont 
     width = TextLength(rp, (STRPTR)text, len);
     x = (WORD)((LO_WIDTH - width) / 2);
     DrawTextWithShadowExMain(rp, font, x, y, pen, shadowPenValue, text, len);
+}
+
+static void WritePixelOnScreen(struct RastPort *rp, WORD x, WORD y) {
+    if (!rp) {
+        return;
+    }
+
+    if (x < 0 || y < 0) {
+        return;
+    }
+
+    if (x >= LO_WIDTH || y >= LO_HEIGHT) {
+        return;
+    }
+
+    WritePixel(rp, x, y);
+}
+
+static void WritePixelInRect(struct RastPort *rp, WORD x, WORD y, WORD rectX, WORD rectY,
+                             UWORD rectW, UWORD rectH) {
+    if (!rp) {
+        return;
+    }
+
+    if (x < rectX || y < rectY) {
+        return;
+    }
+
+    if (x >= (WORD)(rectX + rectW) || y >= (WORD)(rectY + rectH)) {
+        return;
+    }
+
+    WritePixel(rp, x, y);
+}
+
+static void DrawSummaryHitMark(struct RastPort *rp, WORD x, WORD y, WORD rectX, WORD rectY,
+                               UWORD rectW, UWORD rectH) {
+    /*
+     * The center pixel is the actual hit and must stay inside the target hit map.
+     * The surrounding pixels are only a visual marker and may extend outside
+     * the target BOB outline/bounding box, as long as they stay on screen.
+     */
+    SetAPen(rp, SUMMARY_HIT_MARK_PEN);
+    WritePixelOnScreen(rp, x - 1, y);
+    WritePixelOnScreen(rp, x + 1, y);
+    WritePixelOnScreen(rp, x, y - 1);
+    WritePixelOnScreen(rp, x, y + 1);
+
+    SetAPen(rp, SUMMARY_HIT_MARK_CENTER_PEN);
+    WritePixelInRect(rp, x, y, rectX, rectY, rectW, rectH);
+}
+
+static void DrawSummaryHitMarks050(struct RastPort *rp, WORD targetX, WORD targetY) {
+    const UWORD *hitMap;
+    UWORD width;
+    UWORD height;
+    UWORD x;
+    UWORD y;
+
+    hitMap = TargetScoring_GetHitMap050(&width, &height);
+    if (!rp || !hitMap) {
+        return;
+    }
+
+    for (y = 0; y < height; y++) {
+        for (x = 0; x < width; x++) {
+            if (hitMap[(y * width) + x] != 0) {
+                DrawSummaryHitMark(rp, (WORD)(targetX + x), (WORD)(targetY + y),
+                                   targetX, targetY, width, height);
+            }
+        }
+    }
 }
 
 static WaitResult WaitForAdvanceOnly(void) {
@@ -369,6 +443,10 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
 
         if (steps[stepIndex].bob) {
             Bob_DrawMaskedToRastPort(steps[stepIndex].bob, rp, steps[stepIndex].x, steps[stepIndex].y);
+        }
+
+        if (stepIndex == 0 && steps[stepIndex].bob) {
+            DrawSummaryHitMarks050(rp, steps[stepIndex].x, steps[stepIndex].y);
         }
 
         DrawCenteredTextWithShadowMain(rp, font, SUMMARY_DISTANCE_Y, SUMMARY_DISTANCE_PEN,

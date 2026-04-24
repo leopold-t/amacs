@@ -176,3 +176,15 @@ void TargetScoring_Reset(void) {
 UWORD TargetScoring_GetTotalScore(void) {
     return gTotalScore;
 }
+
+const UWORD *TargetScoring_GetHitMap050(UWORD *outWidth, UWORD *outHeight) {
+    if (outWidth) {
+        *outWidth = T050_W;
+    }
+
+    if (outHeight) {
+        *outHeight = T050_H;
+    }
+
+    return (const UWORD *)gHitMap050;
+}

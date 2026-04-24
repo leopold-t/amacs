@@ -32,5 +32,6 @@
 UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY);
 void TargetScoring_Reset(void);
 UWORD TargetScoring_GetTotalScore(void);
+const UWORD *TargetScoring_GetHitMap050(UWORD *outWidth, UWORD *outHeight);
 
 #endif /* TARGET_SCORING_H */
