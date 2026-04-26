@@ -188,3 +188,16 @@ const UWORD *TargetScoring_GetHitMap050(UWORD *outWidth, UWORD *outHeight) {
 
     return (const UWORD *)gHitMap050;
 }
+
+
+const UWORD *TargetScoring_GetHitMap100(UWORD *outWidth, UWORD *outHeight) {
+    if (outWidth) {
+        *outWidth = T100_W;
+    }
+
+    if (outHeight) {
+        *outHeight = T100_H;
+    }
+
+    return (const UWORD *)gHitMap100;
+}
