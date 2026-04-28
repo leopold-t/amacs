@@ -202,6 +202,7 @@ const UWORD *TargetScoring_GetHitMap100(UWORD *outWidth, UWORD *outHeight) {
     return (const UWORD *)gHitMap100;
 }
 
+
 const UWORD *TargetScoring_GetHitMap150(UWORD *outWidth, UWORD *outHeight) {
     if (outWidth) {
         *outWidth = T150_W;
@@ -213,6 +214,7 @@ const UWORD *TargetScoring_GetHitMap150(UWORD *outWidth, UWORD *outHeight) {
 
     return (const UWORD *)gHitMap150;
 }
+
 
 const UWORD *TargetScoring_GetHitMap200(UWORD *outWidth, UWORD *outHeight) {
     if (outWidth) {
@@ -226,6 +228,7 @@ const UWORD *TargetScoring_GetHitMap200(UWORD *outWidth, UWORD *outHeight) {
     return (const UWORD *)gHitMap200;
 }
 
+
 const UWORD *TargetScoring_GetHitMap250(UWORD *outWidth, UWORD *outHeight) {
     if (outWidth) {
         *outWidth = T250_W;
@@ -237,6 +240,7 @@ const UWORD *TargetScoring_GetHitMap250(UWORD *outWidth, UWORD *outHeight) {
 
     return (const UWORD *)gHitMap250;
 }
+
 
 const UWORD *TargetScoring_GetHitMap300(UWORD *outWidth, UWORD *outHeight) {
     if (outWidth) {

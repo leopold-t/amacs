@@ -34,9 +34,9 @@ void TargetScoring_Reset(void);
 UWORD TargetScoring_GetTotalScore(void);
 const UWORD *TargetScoring_GetHitMap050(UWORD *outWidth, UWORD *outHeight);
 const UWORD *TargetScoring_GetHitMap100(UWORD *outWidth, UWORD *outHeight);
-const UWORD *TargetScoring_GetHitMap150(UWORD *outWidth, UWORD *outHeight);
-const UWORD *TargetScoring_GetHitMap200(UWORD *outWidth, UWORD *outHeight);
-const UWORD *TargetScoring_GetHitMap250(UWORD *outWidth, UWORD *outHeight);
 const UWORD *TargetScoring_GetHitMap300(UWORD *outWidth, UWORD *outHeight);
+const UWORD *TargetScoring_GetHitMap250(UWORD *outWidth, UWORD *outHeight);
+const UWORD *TargetScoring_GetHitMap200(UWORD *outWidth, UWORD *outHeight);
+const UWORD *TargetScoring_GetHitMap150(UWORD *outWidth, UWORD *outHeight);
 
 #endif /* TARGET_SCORING_H */
