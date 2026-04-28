@@ -484,24 +484,37 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, UBYTE *hitScore) {
     WORD visibleH;
     WORD localX;
     WORD localY;
+    UWORD distance;
+    BYTE zeroOffsetY;
+    WORD bulletY;
 
     if (!GetSeriesVisibleRect(s, &left, &top, &width, &visibleH)) {
         return FALSE;
     }
 
-    if (x < left || x >= (left + width) || y < top || y >= (top + visibleH)) {
+    distance = (UWORD)GetDistanceForSeries(s);
+    zeroOffsetY = TargetScoring_GetZeroOffset(distance);
+
+    /*
+     * Apply zeroing before hit detection, not during scoring.
+     * Positive offset means the bullet goes up on screen, so Y decreases.
+     * If this moves the bullet outside the target/mask, the shot is a miss.
+     */
+    bulletY = (WORD)(y - zeroOffsetY);
+
+    if (x < left || x >= (left + width) || bulletY < top || bulletY >= (top + visibleH)) {
         return FALSE;
     }
 
     localX = (WORD)(x - left);
-    localY = (WORD)(y - top);
+    localY = (WORD)(bulletY - top);
 
     if (!IsMaskBitSet(s->bob.mask, s->width, localX, localY)) {
         return FALSE;
     }
 
     if (hitScore) {
-        *hitScore = TargetScoring_GetScore((UWORD)GetDistanceForSeries(s), localX, localY);
+        *hitScore = TargetScoring_GetScore(distance, localX, localY);
     }
 
     s->hit = TRUE;

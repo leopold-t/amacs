@@ -29,6 +29,7 @@
  * - increments the corresponding hit map cell
  * - adds the awarded points to the global total score
  */
+BYTE TargetScoring_GetZeroOffset(UWORD distance);
 UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY);
 void TargetScoring_Reset(void);
 UWORD TargetScoring_GetTotalScore(void);

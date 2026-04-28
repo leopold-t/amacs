@@ -101,6 +101,53 @@ static const UBYTE gScoreMap050[T050_H][T050_W] = {
     {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1}};
 
+typedef struct {
+    UWORD distance;
+    BYTE offsetY;
+} ZeroOffset;
+
+/* BZO 300 m (Default, M16A2) */
+static const ZeroOffset gBZO300[] = {{50, +1},  {100, +2}, {150, +3},
+                                     {200, +4}, {250, +1}, {300, 0}};
+
+/* BZO 250 m (To be optional, M16A1) */
+static const ZeroOffset gBZO250[] = {{50, +1}, {100, +1}, {150, +1}, {200, 0}, {250, 0}, {300, -3}};
+
+#define ZERO_OFFSET_COUNT(table) (sizeof(table) / sizeof((table)[0]))
+#define ACTIVE_BZO_METERS 300
+
+static const ZeroOffset *GetActiveZeroTable(UWORD *outCount) {
+    switch (ACTIVE_BZO_METERS) {
+        case 250:
+            *outCount = (UWORD)ZERO_OFFSET_COUNT(gBZO250);
+            return gBZO250;
+
+        case 300:
+        default:
+            *outCount = (UWORD)ZERO_OFFSET_COUNT(gBZO300);
+            return gBZO300;
+    }
+}
+
+static BYTE GetZeroOffset(const ZeroOffset *table, UWORD count, UWORD distance) {
+    UWORD i;
+
+    for (i = 0; i < count; i++) {
+        if (table[i].distance == distance) {
+            return table[i].offsetY;
+        }
+    }
+
+    return 0;
+}
+
+BYTE TargetScoring_GetZeroOffset(UWORD distance) {
+    UWORD count;
+    const ZeroOffset *table = GetActiveZeroTable(&count);
+
+    return GetZeroOffset(table, count, distance);
+}
+
 static UBYTE GetScoreFromMap(const UBYTE *map, UWORD width, WORD x, WORD y) {
     return map[y * width + x];
 }
@@ -133,26 +180,44 @@ static UBYTE RegisterScore(UWORD *hitMap, UWORD width, WORD localX, WORD localY,
 UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY) {
     switch (distance) {
         case 300:
+            if (localX < 0 || localX >= T300_W || localY < 0 || localY >= T300_H) {
+                return SCORE_MISS;
+            }
             return RegisterScore((UWORD *)gHitMap300, T300_W, localX, localY,
                                  (const UBYTE *)gScoreMap300);
 
         case 250:
+            if (localX < 0 || localX >= T250_W || localY < 0 || localY >= T250_H) {
+                return SCORE_MISS;
+            }
             return RegisterScore((UWORD *)gHitMap250, T250_W, localX, localY,
                                  (const UBYTE *)gScoreMap250);
 
         case 200:
+            if (localX < 0 || localX >= T200_W || localY < 0 || localY >= T200_H) {
+                return SCORE_MISS;
+            }
             return RegisterScore((UWORD *)gHitMap200, T200_W, localX, localY,
                                  (const UBYTE *)gScoreMap200);
 
         case 150:
+            if (localX < 0 || localX >= T150_W || localY < 0 || localY >= T150_H) {
+                return SCORE_MISS;
+            }
             return RegisterScore((UWORD *)gHitMap150, T150_W, localX, localY,
                                  (const UBYTE *)gScoreMap150);
 
         case 100:
+            if (localX < 0 || localX >= T100_W || localY < 0 || localY >= T100_H) {
+                return SCORE_MISS;
+            }
             return RegisterScore((UWORD *)gHitMap100, T100_W, localX, localY,
                                  (const UBYTE *)gScoreMap100);
 
         case 50:
+            if (localX < 0 || localX >= T050_W || localY < 0 || localY >= T050_H) {
+                return SCORE_MISS;
+            }
             return RegisterScore((UWORD *)gHitMap050, T050_W, localX, localY,
                                  (const UBYTE *)gScoreMap050);
 
@@ -189,7 +254,6 @@ const UWORD *TargetScoring_GetHitMap050(UWORD *outWidth, UWORD *outHeight) {
     return (const UWORD *)gHitMap050;
 }
 
-
 const UWORD *TargetScoring_GetHitMap100(UWORD *outWidth, UWORD *outHeight) {
     if (outWidth) {
         *outWidth = T100_W;
@@ -201,7 +265,6 @@ const UWORD *TargetScoring_GetHitMap100(UWORD *outWidth, UWORD *outHeight) {
 
     return (const UWORD *)gHitMap100;
 }
-
 
 const UWORD *TargetScoring_GetHitMap150(UWORD *outWidth, UWORD *outHeight) {
     if (outWidth) {
@@ -215,7 +278,6 @@ const UWORD *TargetScoring_GetHitMap150(UWORD *outWidth, UWORD *outHeight) {
     return (const UWORD *)gHitMap150;
 }
 
-
 const UWORD *TargetScoring_GetHitMap200(UWORD *outWidth, UWORD *outHeight) {
     if (outWidth) {
         *outWidth = T200_W;
@@ -228,7 +290,6 @@ const UWORD *TargetScoring_GetHitMap200(UWORD *outWidth, UWORD *outHeight) {
     return (const UWORD *)gHitMap200;
 }
 
-
 const UWORD *TargetScoring_GetHitMap250(UWORD *outWidth, UWORD *outHeight) {
     if (outWidth) {
         *outWidth = T250_W;
@@ -240,7 +301,6 @@ const UWORD *TargetScoring_GetHitMap250(UWORD *outWidth, UWORD *outHeight) {
 
     return (const UWORD *)gHitMap250;
 }
-
 
 const UWORD *TargetScoring_GetHitMap300(UWORD *outWidth, UWORD *outHeight) {
     if (outWidth) {
