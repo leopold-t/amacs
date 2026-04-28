@@ -1,5 +1,6 @@
 #include <exec/types.h>
 #include <graphics/text.h>
+#include <graphics/gfx.h>
 #include <intuition/intuition.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
@@ -741,6 +742,55 @@ static WaitResult WaitForAdvanceOnly(void) {
     }
 }
 
+static BOOL InitSummaryBackBuffer(struct BitMap *bm, struct RastPort *rp, UWORD width,
+                                  UWORD height, UWORD depth) {
+    UWORD p;
+
+    if (!bm || !rp || width == 0 || height == 0 || depth == 0) {
+        return FALSE;
+    }
+
+    memset(bm, 0, sizeof(*bm));
+    InitBitMap(bm, depth, width, height);
+
+    for (p = 0; p < depth; p++) {
+        bm->Planes[p] = AllocRaster(width, height);
+        if (!bm->Planes[p]) {
+            UWORD q;
+            for (q = 0; q < p; q++) {
+                if (bm->Planes[q]) {
+                    FreeRaster(bm->Planes[q], width, height);
+                    bm->Planes[q] = NULL;
+                }
+            }
+            return FALSE;
+        }
+    }
+
+    InitRastPort(rp);
+    rp->BitMap = bm;
+    SetRast(rp, 0);
+    WaitBlit();
+
+    return TRUE;
+}
+
+static void FreeSummaryBackBuffer(struct BitMap *bm, UWORD width, UWORD height) {
+    UWORD p;
+
+    if (!bm) {
+        return;
+    }
+
+    for (p = 0; p < bm->Depth; p++) {
+        if (bm->Planes[p]) {
+            FreeRaster(bm->Planes[p], width, height);
+            bm->Planes[p] = NULL;
+        }
+    }
+}
+
+
 static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     typedef struct SummaryStep {
         const char *distanceText;
@@ -750,9 +800,13 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         BOOL showTotals;
     } SummaryStep;
 
-    struct RastPort *rp;
+    struct RastPort *screenRP;
     struct Screen *scr;
     struct TextFont *font = NULL;
+    struct BitMap summaryBM;
+    struct RastPort summaryRP;
+    UWORD summaryDepth = 0;
+    BOOL summaryBufferReady = FALSE;
     AmacsBob scoringETypeBob;
     AmacsBob scoringFTypeBob;
     BOOL scoringETypeLoaded = FALSE;
@@ -763,8 +817,9 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     UWORD score;
     UWORD acc;
     WaitResult waitResult;
-    BOOL summaryDbufEnabled = FALSE;
 
+    memset(&summaryBM, 0, sizeof(summaryBM));
+    memset(&summaryRP, 0, sizeof(summaryRP));
     memset(&scoringETypeBob, 0, sizeof(scoringETypeBob));
     memset(&scoringFTypeBob, 0, sizeof(scoringFTypeBob));
 
@@ -773,11 +828,24 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     }
 
     scr = Gfx_GetScreen();
-    rp = Gfx_GetDrawRastPort();
 
-    if (!scr || !rp) {
+    if (!scr || !scr->RastPort.BitMap) {
         return FALSE;
     }
+
+    screenRP = &scr->RastPort;
+    summaryDepth = (UWORD)scr->RastPort.BitMap->Depth;
+
+    /*
+     * Summary is static between key presses, so avoid system ScreenBuffer DBuf here.
+     * Build each full Summary page in a private bitmap and copy it to the visible
+     * screen in one blit. This keeps page changes flicker-free without touching
+     * ChangeScreenBuffer/SafeMessage, which is risky at end-of-round transitions.
+     */
+    if (!InitSummaryBackBuffer(&summaryBM, &summaryRP, LO_WIDTH, LO_HEIGHT, summaryDepth)) {
+        return FALSE;
+    }
+    summaryBufferReady = TRUE;
 
     if (Bob_LoadRawAndMask(&scoringFTypeBob, SUMMARY_SCORING_FTYPE_RAW, SUMMARY_SCORING_FTYPE_MASK,
                            SUMMARY_SCORING_FTYPE_W, SUMMARY_SCORING_FTYPE_H, 5)) {
@@ -793,10 +861,6 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
 
     score = summary ? summary->score : 0;
     acc = summary ? summary->accuracy : 0;
-
-    if (Gfx_EnableDoubleBuffering()) {
-        summaryDbufEnabled = TRUE;
-    }
 
     steps[0].distanceText = "50 Meter";
     steps[0].bob = scoringFTypeLoaded ? &scoringFTypeBob : NULL;
@@ -835,90 +899,73 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     steps[5].showTotals = TRUE;
 
     for (;;) {
-        rp = Gfx_GetDrawRastPort();
-        if (!rp) {
-            if (summaryDbufEnabled) {
-                Gfx_DisableDoubleBuffering();
-                summaryDbufEnabled = FALSE;
-            }
+        if (!LoadRawImageToRastPort(SUMMARY_FILE, &summaryRP, LO_WIDTH, LO_HEIGHT)) {
             if (font)
                 CloseFont(font);
             if (scoringFTypeLoaded)
                 Bob_Free(&scoringFTypeBob);
             if (scoringETypeLoaded)
                 Bob_Free(&scoringETypeBob);
-            return FALSE;
-        }
-
-        if (!LoadRawImageToRastPort(SUMMARY_FILE, rp, LO_WIDTH, LO_HEIGHT)) {
-            if (summaryDbufEnabled) {
-                Gfx_DisableDoubleBuffering();
-                summaryDbufEnabled = FALSE;
-            }
-            if (font)
-                CloseFont(font);
-            if (scoringFTypeLoaded)
-                Bob_Free(&scoringFTypeBob);
-            if (scoringETypeLoaded)
-                Bob_Free(&scoringETypeBob);
+            if (summaryBufferReady)
+                FreeSummaryBackBuffer(&summaryBM, LO_WIDTH, LO_HEIGHT);
             return FALSE;
         }
 
         if (steps[stepIndex].bob) {
-            Bob_DrawMaskedToRastPort(steps[stepIndex].bob, rp, steps[stepIndex].x, steps[stepIndex].y);
+            Bob_DrawMaskedToRastPort(steps[stepIndex].bob, &summaryRP, steps[stepIndex].x,
+                                     steps[stepIndex].y);
         }
 
         if (stepIndex == 0 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks050(rp, steps[stepIndex].x, steps[stepIndex].y);
+            DrawSummaryHitMarks050(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
         }
 
         if (stepIndex == 1 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks100(rp, steps[stepIndex].x, steps[stepIndex].y);
+            DrawSummaryHitMarks100(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
         }
 
         if (stepIndex == 2 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks150(rp, steps[stepIndex].x, steps[stepIndex].y);
+            DrawSummaryHitMarks150(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
         }
 
         if (stepIndex == 3 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks200(rp, steps[stepIndex].x, steps[stepIndex].y);
+            DrawSummaryHitMarks200(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
         }
 
         if (stepIndex == 4 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks250(rp, steps[stepIndex].x, steps[stepIndex].y);
+            DrawSummaryHitMarks250(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
         }
 
         if (stepIndex == 5 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks300(rp, steps[stepIndex].x, steps[stepIndex].y);
+            DrawSummaryHitMarks300(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
         }
 
-        DrawCenteredTextWithShadowMain(rp, font, SUMMARY_DISTANCE_Y, SUMMARY_DISTANCE_PEN,
+        DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_DISTANCE_Y, SUMMARY_DISTANCE_PEN,
                                        SUMMARY_SHADOW_PEN, steps[stepIndex].distanceText);
 
         if (steps[stepIndex].showTotals) {
             BuildSummaryScoreLine(line, score);
-            DrawCenteredTextWithShadowMain(rp, font, SUMMARY_SCORE_Y, 31, 24, line);
+            DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_SCORE_Y, 31, 24, line);
 
             BuildSummaryAccuracyLine(line, acc);
-            DrawCenteredTextWithShadowMain(rp, font, SUMMARY_ACCURACY_Y, 31, 24, line);
+            DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_ACCURACY_Y, 31, 24, line);
         }
 
-        if (summaryDbufEnabled) {
-            Gfx_SwapBuffers();
-        }
+        WaitBlit();
+        WaitTOF();
+        BltBitMap(&summaryBM, 0, 0, screenRP->BitMap, 0, 0, LO_WIDTH, LO_HEIGHT, 0xC0, 0xFF, NULL);
+        WaitBlit();
 
         waitResult = WaitForAdvanceOnly();
         if (waitResult == WAIT_ESC) {
-            if (summaryDbufEnabled) {
-                Gfx_DisableDoubleBuffering();
-                summaryDbufEnabled = FALSE;
-            }
             if (font)
                 CloseFont(font);
             if (scoringFTypeLoaded)
                 Bob_Free(&scoringFTypeBob);
             if (scoringETypeLoaded)
                 Bob_Free(&scoringETypeBob);
+            if (summaryBufferReady)
+                FreeSummaryBackBuffer(&summaryBM, LO_WIDTH, LO_HEIGHT);
             return FALSE;
         }
 
@@ -927,11 +974,6 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         }
 
         stepIndex++;
-    }
-
-    if (summaryDbufEnabled) {
-        Gfx_DisableDoubleBuffering();
-        summaryDbufEnabled = FALSE;
     }
 
     if (font)
@@ -945,12 +987,17 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         Bob_Free(&scoringETypeBob);
     }
 
+    if (summaryBufferReady) {
+        FreeSummaryBackBuffer(&summaryBM, LO_WIDTH, LO_HEIGHT);
+    }
+
     if (!Gfx_CrossFadeToImage(TITLE_FILE, SummaryPaletteRGB4, 32, titlePalette, 32)) {
         return FALSE;
     }
 
     return TRUE;
 }
+
 
 /* ---------- Helpers ---------- */
 
