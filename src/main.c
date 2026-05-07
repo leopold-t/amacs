@@ -63,8 +63,9 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define SUMMARY_TEXT_PEN 25
 #define SUMMARY_SHADOW_PEN 24
 #define SUMMARY_TITLE_Y 96
-#define SUMMARY_SCORE_Y 16
-#define SUMMARY_ACCURACY_Y 32
+#define SUMMARY_SCORE_Y 6
+#define SUMMARY_TIME_BONUS_Y 21
+#define SUMMARY_ACCURACY_Y 36
 #define SUMMARY_HOLD_WAIT 0
 #define SUMMARY_SCORING_ETYPE_RAW "gfx/ScoringEType.raw"
 #define SUMMARY_SCORING_ETYPE_MASK "gfx/ScoringEType.mask"
@@ -83,7 +84,7 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define SUMMARY_SCORING_FTYPE_X 123
 #define SUMMARY_SCORING_FTYPE_BOTTOM_Y 147
 #define SUMMARY_SCORING_FTYPE_Y (SUMMARY_SCORING_FTYPE_BOTTOM_Y - SUMMARY_SCORING_FTYPE_H)
-#define SUMMARY_DISTANCE_Y 48
+#define SUMMARY_DISTANCE_Y 55
 #define SUMMARY_DISTANCE_PEN 16
 #define SUMMARY_HIT_MARK_PEN 20
 #define SUMMARY_HIT_MARK_CENTER_PEN 24
@@ -496,6 +497,23 @@ static void BuildSummaryScoreLine(char *buf, UWORD score) {
     AppendUnsignedMain(buf, pos, score);
 }
 
+static void BuildSummaryTimeBonusLine(char *buf, UWORD bonus) {
+    static const char prefix[] = "TIME BONUS: ";
+    UWORD i = 0;
+    UWORD pos = 0;
+
+    if (!buf) {
+        return;
+    }
+
+    while (prefix[i] != '\0') {
+        buf[pos++] = prefix[i++];
+    }
+
+    buf[pos] = '\0';
+    AppendUnsignedMain(buf, pos, bonus);
+}
+
 static void BuildSummaryAccuracyLine(char *buf, UWORD accuracy) {
     static const char prefix[] = "ACCURACY: ";
     UWORD i = 0;
@@ -816,6 +834,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     char line[32];
     UWORD score;
     UWORD acc;
+    UWORD timeBonus;
     WaitResult waitResult;
 
     memset(&summaryBM, 0, sizeof(summaryBM));
@@ -861,6 +880,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
 
     score = summary ? summary->score : 0;
     acc = summary ? summary->accuracy : 0;
+    timeBonus = summary ? summary->timeBonus : 0;
 
     steps[0].distanceText = "50 Meter";
     steps[0].bob = scoringFTypeLoaded ? &scoringFTypeBob : NULL;
@@ -946,6 +966,9 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         if (steps[stepIndex].showTotals) {
             BuildSummaryScoreLine(line, score);
             DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_SCORE_Y, 31, 24, line);
+
+            BuildSummaryTimeBonusLine(line, timeBonus);
+            DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_TIME_BONUS_Y, 31, 24, line);
 
             BuildSummaryAccuracyLine(line, acc);
             DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_ACCURACY_Y, 31, 24, line);

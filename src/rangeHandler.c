@@ -98,10 +98,6 @@ extern BOOL Input_Down(void);
 #define HUD_SHADOW_OFFSET_Y 1
 #define HUD_MARGIN_RIGHT 11
 #define ENDROUND_TITLE_Y 61
-#define ENDROUND_RESULT_Y 48
-#define ENDROUND_QUALITY_Y 68
-#define ENDROUND_HITS_Y 116
-#define ENDROUND_SCORE_Y 132
 
 // TODO: For testing purposes only, set it to the 30rd in the final release
 #define HUD_MAGAZINE_SIZE 5
@@ -110,6 +106,10 @@ extern BOOL Input_Down(void);
 #define HUD_AMMO_BLOCK_CHAR ((char)0xDB)
 #define HUD_AMMO_BLOCK_COUNT HUD_MAGAZINE_COUNT
 
+// TODO: For testing purposes and demo version only
+#define TIME_BONUS_MAX 300
+#define TIME_BONUS_ZERO_TIME 90
+
 static const struct TextAttr gHudFontAttr = {HUD_FONT_NAME, HUD_FONT_SIZE, FS_NORMAL, FPF_ROMFONT};
 
 static UWORD gHitCount = 0;
@@ -117,6 +117,8 @@ static UWORD gHitCount = 0;
 static void ResetHitCounter(void);
 static UWORD CalculateAccuracyPercent(UWORD score);
 static ULONG ElapsedSecondsSince(const struct DateStamp *start);
+static UWORD CalculateTimeBonus(UWORD totalTime, UWORD accuracyPercent);
+static UWORD ScaleSummaryScore(UWORD score);
 
 /* Record containing range state flags
  * TODO: Turn it into global pseudo-object gState */
@@ -167,6 +169,7 @@ typedef struct RangeSessionState {
 
     struct DateStamp finalScoreStamp;
     BOOL finalScoreStampValid;
+    struct DateStamp roundStartStamp;
 } RangeSessionState;
 
 /* Mandatory function to reset and restore range state */
@@ -229,6 +232,28 @@ static ULONG ElapsedSecondsSince(const struct DateStamp *start) {
     }
 
     return (ULONG)(totalTicks / DOS_TICKS_PER_SEC);
+}
+
+static UWORD CalculateTimeBonus(UWORD totalTime, UWORD accuracyPercent) {
+    UWORD raw;
+
+    if (accuracyPercent == 0 || totalTime >= TIME_BONUS_ZERO_TIME) {
+        return 0;
+    }
+
+    raw = (UWORD)(((TIME_BONUS_ZERO_TIME - totalTime) * TIME_BONUS_MAX) / TIME_BONUS_ZERO_TIME);
+
+    return (UWORD)(((ULONG)raw * accuracyPercent) / 100);
+}
+
+static UWORD ScaleSummaryScore(UWORD score) {
+    ULONG scaled = (ULONG)score * 20UL;
+
+    if (scaled > 65535UL) {
+        return 65535;
+    }
+
+    return (UWORD)scaled;
 }
 
 static void RegisterHit(void) {
@@ -870,6 +895,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     TargetsHandler_Reset();
     TargetsHandler_SetPaused(FALSE);
     Sound_SetPaused(FALSE);
+    DateStamp(&state.roundStartStamp);
 
     tempMaskPlane = (PLANEPTR)AllocRaster(FRONTSIGHT_W, FRONTSIGHT_H);
 
@@ -1006,8 +1032,15 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         state.finalShotScoreSnap = lastShotScore;
 
                         if (outSummary) {
-                            outSummary->score = state.sessionScore;
-                            outSummary->accuracy = CalculateAccuracyPercent(outSummary->score);
+                            UWORD totalTime = (UWORD)ElapsedSecondsSince(&state.roundStartStamp);
+
+                            outSummary->score = ScaleSummaryScore(state.sessionScore);
+                            outSummary->accuracy = CalculateAccuracyPercent(state.sessionScore);
+                            outSummary->totalTime = totalTime;
+                            outSummary->timeBonus =
+                                state.sessionScore > 0
+                                    ? CalculateTimeBonus(totalTime, outSummary->accuracy)
+                                    : 0;
                             outSummary->summaryLastShotHit = state.finalShotHitSnap;
                             outSummary->summaryLastShotScore = state.finalShotScoreSnap;
                         }

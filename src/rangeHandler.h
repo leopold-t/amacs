@@ -6,6 +6,8 @@
 typedef struct RangeSummaryData {
     UWORD score;
     UWORD accuracy;
+    UWORD totalTime;
+    UWORD timeBonus;
     BOOL summaryLastShotHit;
     UBYTE summaryLastShotScore;
 } RangeSummaryData;
