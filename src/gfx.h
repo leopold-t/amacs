@@ -35,6 +35,9 @@ BOOL Gfx_SwitchHiResToLoResOnBlack(const UWORD *currentHiPal16, UWORD loWidth, U
 /* Fades the current screen out to black using the supplied palette. */
 void Gfx_FadeOutCurrentScreenToBlack(const UWORD *currentPal, UWORD colors);
 
+/* Fades the current screen in from black to the supplied palette. */
+void Gfx_FadeInCurrentScreenFromBlack(const UWORD *targetPal, UWORD colors);
+
 /* Enable double buffering on current screen (LoRes range). */
 BOOL Gfx_EnableDoubleBuffering(void);
 

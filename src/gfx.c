@@ -426,6 +426,17 @@ void Gfx_FadeOutCurrentScreenToBlack(const UWORD *currentPal, UWORD colors) {
     SettleDisplay(1);
 }
 
+void Gfx_FadeInCurrentScreenFromBlack(const UWORD *targetPal, UWORD colors) {
+    if (!screen || !targetPal || colors == 0) {
+        return;
+    }
+
+    ScreenToFront(screen);
+    RemakeDisplay();
+    SettleDisplay(2);
+    FadeInFromBlack(screen, targetPal, colors);
+}
+
 BOOL Gfx_ShowImageFadeInFromBlack(const char *file, const UWORD *targetPal, UWORD colors) {
     UWORD black[32] = {0};
 

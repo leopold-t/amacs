@@ -118,6 +118,8 @@ static const UWORD SummaryPaletteRGB4[32] = {
 
 typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
 
+static BOOL ShowTitleScorePlaceholderScreen(void);
+
 
 typedef struct SummaryPoint {
     UBYTE x;
@@ -450,6 +452,7 @@ static const SummaryPoint gSummaryMap300ToScoringEType[T300_H][T300_W] = {
 
 static void DrainWindowMessages(void);
 static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc);
+static WaitResult WaitForAdvanceNoTimeout(void);
 
 static const struct TextAttr gSummaryFontAttr = {"topaz.font", 8, FS_NORMAL, FPF_ROMFONT};
 
@@ -1014,12 +1017,70 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         FreeSummaryBackBuffer(&summaryBM, LO_WIDTH, LO_HEIGHT);
     }
 
-    if (!Gfx_CrossFadeToImage(TITLE_FILE, SummaryPaletteRGB4, 32, titlePalette, 32)) {
+    if (!ShowTitleScorePlaceholderScreen()) {
         return FALSE;
     }
 
     return TRUE;
 }
+
+static BOOL ShowTitleScorePlaceholderScreen(void) {
+    struct Screen *scr;
+    struct RastPort *rp;
+    struct TextFont *font = NULL;
+    WaitResult waitResult;
+
+    /*
+     * Fade to black first and compose the whole hi-score placeholder while the
+     * palette is black. This avoids a visible flash of the plain title screen
+     * before the rectangle and labels are drawn.
+     */
+    Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
+
+    scr = Gfx_GetScreen();
+    if (!scr || !scr->RastPort.BitMap) {
+        return FALSE;
+    }
+
+    rp = &scr->RastPort;
+
+    if (!LoadRawImageToRastPort(TITLE_FILE, rp, LO_WIDTH, LO_HEIGHT)) {
+        return FALSE;
+    }
+
+    /* Hi-score placeholder area: 280x208 px, top-left at (20,24). */
+    SetAPen(rp, 10);
+    RectFill(rp, 20, 24, 299, 231);
+
+    font = OpenFont(&gSummaryFontAttr);
+    if (font) {
+        DrawCenteredTextWithShadowMain(rp, font, 35, 19, 0, "HIGH SCORES");
+        DrawCenteredTextWithShadowMain(rp, font, 222, 19, 0, "PULL TRIGGER TO CONTINUE");
+        CloseFont(font);
+    }
+
+    WaitBlit();
+    Gfx_FadeInCurrentScreenFromBlack(titlePalette, 32);
+
+    /* Require a fresh press on the placeholder screen. */
+    while (IsJoystickFirePressed()) {
+        WaitTOF();
+    }
+    DrainWindowMessages();
+
+    waitResult = WaitForAdvanceNoTimeout();
+    if (waitResult == WAIT_ESC) {
+        return FALSE;
+    }
+
+    if (!LoadRawImageToRastPort(TITLE_FILE, rp, LO_WIDTH, LO_HEIGHT)) {
+        return FALSE;
+    }
+
+    WaitBlit();
+    return TRUE;
+}
+
 
 
 /* ---------- Helpers ---------- */
