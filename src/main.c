@@ -53,8 +53,6 @@ extern BOOL Input_Down(void);
 #define TARGET_RANGES_FILE "gfx/TargetRanges.raw"
 #define PERFORMANCE_FILE "gfx/Performance.raw"
 #define RANGE_FILE "gfx/OahuRange.raw"
-#define SUMMARY_FILE "gfx/Summary.raw"
-
 static const UWORD SummaryPaletteRGB4[32] = {
     0x0000, 0x0005, 0x000C, 0x010D, 0x0119, 0x010B, 0x0113, 0x0C00, 0x099C, 0x0557, 0x055A,
     0x0D61, 0x065D, 0x0DC1, 0x01A0, 0x088E, 0x0DC1, 0x0999, 0x099C, 0x0A9E, 0x0CCC, 0x0CCE,
@@ -62,6 +60,7 @@ static const UWORD SummaryPaletteRGB4[32] = {
 
 #define SUMMARY_TEXT_PEN 25
 #define SUMMARY_SHADOW_PEN 24
+#define SUMMARY_BACKGROUND_PEN 3
 #define SUMMARY_TITLE_Y 96
 #define SUMMARY_SCORE_Y 6
 #define SUMMARY_TIME_BONUS_Y 21
@@ -605,7 +604,7 @@ static const struct TextAttr gSummaryFontAttr = {"topaz.font", 8, FS_NORMAL, FPF
 #define HISCORE_TITLE_Y 35
 #define HISCORE_FIRST_ENTRY_Y 62
 #define HISCORE_ENTRY_STEP_Y 14
-#define HISCORE_CONTINUE_Y 214
+#define PULL_TRIGGER_POSITION_Y 214
 
 typedef struct HiScoreEntry {
     char name[HISCORE_NAME_LEN + 1];
@@ -646,7 +645,7 @@ static UWORD AppendUnsignedMain(char *buf, UWORD pos, UWORD value) {
 }
 
 static void BuildSummaryScoreLine(char *buf, UWORD score) {
-    static const char prefix[] = "HITS SCORE: ";
+    static const char prefix[] = "TOTAL SCORE: ";
     UWORD i = 0;
     UWORD pos = 0;
 
@@ -1112,6 +1111,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     AmacsBob scoringFTypeBob;
     BOOL scoringETypeLoaded = FALSE;
     BOOL scoringFTypeLoaded = FALSE;
+    BOOL summaryVisible = FALSE;
     SummaryStep steps[6];
     UWORD stepIndex = 0;
     char line[32];
@@ -1125,9 +1125,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     memset(&scoringETypeBob, 0, sizeof(scoringETypeBob));
     memset(&scoringFTypeBob, 0, sizeof(scoringFTypeBob));
 
-    if (!Gfx_CrossFadeToImage(SUMMARY_FILE, rangePalette, 32, SummaryPaletteRGB4, 32)) {
-        return FALSE;
-    }
+    Gfx_FadeOutCurrentScreenToBlack(rangePalette, 32);
 
     scr = Gfx_GetScreen();
 
@@ -1202,17 +1200,8 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     steps[5].showTotals = TRUE;
 
     for (;;) {
-        if (!LoadRawImageToRastPort(SUMMARY_FILE, &summaryRP, LO_WIDTH, LO_HEIGHT)) {
-            if (font)
-                CloseFont(font);
-            if (scoringFTypeLoaded)
-                Bob_Free(&scoringFTypeBob);
-            if (scoringETypeLoaded)
-                Bob_Free(&scoringETypeBob);
-            if (summaryBufferReady)
-                FreeSummaryBackBuffer(&summaryBM, LO_WIDTH, LO_HEIGHT);
-            return FALSE;
-        }
+        SetRast(&summaryRP, SUMMARY_BACKGROUND_PEN);
+        WaitBlit();
 
         if (steps[stepIndex].bob) {
             Bob_DrawMaskedToRastPort(steps[stepIndex].bob, &summaryRP, steps[stepIndex].x,
@@ -1257,10 +1246,19 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_ACCURACY_Y, 31, 24, line);
         }
 
+        DrawCenteredTextWithShadowMain(&summaryRP, font, PULL_TRIGGER_POSITION_Y,
+                                       SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN,
+                                       "PULL TRIGGER TO CONTINUE");
+
         WaitBlit();
         WaitTOF();
         BltBitMap(&summaryBM, 0, 0, screenRP->BitMap, 0, 0, LO_WIDTH, LO_HEIGHT, 0xC0, 0xFF, NULL);
         WaitBlit();
+
+        if (!summaryVisible) {
+            Gfx_FadeInCurrentScreenFromBlack(SummaryPaletteRGB4, 32);
+            summaryVisible = TRUE;
+        }
 
         waitResult = WaitForAdvanceOnly();
         if (waitResult == WAIT_ESC) {
@@ -1338,7 +1336,7 @@ static BOOL ShowTitleScorePlaceholderScreen(void) {
         DrawCenteredTextWithShadowMain(rp, font, HISCORE_TITLE_Y, HISCORE_TEXT_PEN,
                                        HISCORE_SHADOW_PEN, "HIGH SCORES");
         DrawHiScoreEntries(rp, font);
-        DrawCenteredTextWithShadowMain(rp, font, HISCORE_CONTINUE_Y, HISCORE_TEXT_PEN,
+        DrawCenteredTextWithShadowMain(rp, font, PULL_TRIGGER_POSITION_Y, HISCORE_TEXT_PEN,
                                        HISCORE_SHADOW_PEN, "PULL TRIGGER TO CONTINUE");
         CloseFont(font);
     }
