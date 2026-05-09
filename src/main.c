@@ -127,7 +127,7 @@ static const UWORD SummaryPaletteRGB4[32] = {
 
 typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
 
-static BOOL ShowTitleScorePlaceholderScreen(void);
+static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack);
 
 typedef struct SummaryPoint {
     UBYTE x;
@@ -618,6 +618,11 @@ static const struct TextAttr gSummaryFontAttr = {"topaz.font", 8, FS_NORMAL, FPF
 #define HISCORE_FIRST_ENTRY_Y 62
 #define HISCORE_ENTRY_STEP_Y 14
 #define PULL_TRIGGER_POSITION_Y 214
+#define HISCORE_NAME_ENTRY_Y 110
+#define HISCORE_NAME_ENTRY_CLEAR_TOP 104
+#define HISCORE_NAME_ENTRY_CLEAR_BOTTOM 121
+#define HISCORE_ENTRY_PROMPT_Y 198
+#define HISCORE_ENTRY_PROMPT_2_Y 212
 
 typedef struct HiScoreEntry {
     char name[HISCORE_NAME_LEN + 1];
@@ -1092,6 +1097,25 @@ static UWORD BuildNameEntryLine(char *buf, const char *name, BOOL cursor) {
     return pos;
 }
 
+static void DrawNewHiScoreNameLine(struct RastPort *rp, struct TextFont *font,
+                                   const char *name) {
+    char line[40];
+
+    if (!rp || !font) {
+        return;
+    }
+
+    /* Only clear and redraw the editable name line.  Redrawing the whole
+     * screen on every key press causes visible flicker on the static labels.
+     */
+    SetAPen(rp, 10);
+    RectFill(rp, 20, HISCORE_NAME_ENTRY_CLEAR_TOP, 299, HISCORE_NAME_ENTRY_CLEAR_BOTTOM);
+
+    BuildNameEntryLine(line, name, TRUE);
+    DrawCenteredTextWithShadowMain(rp, font, HISCORE_NAME_ENTRY_Y, HISCORE_TEXT_PEN,
+                                   HISCORE_SHADOW_PEN, line);
+}
+
 static void DrawNewHiScoreEntryContent(struct RastPort *rp, struct TextFont *font,
                                        const char *name, UWORD score) {
     char line[40];
@@ -1124,13 +1148,15 @@ static void DrawNewHiScoreEntryContent(struct RastPort *rp, struct TextFont *fon
     AppendUnsignedMain(line, pos, score);
     DrawCenteredTextWithShadowMain(rp, font, 76, HISCORE_TEXT_PEN, HISCORE_SHADOW_PEN, line);
 
-    BuildNameEntryLine(line, name, TRUE);
-    DrawCenteredTextWithShadowMain(rp, font, 110, HISCORE_TEXT_PEN, HISCORE_SHADOW_PEN, line);
+    DrawNewHiScoreNameLine(rp, font, name);
 
-    DrawCenteredTextWithShadowMain(rp, font, 190, HISCORE_TEXT_PEN, HISCORE_SHADOW_PEN,
-                                   "ENTER YOUR INITIALS");
-    DrawCenteredTextWithShadowMain(rp, font, PULL_TRIGGER_POSITION_Y, HISCORE_TEXT_PEN,
-                                   HISCORE_SHADOW_PEN, "PULL TRIGGER TO CONTINUE");
+    /* Split the long instruction into two centered lines so it stays inside
+     * the 320px low-res screen while preserving the requested wording.
+     */
+    DrawCenteredTextWithShadowMain(rp, font, HISCORE_ENTRY_PROMPT_Y, HISCORE_TEXT_PEN,
+                                   HISCORE_SHADOW_PEN, "PROVIDE YOUR INITIALS AND");
+    DrawCenteredTextWithShadowMain(rp, font, HISCORE_ENTRY_PROMPT_2_Y, HISCORE_TEXT_PEN,
+                                   HISCORE_SHADOW_PEN, "PRESS \"ENTER\" TO CONTINUE");
 }
 
 static BOOL PollHiScoreNameInput(char *outChar, BOOL *outBackspace, BOOL *outEnter, BOOL *outEsc) {
@@ -1257,14 +1283,14 @@ static BOOL ShowNewHiScoreEntryScreen(UWORD score) {
             if (len > 0) {
                 len--;
                 name[len] = '\0';
-                DrawNewHiScoreEntryContent(rp, font, name, score);
+                DrawNewHiScoreNameLine(rp, font, name);
                 WaitBlit();
             }
         } else if (c != '\0') {
             if (len < HISCORE_NAME_LEN) {
                 name[len++] = c;
                 name[len] = '\0';
-                DrawNewHiScoreEntryContent(rp, font, name, score);
+                DrawNewHiScoreNameLine(rp, font, name);
                 WaitBlit();
             }
         }
@@ -1853,20 +1879,25 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         FreeSummaryBackBuffer(&summaryBM, LO_WIDTH, LO_HEIGHT);
     }
 
-    if (HiScore_IsQualified(totalScore)) {
-        if (!ShowNewHiScoreEntryScreen(totalScore)) {
+    {
+        BOOL alreadyBlack = FALSE;
+
+        if (HiScore_IsQualified(totalScore)) {
+            if (!ShowNewHiScoreEntryScreen(totalScore)) {
+                return FALSE;
+            }
+            alreadyBlack = TRUE;
+        }
+
+        if (!ShowTitleScorePlaceholderScreen(alreadyBlack)) {
             return FALSE;
         }
-    }
-
-    if (!ShowTitleScorePlaceholderScreen()) {
-        return FALSE;
     }
 
     return TRUE;
 }
 
-static BOOL ShowTitleScorePlaceholderScreen(void) {
+static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack) {
     struct Screen *scr;
     struct RastPort *rp;
     struct TextFont *font = NULL;
@@ -1877,7 +1908,9 @@ static BOOL ShowTitleScorePlaceholderScreen(void) {
      * palette is black. This avoids a visible flash of the plain title screen
      * before the rectangle and labels are drawn.
      */
-    Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
+    if (!alreadyBlack) {
+        Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
+    }
 
     scr = Gfx_GetScreen();
     if (!scr || !scr->RastPort.BitMap) {
