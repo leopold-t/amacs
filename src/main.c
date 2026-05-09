@@ -61,10 +61,19 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define SUMMARY_TEXT_PEN 25
 #define SUMMARY_SHADOW_PEN 24
 #define SUMMARY_BACKGROUND_PEN 3
-#define SUMMARY_TITLE_Y 96
-#define SUMMARY_SCORE_Y 6
-#define SUMMARY_TIME_BONUS_Y 21
-#define SUMMARY_ACCURACY_Y 36
+#define SUMMARY_TITLE_Y 18
+#define SUMMARY_TABLE_HEADER_Y 40
+#define SUMMARY_TABLE_FIRST_ROW_Y 56
+#define SUMMARY_TABLE_ROW_STEP_Y 14
+#define SUMMARY_TABLE_LABEL_X 104
+#define SUMMARY_TABLE_HITS_X 216
+#define SUMMARY_SCORE_LEFT_X 18
+#define SUMMARY_SCORE_RIGHT_X 166
+#define SUMMARY_HIT_SCORE_Y 163
+#define SUMMARY_TIME_BONUS_Y 179
+#define SUMMARY_TOTAL_SCORE_Y 195
+#define SUMMARY_ACCURACY_Y 163
+#define SUMMARY_RANK_Y 179
 #define SUMMARY_HOLD_WAIT 0
 #define SUMMARY_SCORING_ETYPE_RAW "gfx/ScoringEType.raw"
 #define SUMMARY_SCORING_ETYPE_MASK "gfx/ScoringEType.mask"
@@ -645,7 +654,7 @@ static UWORD AppendUnsignedMain(char *buf, UWORD pos, UWORD value) {
 }
 
 static void BuildSummaryScoreLine(char *buf, UWORD score) {
-    static const char prefix[] = "TOTAL SCORE: ";
+    static const char prefix[] = "HIT SCORE: ";
     UWORD i = 0;
     UWORD pos = 0;
 
@@ -697,6 +706,61 @@ static void BuildSummaryAccuracyLine(char *buf, UWORD accuracy) {
     buf[pos] = '\0';
 }
 
+static void BuildSummaryTotalScoreLine(char *buf, UWORD totalScore) {
+    static const char prefix[] = "TOTAL SCORE: ";
+    UWORD i = 0;
+    UWORD pos = 0;
+
+    if (!buf) {
+        return;
+    }
+
+    while (prefix[i] != '\0') {
+        buf[pos++] = prefix[i++];
+    }
+
+    buf[pos] = '\0';
+    AppendUnsignedMain(buf, pos, totalScore);
+}
+
+static const char *GetSummaryRankText(UWORD accuracy) {
+    if (accuracy >= 90) {
+        return "EXPERT";
+    }
+
+    if (accuracy >= 75) {
+        return "SHARPSHOOTER";
+    }
+
+    if (accuracy >= 56) {
+        return "MARKSMAN";
+    }
+
+    return "UNQUALIFIED";
+}
+
+static void BuildSummaryRankLine(char *buf, UWORD accuracy) {
+    static const char prefix[] = "RANK: ";
+    const char *rank = GetSummaryRankText(accuracy);
+    UWORD i = 0;
+    UWORD pos = 0;
+
+    if (!buf) {
+        return;
+    }
+
+    while (prefix[i] != '\0') {
+        buf[pos++] = prefix[i++];
+    }
+
+    i = 0;
+    while (rank[i] != '\0') {
+        buf[pos++] = rank[i++];
+    }
+
+    buf[pos] = '\0';
+}
+
 static void DrawTextWithShadowExMain(struct RastPort *rp, struct TextFont *font, WORD x, WORD y,
                                      UWORD pen, UWORD shadowPenValue, const char *text, UWORD len) {
     if (!rp || !text || len == 0) {
@@ -737,6 +801,79 @@ static void DrawCenteredTextWithShadowMain(struct RastPort *rp, struct TextFont 
     width = TextLength(rp, (STRPTR)text, len);
     x = (WORD)((LO_WIDTH - width) / 2);
     DrawTextWithShadowExMain(rp, font, x, y, pen, shadowPenValue, text, len);
+}
+
+static void DrawRightAlignedTextWithShadowMain(struct RastPort *rp, struct TextFont *font,
+                                               WORD rightX, WORD y, UWORD pen, UWORD shadowPenValue,
+                                               const char *text) {
+    UWORD len;
+    WORD width;
+    WORD x;
+
+    if (!rp || !text) {
+        return;
+    }
+
+    len = (UWORD)strlen(text);
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    width = TextLength(rp, (STRPTR)text, len);
+    x = (WORD)(rightX - width);
+    DrawTextWithShadowExMain(rp, font, x, y, pen, shadowPenValue, text, len);
+}
+
+static UWORD CountHitMapMain(const UWORD *map, UWORD width, UWORD height) {
+    ULONG total = 0;
+    ULONG cells;
+    ULONG i;
+
+    if (!map || width == 0 || height == 0) {
+        return 0;
+    }
+
+    cells = (ULONG)width * (ULONG)height;
+    for (i = 0; i < cells; i++) {
+        total += map[i];
+        if (total > 65535) {
+            return 65535;
+        }
+    }
+
+    return (UWORD)total;
+}
+
+static UWORD GetSummaryHitCountMain(UWORD distance) {
+    const UWORD *map = NULL;
+    UWORD width = 0;
+    UWORD height = 0;
+
+    switch (distance) {
+        case 50:
+            map = TargetScoring_GetHitMap050(&width, &height);
+            break;
+        case 100:
+            map = TargetScoring_GetHitMap100(&width, &height);
+            break;
+        case 150:
+            map = TargetScoring_GetHitMap150(&width, &height);
+            break;
+        case 200:
+            map = TargetScoring_GetHitMap200(&width, &height);
+            break;
+        case 250:
+            map = TargetScoring_GetHitMap250(&width, &height);
+            break;
+        case 300:
+            map = TargetScoring_GetHitMap300(&width, &height);
+            break;
+        default:
+            break;
+    }
+
+    return CountHitMapMain(map, width, height);
 }
 
 static UWORD AppendPaddedUnsignedMain(char *buf, UWORD pos, UWORD value, UWORD width) {
@@ -1097,7 +1234,6 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         const AmacsBob *bob;
         WORD x;
         WORD y;
-        BOOL showTotals;
     } SummaryStep;
 
     struct RastPort *screenRP;
@@ -1118,6 +1254,15 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     UWORD score;
     UWORD acc;
     UWORD timeBonus;
+    UWORD totalScore;
+    UWORD hits050;
+    UWORD hits100;
+    UWORD hits150;
+    UWORD hits200;
+    UWORD hits250;
+    UWORD hits300;
+    UWORD hitsTotal;
+    WORD tableY;
     WaitResult waitResult;
 
     memset(&summaryBM, 0, sizeof(summaryBM));
@@ -1162,88 +1307,164 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     score = summary ? summary->score : 0;
     acc = summary ? summary->accuracy : 0;
     timeBonus = summary ? summary->timeBonus : 0;
+    totalScore = (UWORD)(score + timeBonus);
+
+    hits050 = GetSummaryHitCountMain(50);
+    hits100 = GetSummaryHitCountMain(100);
+    hits150 = GetSummaryHitCountMain(150);
+    hits200 = GetSummaryHitCountMain(200);
+    hits250 = GetSummaryHitCountMain(250);
+    hits300 = GetSummaryHitCountMain(300);
+    hitsTotal = (UWORD)(hits050 + hits100 + hits150 + hits200 + hits250 + hits300);
 
     steps[0].distanceText = "50 Meter";
     steps[0].bob = scoringFTypeLoaded ? &scoringFTypeBob : NULL;
     steps[0].x = SUMMARY_SCORING_FTYPE_X;
     steps[0].y = SUMMARY_SCORING_FTYPE_Y;
-    steps[0].showTotals = FALSE;
 
     steps[1].distanceText = "100 Meter";
     steps[1].bob = scoringFTypeLoaded ? &scoringFTypeBob : NULL;
     steps[1].x = SUMMARY_SCORING_FTYPE_X;
     steps[1].y = SUMMARY_SCORING_FTYPE_Y;
-    steps[1].showTotals = FALSE;
 
     steps[2].distanceText = "150 Meter";
     steps[2].bob = scoringETypeLoaded ? &scoringETypeBob : NULL;
     steps[2].x = SUMMARY_SCORING_ETYPE_X;
     steps[2].y = SUMMARY_SCORING_ETYPE_Y;
-    steps[2].showTotals = FALSE;
 
     steps[3].distanceText = "200 Meter";
     steps[3].bob = scoringETypeLoaded ? &scoringETypeBob : NULL;
     steps[3].x = SUMMARY_SCORING_ETYPE_X;
     steps[3].y = SUMMARY_SCORING_ETYPE_Y;
-    steps[3].showTotals = FALSE;
 
     steps[4].distanceText = "250 Meter";
     steps[4].bob = scoringETypeLoaded ? &scoringETypeBob : NULL;
     steps[4].x = SUMMARY_SCORING_ETYPE_X;
     steps[4].y = SUMMARY_SCORING_ETYPE_Y;
-    steps[4].showTotals = FALSE;
 
     steps[5].distanceText = "300 Meter";
     steps[5].bob = scoringETypeLoaded ? &scoringETypeBob : NULL;
     steps[5].x = SUMMARY_SCORING_ETYPE_X;
     steps[5].y = SUMMARY_SCORING_ETYPE_Y;
-    steps[5].showTotals = TRUE;
 
     for (;;) {
         SetRast(&summaryRP, SUMMARY_BACKGROUND_PEN);
         WaitBlit();
 
-        if (steps[stepIndex].bob) {
-            Bob_DrawMaskedToRastPort(steps[stepIndex].bob, &summaryRP, steps[stepIndex].x,
-                                     steps[stepIndex].y);
-        }
+        if (stepIndex < 6) {
+            if (steps[stepIndex].bob) {
+                Bob_DrawMaskedToRastPort(steps[stepIndex].bob, &summaryRP, steps[stepIndex].x,
+                                         steps[stepIndex].y);
+            }
 
-        if (stepIndex == 0 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks050(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
-        }
+            if (stepIndex == 0 && steps[stepIndex].bob) {
+                DrawSummaryHitMarks050(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
+            }
 
-        if (stepIndex == 1 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks100(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
-        }
+            if (stepIndex == 1 && steps[stepIndex].bob) {
+                DrawSummaryHitMarks100(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
+            }
 
-        if (stepIndex == 2 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks150(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
-        }
+            if (stepIndex == 2 && steps[stepIndex].bob) {
+                DrawSummaryHitMarks150(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
+            }
 
-        if (stepIndex == 3 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks200(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
-        }
+            if (stepIndex == 3 && steps[stepIndex].bob) {
+                DrawSummaryHitMarks200(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
+            }
 
-        if (stepIndex == 4 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks250(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
-        }
+            if (stepIndex == 4 && steps[stepIndex].bob) {
+                DrawSummaryHitMarks250(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
+            }
 
-        if (stepIndex == 5 && steps[stepIndex].bob) {
-            DrawSummaryHitMarks300(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
-        }
+            if (stepIndex == 5 && steps[stepIndex].bob) {
+                DrawSummaryHitMarks300(&summaryRP, steps[stepIndex].x, steps[stepIndex].y);
+            }
 
-        DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_DISTANCE_Y, SUMMARY_DISTANCE_PEN,
-                                       SUMMARY_SHADOW_PEN, steps[stepIndex].distanceText);
+            DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_DISTANCE_Y,
+                                           SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN,
+                                           steps[stepIndex].distanceText);
+        } else {
+            DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_TITLE_Y, 31, 24, "SUMMARY");
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X,
+                                               SUMMARY_TABLE_HEADER_Y, 31, 24, "HITS");
 
-        if (steps[stepIndex].showTotals) {
+            tableY = SUMMARY_TABLE_FIRST_ROW_Y;
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
+                                     " 50 M", 5);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, hits050);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
+                                               24, line);
+
+            tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
+                                     "100 M", 5);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, hits100);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
+                                               24, line);
+
+            tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
+                                     "150 M", 5);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, hits150);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
+                                               24, line);
+
+            tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
+                                     "200 M", 5);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, hits200);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
+                                               24, line);
+
+            tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
+                                     "250 M", 5);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, hits250);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
+                                               24, line);
+
+            tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
+                                     "300 M", 5);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, hits300);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
+                                               24, line);
+
+            tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y + 3);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY,
+                                     SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN, "TOTALS", 6);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, hitsTotal);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY,
+                                               SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN, line);
+
             BuildSummaryScoreLine(line, score);
-            DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_SCORE_Y, 31, 24, line);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_HIT_SCORE_Y,
+                                     31, 24, line, (UWORD)strlen(line));
 
             BuildSummaryTimeBonusLine(line, timeBonus);
-            DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_TIME_BONUS_Y, 31, 24, line);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_TIME_BONUS_Y,
+                                     31, 24, line, (UWORD)strlen(line));
+
+            BuildSummaryTotalScoreLine(line, totalScore);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_TOTAL_SCORE_Y,
+                                     SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN, line,
+                                     (UWORD)strlen(line));
 
             BuildSummaryAccuracyLine(line, acc);
-            DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_ACCURACY_Y, 31, 24, line);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_RIGHT_X, SUMMARY_ACCURACY_Y,
+                                     31, 24, line, (UWORD)strlen(line));
+
+            BuildSummaryRankLine(line, acc);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_RIGHT_X, SUMMARY_RANK_Y, 31,
+                                     24, line, (UWORD)strlen(line));
         }
 
         DrawCenteredTextWithShadowMain(&summaryRP, font, PULL_TRIGGER_POSITION_Y,
@@ -1273,7 +1494,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             return FALSE;
         }
 
-        if (stepIndex >= 5) {
+        if (stepIndex >= 6) {
             break;
         }
 
