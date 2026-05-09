@@ -153,6 +153,12 @@ static UBYTE GetScoreFromMap(const UBYTE *map, UWORD width, WORD x, WORD y) {
 }
 
 static UWORD gTotalScore = 0;
+static UWORD gScore050 = 0;
+static UWORD gScore100 = 0;
+static UWORD gScore150 = 0;
+static UWORD gScore200 = 0;
+static UWORD gScore250 = 0;
+static UWORD gScore300 = 0;
 
 static void ClearHitMap(UWORD *map, UWORD width, UWORD height) {
     UWORD i;
@@ -163,16 +169,25 @@ static void ClearHitMap(UWORD *map, UWORD width, UWORD height) {
     }
 }
 
+static void AddScoreSaturated(UWORD *value, UBYTE score) {
+    if (!value) {
+        return;
+    }
+
+    if (*value <= (65535 - score)) {
+        *value = (UWORD)(*value + score);
+    } else {
+        *value = 65535;
+    }
+}
+
 static UBYTE RegisterScore(UWORD *hitMap, UWORD width, WORD localX, WORD localY,
-                           const UBYTE *scoreMap) {
+                           const UBYTE *scoreMap, UWORD *distanceScore) {
     UBYTE score = GetScoreFromMap(scoreMap, width, localX, localY);
     hitMap[(localY * width) + localX]++;
 
-    if (gTotalScore <= (65535 - score)) {
-        gTotalScore = (UWORD)(gTotalScore + score);
-    } else {
-        gTotalScore = 65535;
-    }
+    AddScoreSaturated(&gTotalScore, score);
+    AddScoreSaturated(distanceScore, score);
 
     return score;
 }
@@ -184,42 +199,42 @@ UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY) {
                 return SCORE_MISS;
             }
             return RegisterScore((UWORD *)gHitMap300, T300_W, localX, localY,
-                                 (const UBYTE *)gScoreMap300);
+                                 (const UBYTE *)gScoreMap300, &gScore300);
 
         case 250:
             if (localX < 0 || localX >= T250_W || localY < 0 || localY >= T250_H) {
                 return SCORE_MISS;
             }
             return RegisterScore((UWORD *)gHitMap250, T250_W, localX, localY,
-                                 (const UBYTE *)gScoreMap250);
+                                 (const UBYTE *)gScoreMap250, &gScore250);
 
         case 200:
             if (localX < 0 || localX >= T200_W || localY < 0 || localY >= T200_H) {
                 return SCORE_MISS;
             }
             return RegisterScore((UWORD *)gHitMap200, T200_W, localX, localY,
-                                 (const UBYTE *)gScoreMap200);
+                                 (const UBYTE *)gScoreMap200, &gScore200);
 
         case 150:
             if (localX < 0 || localX >= T150_W || localY < 0 || localY >= T150_H) {
                 return SCORE_MISS;
             }
             return RegisterScore((UWORD *)gHitMap150, T150_W, localX, localY,
-                                 (const UBYTE *)gScoreMap150);
+                                 (const UBYTE *)gScoreMap150, &gScore150);
 
         case 100:
             if (localX < 0 || localX >= T100_W || localY < 0 || localY >= T100_H) {
                 return SCORE_MISS;
             }
             return RegisterScore((UWORD *)gHitMap100, T100_W, localX, localY,
-                                 (const UBYTE *)gScoreMap100);
+                                 (const UBYTE *)gScoreMap100, &gScore100);
 
         case 50:
             if (localX < 0 || localX >= T050_W || localY < 0 || localY >= T050_H) {
                 return SCORE_MISS;
             }
             return RegisterScore((UWORD *)gHitMap050, T050_W, localX, localY,
-                                 (const UBYTE *)gScoreMap050);
+                                 (const UBYTE *)gScoreMap050, &gScore050);
 
         default:
             break;
@@ -236,10 +251,37 @@ void TargetScoring_Reset(void) {
     ClearHitMap((UWORD *)gHitMap250, T250_W, T250_H);
     ClearHitMap((UWORD *)gHitMap300, T300_W, T300_H);
     gTotalScore = 0;
+    gScore050 = 0;
+    gScore100 = 0;
+    gScore150 = 0;
+    gScore200 = 0;
+    gScore250 = 0;
+    gScore300 = 0;
 }
 
 UWORD TargetScoring_GetTotalScore(void) {
     return gTotalScore;
+}
+
+UWORD TargetScoring_GetPerformance(UWORD distance) {
+    switch (distance) {
+        case 50:
+            return gScore050;
+        case 100:
+            return gScore100;
+        case 150:
+            return gScore150;
+        case 200:
+            return gScore200;
+        case 250:
+            return gScore250;
+        case 300:
+            return gScore300;
+        default:
+            break;
+    }
+
+    return 0;
 }
 
 const UWORD *TargetScoring_GetHitMap050(UWORD *outWidth, UWORD *outHeight) {

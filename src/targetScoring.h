@@ -33,6 +33,7 @@ BYTE TargetScoring_GetZeroOffset(UWORD distance);
 UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY);
 void TargetScoring_Reset(void);
 UWORD TargetScoring_GetTotalScore(void);
+UWORD TargetScoring_GetPerformance(UWORD distance);
 const UWORD *TargetScoring_GetHitMap050(UWORD *outWidth, UWORD *outHeight);
 const UWORD *TargetScoring_GetHitMap100(UWORD *outWidth, UWORD *outHeight);
 const UWORD *TargetScoring_GetHitMap300(UWORD *outWidth, UWORD *outHeight);

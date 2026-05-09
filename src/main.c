@@ -65,8 +65,9 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define SUMMARY_TABLE_HEADER_Y 40
 #define SUMMARY_TABLE_FIRST_ROW_Y 56
 #define SUMMARY_TABLE_ROW_STEP_Y 14
-#define SUMMARY_TABLE_LABEL_X 104
-#define SUMMARY_TABLE_HITS_X 216
+#define SUMMARY_TABLE_LABEL_X 42
+#define SUMMARY_TABLE_HITS_X 174
+#define SUMMARY_TABLE_PERFORMANCE_X 288
 #define SUMMARY_SCORE_LEFT_X 18
 #define SUMMARY_SCORE_RIGHT_X 166
 #define SUMMARY_HIT_SCORE_Y 163
@@ -1262,6 +1263,13 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     UWORD hits250;
     UWORD hits300;
     UWORD hitsTotal;
+    UWORD perf050;
+    UWORD perf100;
+    UWORD perf150;
+    UWORD perf200;
+    UWORD perf250;
+    UWORD perf300;
+    UWORD perfTotal;
     WORD tableY;
     WaitResult waitResult;
 
@@ -1316,6 +1324,14 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     hits250 = GetSummaryHitCountMain(250);
     hits300 = GetSummaryHitCountMain(300);
     hitsTotal = (UWORD)(hits050 + hits100 + hits150 + hits200 + hits250 + hits300);
+
+    perf050 = TargetScoring_GetPerformance(50);
+    perf100 = TargetScoring_GetPerformance(100);
+    perf150 = TargetScoring_GetPerformance(150);
+    perf200 = TargetScoring_GetPerformance(200);
+    perf250 = TargetScoring_GetPerformance(250);
+    perf300 = TargetScoring_GetPerformance(300);
+    perfTotal = (UWORD)(perf050 + perf100 + perf150 + perf200 + perf250 + perf300);
 
     steps[0].distanceText = "50 Meter";
     steps[0].bob = scoringFTypeLoaded ? &scoringFTypeBob : NULL;
@@ -1388,6 +1404,8 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_TITLE_Y, 31, 24, "SUMMARY");
             DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X,
                                                SUMMARY_TABLE_HEADER_Y, 31, 24, "HITS");
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_PERFORMANCE_X,
+                                               SUMMARY_TABLE_HEADER_Y, 31, 24, "PERFORMANCE");
 
             tableY = SUMMARY_TABLE_FIRST_ROW_Y;
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
@@ -1396,6 +1414,10 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             AppendUnsignedMain(line, 0, hits050);
             DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
                                                24, line);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, perf050);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_PERFORMANCE_X,
+                                               tableY, 31, 24, line);
 
             tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y);
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
@@ -1404,6 +1426,10 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             AppendUnsignedMain(line, 0, hits100);
             DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
                                                24, line);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, perf100);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_PERFORMANCE_X,
+                                               tableY, 31, 24, line);
 
             tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y);
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
@@ -1412,6 +1438,10 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             AppendUnsignedMain(line, 0, hits150);
             DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
                                                24, line);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, perf150);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_PERFORMANCE_X,
+                                               tableY, 31, 24, line);
 
             tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y);
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
@@ -1420,6 +1450,10 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             AppendUnsignedMain(line, 0, hits200);
             DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
                                                24, line);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, perf200);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_PERFORMANCE_X,
+                                               tableY, 31, 24, line);
 
             tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y);
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
@@ -1428,6 +1462,10 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             AppendUnsignedMain(line, 0, hits250);
             DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
                                                24, line);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, perf250);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_PERFORMANCE_X,
+                                               tableY, 31, 24, line);
 
             tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y);
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY, 31, 24,
@@ -1436,6 +1474,10 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             AppendUnsignedMain(line, 0, hits300);
             DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY, 31,
                                                24, line);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, perf300);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_PERFORMANCE_X,
+                                               tableY, 31, 24, line);
 
             tableY = (WORD)(tableY + SUMMARY_TABLE_ROW_STEP_Y + 3);
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_TABLE_LABEL_X, tableY,
@@ -1444,6 +1486,11 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             AppendUnsignedMain(line, 0, hitsTotal);
             DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X, tableY,
                                                SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN, line);
+            line[0] = '\0';
+            AppendUnsignedMain(line, 0, perfTotal);
+            DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_PERFORMANCE_X,
+                                               tableY, SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN,
+                                               line);
 
             BuildSummaryScoreLine(line, score);
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_HIT_SCORE_Y,
