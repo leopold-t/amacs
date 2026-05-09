@@ -972,7 +972,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             Sound_Update();
         }
 
-        if (Input_KeyPressed(0x45)) {
+        if (Input_QuitPressed()) {
             break;
         }
 

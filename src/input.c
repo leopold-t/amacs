@@ -3,6 +3,7 @@
 
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
+#include <devices/inputevent.h>
 
 #include <libraries/lowlevel.h>
 #include <proto/exec.h>
@@ -21,8 +22,23 @@ static ULONG ReadJoyPort2(void) {
 static UBYTE keyDown[256];
 static UBYTE keyPressed[256];
 static BOOL firePressedEdge = FALSE;
+static BOOL quitPressedEdge = FALSE;
 static BOOL joyFireDown = FALSE;
 static BOOL mouseFireDown = FALSE;
+
+#ifndef IEQUALIFIER_LCOMMAND
+#define IEQUALIFIER_LCOMMAND 0x0080
+#endif
+#ifndef IEQUALIFIER_RCOMMAND
+#define IEQUALIFIER_RCOMMAND 0x0800
+#endif
+
+#define RAWKEY_Q 0x10
+#define RAWKEY_P 0x19
+
+static BOOL IsAmigaQualifier(UWORD qualifier) {
+    return (qualifier & (IEQUALIFIER_LCOMMAND | IEQUALIFIER_RCOMMAND)) ? TRUE : FALSE;
+}
 
 BOOL Input_Init(void) {
     int i;
@@ -35,6 +51,7 @@ BOOL Input_Init(void) {
     }
 
     firePressedEdge = FALSE;
+    quitPressedEdge = FALSE;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;
 
@@ -97,11 +114,29 @@ void Input_PollWindow(struct Window *win) {
                 UBYTE downCode = (UBYTE)(code & 0x7F);
                 keyDown[downCode] = 0;
             } else {
+                if (code == RAWKEY_Q && IsAmigaQualifier(msg->Qualifier)) {
+                    quitPressedEdge = TRUE;
+                }
+
                 if (!keyDown[code]) {
                     keyPressed[code] = 1;
                 }
 
                 keyDown[code] = 1;
+            }
+        }
+
+        if (msg->Class == IDCMP_VANILLAKEY) {
+            UBYTE c = (UBYTE)(msg->Code & 0xFF);
+
+            if ((c == 'q' || c == 'Q') && IsAmigaQualifier(msg->Qualifier)) {
+                quitPressedEdge = TRUE;
+            } else if (c == 'p' || c == 'P') {
+                /* Some Intuition configurations deliver printable keys as
+                 * VANILLAKEY only. Mirror P into the raw-key edge table so
+                 * gameplay pause keeps working through Input_KeyPressed().
+                 */
+                keyPressed[RAWKEY_P] = 1;
             }
         }
 
@@ -130,6 +165,15 @@ BOOL Input_KeyPressed(UBYTE rawCode) {
     return FALSE;
 }
 
+BOOL Input_QuitPressed(void) {
+    if (quitPressedEdge) {
+        quitPressedEdge = FALSE;
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 BOOL Input_FirePressed(void) {
     if (firePressedEdge) {
         firePressedEdge = FALSE;
@@ -145,6 +189,7 @@ BOOL Input_IsFireDown(void) {
 void Input_ResetState(void) {
     UWORD i;
     firePressedEdge = FALSE;
+    quitPressedEdge = FALSE;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;
 

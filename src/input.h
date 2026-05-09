@@ -18,6 +18,7 @@ void Input_ResetState(void);
 void Input_PollWindow(struct Window *win);
 
 BOOL Input_KeyPressed(UBYTE rawCode);
+BOOL Input_QuitPressed(void);
 BOOL Input_FirePressed(void);
 BOOL Input_IsFireDown(void);
 

@@ -2,6 +2,7 @@
 #include <graphics/gfx.h>
 #include <graphics/text.h>
 #include <intuition/intuition.h>
+#include <devices/inputevent.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
@@ -126,6 +127,31 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define TARGETRANGES_RISE_TICKS 15
 
 typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
+
+#ifndef IEQUALIFIER_LCOMMAND
+#define IEQUALIFIER_LCOMMAND 0x0080
+#endif
+#ifndef IEQUALIFIER_RCOMMAND
+#define IEQUALIFIER_RCOMMAND 0x0800
+#endif
+
+#define RAWKEY_Q 0x10
+
+static BOOL IsAmigaQualifierMain(UWORD qualifier) {
+    return (qualifier & (IEQUALIFIER_LCOMMAND | IEQUALIFIER_RCOMMAND)) ? TRUE : FALSE;
+}
+
+static BOOL IsQuitShortcutRaw(UBYTE code, UWORD qualifier) {
+    if ((code & 0x80) != 0) {
+        return FALSE;
+    }
+
+    return (code == RAWKEY_Q && IsAmigaQualifierMain(qualifier)) ? TRUE : FALSE;
+}
+
+static BOOL IsQuitShortcutVanilla(UBYTE c, UWORD qualifier) {
+    return ((c == 'q' || c == 'Q') && IsAmigaQualifierMain(qualifier)) ? TRUE : FALSE;
+}
 
 static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack);
 
@@ -1177,7 +1203,10 @@ static BOOL PollHiScoreNameInput(char *outChar, BOOL *outBackspace, BOOL *outEnt
         if (msg->Class == IDCMP_VANILLAKEY) {
             char c = (char)(msg->Code & 0xFF);
 
-            if (c == '\r' || c == '\n') {
+            if (IsQuitShortcutVanilla((UBYTE)c, msg->Qualifier)) {
+                *outEsc = TRUE;
+                changed = TRUE;
+            } else if (c == '\r' || c == '\n') {
                 *outEnter = TRUE;
                 changed = TRUE;
             } else if (c == '\b' || c == 0x7F) {
@@ -1194,7 +1223,7 @@ static BOOL PollHiScoreNameInput(char *outChar, BOOL *outBackspace, BOOL *outEnt
             UBYTE code = (UBYTE)msg->Code;
 
             if ((code & 0x80) == 0) {
-                if (code == 0x45) {
+                if (IsQuitShortcutRaw(code, msg->Qualifier)) {
                     *outEsc = TRUE;
                     changed = TRUE;
                 } else if (code == 0x44 || code == 0x43) {
@@ -1992,8 +2021,14 @@ static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
     if (win && win->UserPort) {
         while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
 
-            if (msg->Class == IDCMP_RAWKEY && msg->Code == 0x45) {
-                *outEsc = TRUE; /* ESC */
+            if (msg->Class == IDCMP_RAWKEY &&
+                IsQuitShortcutRaw((UBYTE)msg->Code, msg->Qualifier)) {
+                *outEsc = TRUE; /* Amiga+Q */
+            }
+
+            if (msg->Class == IDCMP_VANILLAKEY &&
+                IsQuitShortcutVanilla((UBYTE)(msg->Code & 0xFF), msg->Qualifier)) {
+                *outEsc = TRUE; /* Amiga+Q */
             }
 
             if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
