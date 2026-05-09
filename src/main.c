@@ -604,6 +604,9 @@ static const SummaryPoint gSummaryMap300ToScoringEType[T300_H][T300_W] = {
 static void DrainWindowMessages(void);
 static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc);
 static WaitResult WaitForAdvanceNoTimeout(void);
+static BOOL ShowNewHiScoreEntryScreen(UWORD score);
+static BOOL HiScore_InsertIfQualified(UWORD score, const char *name);
+static BOOL HiScore_IsQualified(UWORD score);
 
 static const struct TextAttr gSummaryFontAttr = {"topaz.font", 8, FS_NORMAL, FPF_ROMFONT};
 
@@ -621,7 +624,7 @@ typedef struct HiScoreEntry {
     UWORD score;
 } HiScoreEntry;
 
-static const HiScoreEntry gDefaultHiScores[HISCORE_ENTRY_COUNT] = {
+static HiScoreEntry gHiScores[HISCORE_ENTRY_COUNT] = {
     {"PFC BILL RIZER", 1024},     {"1LT SOLID SNAKE", 901},    {"1LT SONYA BLADE", 855},
     {"SGT ERNEST G. BILKO", 733}, {"1LT SNAKE PLISSKEN", 653}, {"GEN SPECIFIC", 512},
     {"PFC LANCE BEAN", 476},      {"MAJ JACKSON BRIGGS", 369}, {"SGT SLAUGHTER", 256},
@@ -986,11 +989,298 @@ static void DrawHiScoreEntries(struct RastPort *rp, struct TextFont *font) {
     }
 
     for (i = 0; i < HISCORE_ENTRY_COUNT; i++) {
-        BuildHiScoreLine(line, (UWORD)(i + 1), &gDefaultHiScores[i]);
+        BuildHiScoreLine(line, (UWORD)(i + 1), &gHiScores[i]);
         DrawCenteredTextWithShadowMain(rp, font,
                                        (WORD)(HISCORE_FIRST_ENTRY_Y + i * HISCORE_ENTRY_STEP_Y),
                                        HISCORE_TEXT_PEN, HISCORE_SHADOW_PEN, line);
     }
+}
+
+
+static BOOL HiScore_IsQualified(UWORD score) {
+    return (score > gHiScores[HISCORE_ENTRY_COUNT - 1].score) ? TRUE : FALSE;
+}
+
+static BOOL HiScore_InsertIfQualified(UWORD score, const char *name) {
+    WORD insertAt = -1;
+    UWORD i;
+    UWORD n;
+
+    if (!HiScore_IsQualified(score)) {
+        return FALSE;
+    }
+
+    /* "Beat the champion" rule: equal scores do not pass existing entries. */
+    for (i = 0; i < HISCORE_ENTRY_COUNT; i++) {
+        if (score > gHiScores[i].score) {
+            insertAt = (WORD)i;
+            break;
+        }
+    }
+
+    if (insertAt < 0) {
+        return FALSE;
+    }
+
+    for (i = HISCORE_ENTRY_COUNT - 1; i > (UWORD)insertAt; i--) {
+        gHiScores[i] = gHiScores[i - 1];
+    }
+
+    /* Store names as a fixed-width, space-padded field.  This avoids
+     * leftover characters from the entry that was shifted down/replaced
+     * when a shorter new name is inserted (e.g. "MJR LEON" over
+     * "1LT SOLID SNAKE").
+     */
+    for (n = 0; n < HISCORE_NAME_LEN; n++) {
+        gHiScores[insertAt].name[n] = ' ';
+    }
+    gHiScores[insertAt].name[HISCORE_NAME_LEN] = '\0';
+
+    if (name) {
+        for (n = 0; n < HISCORE_NAME_LEN && name[n] != '\0'; n++) {
+            gHiScores[insertAt].name[n] = name[n];
+        }
+    }
+
+    gHiScores[insertAt].score = score;
+
+    return TRUE;
+}
+
+static char HiScore_NormalizeInputChar(char c) {
+    if (c >= 'a' && c <= 'z') {
+        return (char)(c - ('a' - 'A'));
+    }
+
+    if (c >= 'A' && c <= 'Z') {
+        return c;
+    }
+
+    if (c >= '0' && c <= '9') {
+        return c;
+    }
+
+    if (c == ' ' || c == '.' || c == '-' || c == '_' || c == '&' || c == '!') {
+        return c;
+    }
+
+    return '\0';
+}
+
+static UWORD BuildNameEntryLine(char *buf, const char *name, BOOL cursor) {
+    UWORD pos = 0;
+    UWORD i = 0;
+
+    if (!buf) {
+        return 0;
+    }
+
+    buf[pos++] = '>';
+    buf[pos++] = ' ';
+
+    if (name) {
+        while (name[i] != '\0' && i < HISCORE_NAME_LEN) {
+            buf[pos++] = name[i++];
+        }
+    }
+
+    if (cursor && i < HISCORE_NAME_LEN) {
+        buf[pos++] = '_';
+    }
+
+    buf[pos] = '\0';
+    return pos;
+}
+
+static void DrawNewHiScoreEntryContent(struct RastPort *rp, struct TextFont *font,
+                                       const char *name, UWORD score) {
+    char line[40];
+    UWORD pos;
+
+    if (!rp) {
+        return;
+    }
+
+    /* Hi-score placeholder area: 280x208 px, top-left at (20,24). */
+    SetAPen(rp, 10);
+    RectFill(rp, 20, 24, 299, 231);
+
+    if (!font) {
+        return;
+    }
+
+    DrawCenteredTextWithShadowMain(rp, font, HISCORE_TITLE_Y, HISCORE_TEXT_PEN,
+                                   HISCORE_SHADOW_PEN, "CONGRATULATIONS!");
+
+    pos = 0;
+    line[pos++] = 'S';
+    line[pos++] = 'C';
+    line[pos++] = 'O';
+    line[pos++] = 'R';
+    line[pos++] = 'E';
+    line[pos++] = ':';
+    line[pos++] = ' ';
+    line[pos] = '\0';
+    AppendUnsignedMain(line, pos, score);
+    DrawCenteredTextWithShadowMain(rp, font, 76, HISCORE_TEXT_PEN, HISCORE_SHADOW_PEN, line);
+
+    BuildNameEntryLine(line, name, TRUE);
+    DrawCenteredTextWithShadowMain(rp, font, 110, HISCORE_TEXT_PEN, HISCORE_SHADOW_PEN, line);
+
+    DrawCenteredTextWithShadowMain(rp, font, 190, HISCORE_TEXT_PEN, HISCORE_SHADOW_PEN,
+                                   "ENTER YOUR INITIALS");
+    DrawCenteredTextWithShadowMain(rp, font, PULL_TRIGGER_POSITION_Y, HISCORE_TEXT_PEN,
+                                   HISCORE_SHADOW_PEN, "PULL TRIGGER TO CONTINUE");
+}
+
+static BOOL PollHiScoreNameInput(char *outChar, BOOL *outBackspace, BOOL *outEnter, BOOL *outEsc) {
+    struct Window *win = Gfx_GetWindow();
+    struct IntuiMessage *msg;
+    BOOL changed = FALSE;
+
+    *outChar = '\0';
+    *outBackspace = FALSE;
+    *outEnter = FALSE;
+    *outEsc = FALSE;
+
+    if (!win || !win->UserPort) {
+        return FALSE;
+    }
+
+    while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+        if (msg->Class == IDCMP_VANILLAKEY) {
+            char c = (char)(msg->Code & 0xFF);
+
+            if (c == '\r' || c == '\n') {
+                *outEnter = TRUE;
+                changed = TRUE;
+            } else if (c == '\b' || c == 0x7F) {
+                *outBackspace = TRUE;
+                changed = TRUE;
+            } else {
+                c = HiScore_NormalizeInputChar(c);
+                if (c != '\0') {
+                    *outChar = c;
+                    changed = TRUE;
+                }
+            }
+        } else if (msg->Class == IDCMP_RAWKEY) {
+            UBYTE code = (UBYTE)msg->Code;
+
+            if ((code & 0x80) == 0) {
+                if (code == 0x45) {
+                    *outEsc = TRUE;
+                    changed = TRUE;
+                } else if (code == 0x44 || code == 0x43) {
+                    /* Main Return and numeric keypad Enter. */
+                    *outEnter = TRUE;
+                    changed = TRUE;
+                } else if (code == 0x41) {
+                    *outBackspace = TRUE;
+                    changed = TRUE;
+                }
+            }
+        }
+
+        /* Mouse buttons are intentionally ignored on name entry. */
+        ReplyMsg((struct Message *)msg);
+    }
+
+    return changed;
+}
+
+static BOOL ShowNewHiScoreEntryScreen(UWORD score) {
+    struct Screen *scr;
+    struct RastPort *rp;
+    struct TextFont *font = NULL;
+    char name[HISCORE_NAME_LEN + 1];
+    UWORD len = 0;
+    BOOL visible = FALSE;
+
+    if (!HiScore_IsQualified(score)) {
+        return TRUE;
+    }
+
+    name[0] = '\0';
+
+    Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
+
+    scr = Gfx_GetScreen();
+    if (!scr || !scr->RastPort.BitMap) {
+        return FALSE;
+    }
+
+    rp = &scr->RastPort;
+
+    if (!LoadRawImageToRastPort(TITLE_FILE, rp, LO_WIDTH, LO_HEIGHT)) {
+        return FALSE;
+    }
+
+    font = OpenFont(&gSummaryFontAttr);
+    DrawNewHiScoreEntryContent(rp, font, name, score);
+    WaitBlit();
+    Gfx_FadeInCurrentScreenFromBlack(titlePalette, 32);
+    visible = TRUE;
+
+    DrainWindowMessages();
+
+    for (;;) {
+        char c;
+        BOOL backspace;
+        BOOL enter;
+        BOOL esc;
+
+        PollHiScoreNameInput(&c, &backspace, &enter, &esc);
+
+        if (esc) {
+            if (font) {
+                CloseFont(font);
+            }
+            return FALSE;
+        }
+
+        if (enter) {
+            if (len == 0) {
+                static const char fallback[] = "PLAYER";
+                UWORD i;
+                for (i = 0; fallback[i] != '\0' && i < HISCORE_NAME_LEN; i++) {
+                    name[i] = fallback[i];
+                }
+                name[i] = '\0';
+            }
+
+            HiScore_InsertIfQualified(score, name);
+            break;
+        }
+
+        if (backspace) {
+            if (len > 0) {
+                len--;
+                name[len] = '\0';
+                DrawNewHiScoreEntryContent(rp, font, name, score);
+                WaitBlit();
+            }
+        } else if (c != '\0') {
+            if (len < HISCORE_NAME_LEN) {
+                name[len++] = c;
+                name[len] = '\0';
+                DrawNewHiScoreEntryContent(rp, font, name, score);
+                WaitBlit();
+            }
+        }
+
+        Sound_Update();
+        WaitTOF();
+    }
+
+    Gfx_FadeOutCurrentScreenToBlack(titlePalette, 32);
+
+    if (font) {
+        CloseFont(font);
+    }
+
+    (void)visible;
+    return TRUE;
 }
 
 static void WritePixelOnScreen(struct RastPort *rp, WORD x, WORD y) {
@@ -1561,6 +1851,12 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
 
     if (summaryBufferReady) {
         FreeSummaryBackBuffer(&summaryBM, LO_WIDTH, LO_HEIGHT);
+    }
+
+    if (HiScore_IsQualified(totalScore)) {
+        if (!ShowNewHiScoreEntryScreen(totalScore)) {
+            return FALSE;
+        }
     }
 
     if (!ShowTitleScorePlaceholderScreen()) {

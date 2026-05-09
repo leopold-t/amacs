@@ -362,7 +362,7 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
                                    {WA_Backdrop, TRUE},
                                    {WA_Activate, TRUE},
                                    {WA_RMBTrap, TRUE},
-                                   {WA_IDCMP, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS},
+                                   {WA_IDCMP, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS | IDCMP_VANILLAKEY},
                                    {TAG_DONE, 0}};
 
     window = OpenWindowTagList(NULL, windowTags);
