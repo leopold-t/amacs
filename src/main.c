@@ -6,6 +6,7 @@
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
+#include <proto/dos.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -633,6 +634,8 @@ static WaitResult WaitForAdvanceNoTimeout(void);
 static BOOL ShowNewHiScoreEntryScreen(UWORD score);
 static BOOL HiScore_InsertIfQualified(UWORD score, const char *name);
 static BOOL HiScore_IsQualified(UWORD score);
+static void HiScore_LoadOnce(void);
+static BOOL HiScore_Save(void);
 
 static const struct TextAttr gSummaryFontAttr = {"topaz.font", 8, FS_NORMAL, FPF_ROMFONT};
 
@@ -649,17 +652,31 @@ static const struct TextAttr gSummaryFontAttr = {"topaz.font", 8, FS_NORMAL, FPF
 #define HISCORE_NAME_ENTRY_CLEAR_BOTTOM 121
 #define HISCORE_ENTRY_PROMPT_Y 198
 #define HISCORE_ENTRY_PROMPT_2_Y 212
+#define HISCORE_FILE_NAME "Scores.dat"
+#define HISCORE_FILE_HEADER "AMACS_HISCORES_V1"
+#define HISCORE_SAVE_ERROR_BG_PEN 7
+#define HISCORE_SAVE_ERROR_TEXT_PEN 19
+#define HISCORE_SAVE_ERROR_SHADOW_PEN 0
 
 typedef struct HiScoreEntry {
     char name[HISCORE_NAME_LEN + 1];
     UWORD score;
 } HiScoreEntry;
 
+static const HiScoreEntry gDefaultHiScores[HISCORE_ENTRY_COUNT] = {
+    {"PFC BILL RIZER", 1024},     {"1LT SOLID SNAKE", 901},    {"1LT SONYA BLADE", 855},
+    {"SGT ERNEST G. BILKO", 733}, {"1LT SNAKE PLISSKEN", 653}, {"GEN SPECIFIC", 512},
+    {"PFC LANCE BEAN", 476},      {"MAJ JACKSON BRIGGS", 369}, {"SGT SLAUGHTER", 256},
+    {"PVT PUBLIC", 112}};
+
 static HiScoreEntry gHiScores[HISCORE_ENTRY_COUNT] = {
     {"PFC BILL RIZER", 1024},     {"1LT SOLID SNAKE", 901},    {"1LT SONYA BLADE", 855},
     {"SGT ERNEST G. BILKO", 733}, {"1LT SNAKE PLISSKEN", 653}, {"GEN SPECIFIC", 512},
     {"PFC LANCE BEAN", 476},      {"MAJ JACKSON BRIGGS", 369}, {"SGT SLAUGHTER", 256},
     {"PVT PUBLIC", 112}};
+
+static BOOL gHiScoreLoadAttempted = FALSE;
+static BOOL gHiScoreSaveFailed = FALSE;
 
 static UWORD AppendUnsignedMain(char *buf, UWORD pos, UWORD value) {
     char digits[5];
@@ -1028,6 +1045,249 @@ static void DrawHiScoreEntries(struct RastPort *rp, struct TextFont *font) {
 }
 
 
+
+static void HiScore_SetEntry(UWORD index, const char *name, UWORD score) {
+    UWORD i;
+
+    if (index >= HISCORE_ENTRY_COUNT) {
+        return;
+    }
+
+    for (i = 0; i < HISCORE_NAME_LEN; i++) {
+        gHiScores[index].name[i] = ' ';
+    }
+    gHiScores[index].name[HISCORE_NAME_LEN] = '\0';
+
+    if (name) {
+        for (i = 0; i < HISCORE_NAME_LEN && name[i] != '\0' && name[i] != '\n' &&
+             name[i] != '\r';
+             i++) {
+            gHiScores[index].name[i] = name[i];
+        }
+    }
+
+    gHiScores[index].score = score;
+}
+
+static void HiScore_TrimLineEnd(char *line) {
+    UWORD i = 0;
+
+    if (!line) {
+        return;
+    }
+
+    while (line[i] != '\0') {
+        if (line[i] == '\n' || line[i] == '\r') {
+            line[i] = '\0';
+            return;
+        }
+        i++;
+    }
+}
+
+static BOOL HiScore_ParseScoreLine(char *line, char **outName, UWORD *outScore) {
+    ULONG score = 0;
+    UWORD pos = 0;
+    BOOL hasDigit = FALSE;
+
+    if (!line || !outName || !outScore) {
+        return FALSE;
+    }
+
+    while (line[pos] == ' ' || line[pos] == '\t') {
+        pos++;
+    }
+
+    while (line[pos] >= '0' && line[pos] <= '9') {
+        hasDigit = TRUE;
+        score = (score * 10) + (ULONG)(line[pos] - '0');
+        if (score > 65535) {
+            return FALSE;
+        }
+        pos++;
+    }
+
+    if (!hasDigit) {
+        return FALSE;
+    }
+
+    if (line[pos] != ' ' && line[pos] != '\t') {
+        return FALSE;
+    }
+
+    while (line[pos] == ' ' || line[pos] == '\t') {
+        pos++;
+    }
+
+    if (line[pos] == '\0') {
+        return FALSE;
+    }
+
+    *outName = &line[pos];
+    *outScore = (UWORD)score;
+    return TRUE;
+}
+
+static void HiScore_ResetToDefaults(void) {
+    UWORD i;
+
+    for (i = 0; i < HISCORE_ENTRY_COUNT; i++) {
+        gHiScores[i] = gDefaultHiScores[i];
+    }
+}
+
+static void HiScore_LoadOnce(void) {
+    FILE *fh;
+    char line[96];
+    HiScoreEntry loadedScores[HISCORE_ENTRY_COUNT];
+    UWORD loaded = 0;
+    UWORD i;
+
+    if (gHiScoreLoadAttempted) {
+        return;
+    }
+    gHiScoreLoadAttempted = TRUE;
+
+    fh = fopen(HISCORE_FILE_NAME, "r");
+    if (!fh) {
+        HiScore_ResetToDefaults();
+        return;
+    }
+
+    if (!fgets(line, sizeof(line), fh)) {
+        fclose(fh);
+        HiScore_ResetToDefaults();
+        return;
+    }
+
+    HiScore_TrimLineEnd(line);
+    if (strcmp(line, HISCORE_FILE_HEADER) != 0) {
+        fclose(fh);
+        HiScore_ResetToDefaults();
+        return;
+    }
+
+    for (i = 0; i < HISCORE_ENTRY_COUNT; i++) {
+        loadedScores[i] = gDefaultHiScores[i];
+    }
+
+    while (loaded < HISCORE_ENTRY_COUNT && fgets(line, sizeof(line), fh)) {
+        char *name = NULL;
+        UWORD score = 0;
+
+        HiScore_TrimLineEnd(line);
+
+        if (!HiScore_ParseScoreLine(line, &name, &score)) {
+            fclose(fh);
+            HiScore_ResetToDefaults();
+            return;
+        }
+
+        for (i = 0; i < HISCORE_NAME_LEN; i++) {
+            loadedScores[loaded].name[i] = ' ';
+        }
+        loadedScores[loaded].name[HISCORE_NAME_LEN] = '\0';
+
+        for (i = 0; i < HISCORE_NAME_LEN && name[i] != '\0' && name[i] != '\n' &&
+             name[i] != '\r';
+             i++) {
+            loadedScores[loaded].name[i] = name[i];
+        }
+        loadedScores[loaded].score = score;
+        loaded++;
+    }
+
+    fclose(fh);
+
+    if (loaded < HISCORE_ENTRY_COUNT) {
+        HiScore_ResetToDefaults();
+        return;
+    }
+
+    /* If the file has more than 10 entries, they are intentionally ignored. */
+    for (i = 0; i < HISCORE_ENTRY_COUNT; i++) {
+        gHiScores[i] = loadedScores[i];
+    }
+}
+
+static UWORD HiScore_NameLengthForSave(const char *name) {
+    WORD i;
+
+    if (!name) {
+        return 0;
+    }
+
+    for (i = HISCORE_NAME_LEN - 1; i >= 0; i--) {
+        if (name[i] != ' ' && name[i] != '\0') {
+            return (UWORD)(i + 1);
+        }
+    }
+
+    return 0;
+}
+
+static BOOL HiScore_Save(void) {
+    FILE *fh;
+    UWORD i;
+
+    fh = fopen(HISCORE_FILE_NAME, "w");
+    if (!fh) {
+        return FALSE;
+    }
+
+    if (fprintf(fh, "%s\n", HISCORE_FILE_HEADER) < 0) {
+        fclose(fh);
+        return FALSE;
+    }
+
+    for (i = 0; i < HISCORE_ENTRY_COUNT; i++) {
+        UWORD nameLen = HiScore_NameLengthForSave(gHiScores[i].name);
+
+        if (fprintf(fh, "%u ", gHiScores[i].score) < 0) {
+            fclose(fh);
+            return FALSE;
+        }
+
+        if (nameLen > 0) {
+            if (fwrite(gHiScores[i].name, 1, nameLen, fh) != nameLen) {
+                fclose(fh);
+                return FALSE;
+            }
+        } else {
+            if (fputs("PLAYER", fh) < 0) {
+                fclose(fh);
+                return FALSE;
+            }
+        }
+
+        if (fputc('\n', fh) == EOF) {
+            fclose(fh);
+            return FALSE;
+        }
+    }
+
+    if (fclose(fh) != 0) {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+static void DrawHiScoreSaveErrorOverlay(struct RastPort *rp, struct TextFont *font) {
+    if (!rp || !font) {
+        return;
+    }
+
+    SetAPen(rp, HISCORE_SAVE_ERROR_BG_PEN);
+    RectFill(rp, 30, 173, 289, 207);
+
+    DrawCenteredTextWithShadowMain(rp, font, 184, HISCORE_SAVE_ERROR_TEXT_PEN,
+                                   HISCORE_SAVE_ERROR_SHADOW_PEN, "SCORES NOT SAVED");
+    DrawCenteredTextWithShadowMain(rp, font, 198, HISCORE_SAVE_ERROR_TEXT_PEN,
+                                   HISCORE_SAVE_ERROR_SHADOW_PEN,
+                                   "DISK POSSIBLY WRITE-PROTECTED");
+}
+
 static BOOL HiScore_IsQualified(UWORD score) {
     return (score > gHiScores[HISCORE_ENTRY_COUNT - 1].score) ? TRUE : FALSE;
 }
@@ -1035,7 +1295,6 @@ static BOOL HiScore_IsQualified(UWORD score) {
 static BOOL HiScore_InsertIfQualified(UWORD score, const char *name) {
     WORD insertAt = -1;
     UWORD i;
-    UWORD n;
 
     if (!HiScore_IsQualified(score)) {
         return FALSE;
@@ -1057,23 +1316,7 @@ static BOOL HiScore_InsertIfQualified(UWORD score, const char *name) {
         gHiScores[i] = gHiScores[i - 1];
     }
 
-    /* Store names as a fixed-width, space-padded field.  This avoids
-     * leftover characters from the entry that was shifted down/replaced
-     * when a shorter new name is inserted (e.g. "MJR LEON" over
-     * "1LT SOLID SNAKE").
-     */
-    for (n = 0; n < HISCORE_NAME_LEN; n++) {
-        gHiScores[insertAt].name[n] = ' ';
-    }
-    gHiScores[insertAt].name[HISCORE_NAME_LEN] = '\0';
-
-    if (name) {
-        for (n = 0; n < HISCORE_NAME_LEN && name[n] != '\0'; n++) {
-            gHiScores[insertAt].name[n] = name[n];
-        }
-    }
-
-    gHiScores[insertAt].score = score;
+    HiScore_SetEntry((UWORD)insertAt, name, score);
 
     return TRUE;
 }
@@ -1304,7 +1547,9 @@ static BOOL ShowNewHiScoreEntryScreen(UWORD score) {
                 name[i] = '\0';
             }
 
-            HiScore_InsertIfQualified(score, name);
+            if (HiScore_InsertIfQualified(score, name)) {
+                gHiScoreSaveFailed = HiScore_Save() ? FALSE : TRUE;
+            }
             break;
         }
 
@@ -1964,6 +2209,10 @@ static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack) {
         DrawHiScoreEntries(rp, font);
         DrawCenteredTextWithShadowMain(rp, font, PULL_TRIGGER_POSITION_Y, HISCORE_TEXT_PEN,
                                        HISCORE_SHADOW_PEN, "PULL TRIGGER TO CONTINUE");
+        if (gHiScoreSaveFailed) {
+            DrawHiScoreSaveErrorOverlay(rp, font);
+            gHiScoreSaveFailed = FALSE;
+        }
         CloseFont(font);
     }
 
@@ -2314,6 +2563,7 @@ int main(void) {
     }
 
     LevelManager_Init();
+    HiScore_LoadOnce();
 
     if (!Gfx_OpenBlackScreen(BLK_WIDTH, BLK_HEIGHT, BLK_DEPTH)) {
         LevelManager_Shutdown();
