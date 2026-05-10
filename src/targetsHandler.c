@@ -52,6 +52,7 @@
 #define HIT_DELAY_300 60
 
 #define DEMO_TARGET_LIMIT 10
+#define TARGET_RESPAWN_AFTER_KILLS 4
 
 #define SLOT050_COUNT 5
 static const WORD gSlot050X[SLOT050_COUNT] = {17, 77, 136, 195, 255};
@@ -91,6 +92,7 @@ typedef struct TargetSeries {
     struct DateStamp startStamp;
     ULONG startDelayTicks;
     UWORD hitDelayTicks;
+    BOOL respawnAllowed;
 } TargetSeries;
 
 static BOOL gInited = FALSE;
@@ -99,6 +101,7 @@ static BOOL gPaused = FALSE;
 static struct DateStamp gPauseStamp;
 static ULONG gRandomState = 1;
 static UWORD gSpawnedTargets = 0;
+static UWORD gKilledTargets = 0;
 
 static TargetSeries gSeries050;
 static TargetSeries gSeries100;
@@ -308,6 +311,7 @@ static BOOL SpawnSeries(TargetSeries *s, ULONG delayTicks) {
     if (!ConsumeTargetBudget()) {
         s->visible = FALSE;
         s->hit = FALSE;
+        s->respawnAllowed = FALSE;
         s->startDelayTicks = 0;
         return FALSE;
     }
@@ -316,9 +320,44 @@ static BOOL SpawnSeries(TargetSeries *s, ULONG delayTicks) {
     s->activeSlot = slot;
     s->visible = TRUE;
     s->hit = FALSE;
+    s->respawnAllowed = FALSE;
     s->startDelayTicks = delayTicks;
     DateStamp(&s->startStamp);
     return TRUE;
+}
+
+static TargetSeries *PickRandomFreeSeries(void) {
+    TargetSeries *series[6] = {&gSeries050, &gSeries100, &gSeries150,
+                               &gSeries200, &gSeries250, &gSeries300};
+    TargetSeries *candidates[6];
+    WORD count = 0;
+    WORD i;
+
+    for (i = 0; i < 6; i++) {
+        TargetSeries *s = series[i];
+
+        if (!s->loaded || s->visible || s->hit) {
+            continue;
+        }
+
+        candidates[count++] = s;
+    }
+
+    if (count == 0) {
+        return NULL;
+    }
+
+    return candidates[NextRandom() % count];
+}
+
+static BOOL SpawnRandomFreeSeries(ULONG delayTicks) {
+    TargetSeries *s = PickRandomFreeSeries();
+
+    if (!s) {
+        return FALSE;
+    }
+
+    return SpawnSeries(s, delayTicks);
 }
 
 static void StartSlot(TargetSeries *s, WORD slot) {
@@ -333,6 +372,7 @@ static void StartSlot(TargetSeries *s, WORD slot) {
     s->activeSlot = slot;
     s->visible = TRUE;
     s->hit = FALSE;
+    s->respawnAllowed = FALSE;
     s->startDelayTicks = 0;
     DateStamp(&s->startStamp);
 }
@@ -349,6 +389,7 @@ static void InitSeries(TargetSeries *s, const WORD *x, const WORD *y, WORD count
     s->height = h;
     s->startDelayTicks = delay;
     s->hitDelayTicks = hitDelayTicks;
+    s->respawnAllowed = FALSE;
     s->activeSlot = 0;
     DateStamp(&s->startStamp);
 }
@@ -517,8 +558,12 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, UBYTE *hitScore) {
         *hitScore = TargetScoring_GetScore(distance, localX, localY);
     }
 
+    gKilledTargets++;
+
     s->hit = TRUE;
     s->visible = FALSE;
+    s->respawnAllowed = (gKilledTargets >= TARGET_RESPAWN_AFTER_KILLS) ? TRUE : FALSE;
+    DateStamp(&s->startStamp);
     return TRUE;
 }
 
@@ -533,7 +578,15 @@ static void TickSeries(TargetSeries *s) {
 
     if (s->hit) {
         if (t >= s->hitDelayTicks) {
-            SpawnSeries(s, 0);
+            BOOL shouldRespawn = s->respawnAllowed;
+
+            s->hit = FALSE;
+            s->visible = FALSE;
+            s->respawnAllowed = FALSE;
+
+            if (shouldRespawn) {
+                SpawnRandomFreeSeries(0);
+            }
         }
 
         return;
@@ -622,6 +675,7 @@ BOOL TargetsHandler_Init(void) {
     gPauseStamp.ds_Minute = 0;
     gPauseStamp.ds_Tick = 0;
     gSpawnedTargets = 0;
+    gKilledTargets = 0;
     NextRandom();
     SpawnSeries(&gSeries050, SERIES050_DELAY);
     SpawnSeries(&gSeries100, SERIES100_DELAY);
@@ -665,6 +719,7 @@ void TargetsHandler_Shutdown(void) {
     gInited = FALSE;
     gReady = FALSE;
     gPaused = FALSE;
+    gKilledTargets = 0;
 }
 
 void TargetsHandler_Reset(void) {
@@ -678,6 +733,7 @@ void TargetsHandler_Reset(void) {
     gPauseStamp.ds_Tick = 0;
 
     gSpawnedTargets = 0;
+    gKilledTargets = 0;
     NextRandom();
 
     SpawnSeries(&gSeries050, SERIES050_DELAY);
