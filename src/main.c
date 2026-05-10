@@ -1,12 +1,12 @@
+#include <devices/inputevent.h>
 #include <exec/types.h>
 #include <graphics/gfx.h>
 #include <graphics/text.h>
 #include <intuition/intuition.h>
-#include <devices/inputevent.h>
+#include <proto/dos.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
-#include <proto/dos.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -664,16 +664,12 @@ typedef struct HiScoreEntry {
 } HiScoreEntry;
 
 static const HiScoreEntry gDefaultHiScores[HISCORE_ENTRY_COUNT] = {
-    {"PFC BILL RIZER", 1024},     {"1LT SOLID SNAKE", 901},    {"1LT SONYA BLADE", 855},
-    {"SGT ERNEST G. BILKO", 733}, {"1LT SNAKE PLISSKEN", 653}, {"GEN SPECIFIC", 512},
-    {"PFC LANCE BEAN", 476},      {"MAJ JACKSON BRIGGS", 369}, {"SGT SLAUGHTER", 256},
-    {"PVT PUBLIC", 112}};
+    {"PFC BILL RIZER", 1000},     {"1LT SOLID SNAKE", 950},    {"1LT SONYA BLADE", 927},
+    {"SGT ERNEST G. BILKO", 901}, {"1LT SNAKE PLISSKEN", 855}, {"GEN SPECIFIC", 733},
+    {"PFC LANCE BEAN", 715},      {"MAJ JACKSON BRIGGS", 653}, {"SGT SLAUGHTER", 630},
+    {"PVT PUBLIC", 601}};
 
-static HiScoreEntry gHiScores[HISCORE_ENTRY_COUNT] = {
-    {"PFC BILL RIZER", 1024},     {"1LT SOLID SNAKE", 901},    {"1LT SONYA BLADE", 855},
-    {"SGT ERNEST G. BILKO", 733}, {"1LT SNAKE PLISSKEN", 653}, {"GEN SPECIFIC", 512},
-    {"PFC LANCE BEAN", 476},      {"MAJ JACKSON BRIGGS", 369}, {"SGT SLAUGHTER", 256},
-    {"PVT PUBLIC", 112}};
+static HiScoreEntry gHiScores[HISCORE_ENTRY_COUNT];
 
 static BOOL gHiScoreLoadAttempted = FALSE;
 static BOOL gHiScoreSaveFailed = FALSE;
@@ -1044,8 +1040,6 @@ static void DrawHiScoreEntries(struct RastPort *rp, struct TextFont *font) {
     }
 }
 
-
-
 static void HiScore_SetEntry(UWORD index, const char *name, UWORD score) {
     UWORD i;
 
@@ -1059,8 +1053,7 @@ static void HiScore_SetEntry(UWORD index, const char *name, UWORD score) {
     gHiScores[index].name[HISCORE_NAME_LEN] = '\0';
 
     if (name) {
-        for (i = 0; i < HISCORE_NAME_LEN && name[i] != '\0' && name[i] != '\n' &&
-             name[i] != '\r';
+        for (i = 0; i < HISCORE_NAME_LEN && name[i] != '\0' && name[i] != '\n' && name[i] != '\r';
              i++) {
             gHiScores[index].name[i] = name[i];
         }
@@ -1188,8 +1181,7 @@ static void HiScore_LoadOnce(void) {
         }
         loadedScores[loaded].name[HISCORE_NAME_LEN] = '\0';
 
-        for (i = 0; i < HISCORE_NAME_LEN && name[i] != '\0' && name[i] != '\n' &&
-             name[i] != '\r';
+        for (i = 0; i < HISCORE_NAME_LEN && name[i] != '\0' && name[i] != '\n' && name[i] != '\r';
              i++) {
             loadedScores[loaded].name[i] = name[i];
         }
@@ -1284,8 +1276,7 @@ static void DrawHiScoreSaveErrorOverlay(struct RastPort *rp, struct TextFont *fo
     DrawCenteredTextWithShadowMain(rp, font, 184, HISCORE_SAVE_ERROR_TEXT_PEN,
                                    HISCORE_SAVE_ERROR_SHADOW_PEN, "SCORES NOT SAVED");
     DrawCenteredTextWithShadowMain(rp, font, 198, HISCORE_SAVE_ERROR_TEXT_PEN,
-                                   HISCORE_SAVE_ERROR_SHADOW_PEN,
-                                   "DISK POSSIBLY WRITE-PROTECTED");
+                                   HISCORE_SAVE_ERROR_SHADOW_PEN, "DISK POSSIBLY WRITE-PROTECTED");
 }
 
 static BOOL HiScore_IsQualified(UWORD score) {
@@ -1366,8 +1357,7 @@ static UWORD BuildNameEntryLine(char *buf, const char *name, BOOL cursor) {
     return pos;
 }
 
-static void DrawNewHiScoreNameLine(struct RastPort *rp, struct TextFont *font,
-                                   const char *name) {
+static void DrawNewHiScoreNameLine(struct RastPort *rp, struct TextFont *font, const char *name) {
     char line[40];
 
     if (!rp || !font) {
@@ -1385,8 +1375,8 @@ static void DrawNewHiScoreNameLine(struct RastPort *rp, struct TextFont *font,
                                    HISCORE_SHADOW_PEN, line);
 }
 
-static void DrawNewHiScoreEntryContent(struct RastPort *rp, struct TextFont *font,
-                                       const char *name, UWORD score) {
+static void DrawNewHiScoreEntryContent(struct RastPort *rp, struct TextFont *font, const char *name,
+                                       UWORD score) {
     char line[40];
     UWORD pos;
 
@@ -1402,8 +1392,8 @@ static void DrawNewHiScoreEntryContent(struct RastPort *rp, struct TextFont *fon
         return;
     }
 
-    DrawCenteredTextWithShadowMain(rp, font, HISCORE_TITLE_Y, HISCORE_TEXT_PEN,
-                                   HISCORE_SHADOW_PEN, "CONGRATULATIONS!");
+    DrawCenteredTextWithShadowMain(rp, font, HISCORE_TITLE_Y, HISCORE_TEXT_PEN, HISCORE_SHADOW_PEN,
+                                   "CONGRATULATIONS!");
 
     pos = 0;
     line[pos++] = 'S';
@@ -2270,8 +2260,7 @@ static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
     if (win && win->UserPort) {
         while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
 
-            if (msg->Class == IDCMP_RAWKEY &&
-                IsQuitShortcutRaw((UBYTE)msg->Code, msg->Qualifier)) {
+            if (msg->Class == IDCMP_RAWKEY && IsQuitShortcutRaw((UBYTE)msg->Code, msg->Qualifier)) {
                 *outEsc = TRUE; /* Amiga+Q */
             }
 
