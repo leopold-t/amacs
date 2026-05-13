@@ -23,6 +23,7 @@ typedef struct AudioVoice {
 } AudioVoice;
 
 #define SOUND_11KHZ_PERIOD 321
+#define SOUND_16KHZ_PERIOD 222
 
 #define SHOT_VOLUME 64
 #define SHOT_CYCLES 1
@@ -42,10 +43,13 @@ static Sample gShot = {NULL, 0};
 static Sample gHit = {NULL, 0};
 static Sample gTitleMusic = {NULL, 0};
 static Sample gAmbientLoop = {NULL, 0};
+static Sample gHiScoreFanfare = {NULL, 0};
 
 static BOOL gSoundInited = FALSE;
 static BOOL gTitleMusicInited = FALSE;
 static BOOL gAmbientLoopInited = FALSE;
+static BOOL gHiScoreFanfareInited = FALSE;
+static BOOL gAmbientVoiceInited = FALSE;
 static BOOL gAmbientLoopEnabled = FALSE;
 static BOOL gHitPending = FALSE;
 static BOOL gSoundPaused = FALSE;
@@ -240,6 +244,19 @@ static BOOL InitVoice(AudioVoice *voice) {
     return TRUE;
 }
 
+static BOOL EnsureAmbientVoice(void) {
+    if (gAmbientVoiceInited) {
+        return TRUE;
+    }
+
+    if (!InitVoice(&gAmbientVoice)) {
+        return FALSE;
+    }
+
+    gAmbientVoiceInited = TRUE;
+    return TRUE;
+}
+
 static void StartVoiceSample(AudioVoice *voice, const Sample *sample, UWORD period, UBYTE volume,
                              UBYTE cycles) {
     if (!voice || !voice->io || !sample || !sample->data || sample->length == 0) {
@@ -397,7 +414,7 @@ BOOL Sound_InitAmbientLoop(void) {
         return FALSE;
     }
 
-    if (!InitVoice(&gAmbientVoice)) {
+    if (!EnsureAmbientVoice()) {
         FreeSample(&gAmbientLoop);
         return FALSE;
     }
@@ -446,14 +463,102 @@ void Sound_ShutdownAmbientLoop(void) {
 
     gAmbientLoopEnabled = FALSE;
     StopVoice(&gAmbientVoice);
-    CloseVoice(&gAmbientVoice);
     FreeSample(&gAmbientLoop);
     gAmbientLoopInited = FALSE;
+
+    if (!gHiScoreFanfareInited && gAmbientVoiceInited) {
+        CloseVoice(&gAmbientVoice);
+        gAmbientVoiceInited = FALSE;
+    }
     gLastError = SOUND_OK;
 }
 
 BOOL Sound_IsAmbientLoopPlaying(void) {
     if (!gAmbientLoopInited) {
+        return FALSE;
+    }
+
+    ReapVoice(&gAmbientVoice);
+    return gAmbientVoice.playing;
+}
+
+BOOL Sound_InitHiScoreFanfare(void) {
+    if (gHiScoreFanfareInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gLastError = SOUND_OK;
+
+    if (!LoadSample(HISCORE_FANFARE_FILE, &gHiScoreFanfare)) {
+        return FALSE;
+    }
+
+    /* Reuse Paula channel 3 (bit 8), shared with the ambient loop and
+     * deliberately different from the title music channel used by
+     * Adjutants_Call.raw.  The ambient loop is stopped before gameplay
+     * summary/hi-score flow, so this channel is free for the jingle.
+     */
+    if (!EnsureAmbientVoice()) {
+        FreeSample(&gHiScoreFanfare);
+        return FALSE;
+    }
+
+    gHiScoreFanfareInited = TRUE;
+    gLastError = SOUND_OK;
+    return TRUE;
+}
+
+void Sound_PlayHiScoreFanfare(void) {
+    if (!gHiScoreFanfareInited) {
+        if (!Sound_InitHiScoreFanfare()) {
+            return;
+        }
+    }
+
+    gAmbientLoopEnabled = FALSE;
+    ReapVoice(&gAmbientVoice);
+
+    if (gAmbientVoice.playing) {
+        StopVoice(&gAmbientVoice);
+    }
+
+    StartVoiceSample(&gAmbientVoice, &gHiScoreFanfare, SOUND_11KHZ_PERIOD, 64, 1);
+}
+
+void Sound_StopHiScoreFanfare(BOOL fadeOut) {
+    (void)fadeOut;
+
+    if (!gHiScoreFanfareInited) {
+        return;
+    }
+
+    ReapVoice(&gAmbientVoice);
+
+    if (gAmbientVoice.playing) {
+        StopVoice(&gAmbientVoice);
+    }
+}
+
+void Sound_ShutdownHiScoreFanfare(void) {
+    if (!gHiScoreFanfareInited) {
+        return;
+    }
+
+    Sound_StopHiScoreFanfare(FALSE);
+    FreeSample(&gHiScoreFanfare);
+    gHiScoreFanfareInited = FALSE;
+
+    if (!gAmbientLoopInited && gAmbientVoiceInited) {
+        CloseVoice(&gAmbientVoice);
+        gAmbientVoiceInited = FALSE;
+    }
+
+    gLastError = SOUND_OK;
+}
+
+BOOL Sound_IsHiScoreFanfarePlaying(void) {
+    if (!gHiScoreFanfareInited) {
         return FALSE;
     }
 

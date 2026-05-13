@@ -33,6 +33,12 @@ void Sound_StopAmbientLoop(BOOL fadeOut);
 void Sound_ShutdownAmbientLoop(void);
 BOOL Sound_IsAmbientLoopPlaying(void);
 
+BOOL Sound_InitHiScoreFanfare(void);
+void Sound_PlayHiScoreFanfare(void);
+void Sound_StopHiScoreFanfare(BOOL fadeOut);
+void Sound_ShutdownHiScoreFanfare(void);
+BOOL Sound_IsHiScoreFanfarePlaying(void);
+
 SoundError Sound_GetLastError(void);
 
 #endif

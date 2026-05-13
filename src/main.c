@@ -154,7 +154,7 @@ static BOOL IsQuitShortcutVanilla(UBYTE c, UWORD qualifier) {
     return ((c == 'q' || c == 'Q') && IsAmigaQualifierMain(qualifier)) ? TRUE : FALSE;
 }
 
-static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack);
+static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack, BOOL playFanfare);
 
 typedef struct SummaryPoint {
     UBYTE x;
@@ -2145,15 +2145,17 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
 
     {
         BOOL alreadyBlack = FALSE;
+        BOOL playFanfare = FALSE;
 
         if (HiScore_IsQualified(totalScore)) {
             if (!ShowNewHiScoreEntryScreen(totalScore)) {
                 return FALSE;
             }
             alreadyBlack = TRUE;
+            playFanfare = TRUE;
         }
 
-        if (!ShowTitleScorePlaceholderScreen(alreadyBlack)) {
+        if (!ShowTitleScorePlaceholderScreen(alreadyBlack, playFanfare)) {
             return FALSE;
         }
     }
@@ -2161,7 +2163,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     return TRUE;
 }
 
-static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack) {
+static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack, BOOL playFanfare) {
     struct Screen *scr;
     struct RastPort *rp;
     struct TextFont *font = NULL;
@@ -2209,6 +2211,10 @@ static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack) {
     WaitBlit();
     Gfx_FadeInCurrentScreenFromBlack(titlePalette, 32);
 
+    if (playFanfare) {
+        Sound_PlayHiScoreFanfare();
+    }
+
     /* Require a fresh press on the placeholder screen. */
     while (IsJoystickFirePressed()) {
         WaitTOF();
@@ -2216,6 +2222,8 @@ static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack) {
     DrainWindowMessages();
 
     waitResult = WaitForAdvanceNoTimeout();
+    Sound_StopHiScoreFanfare(FALSE);
+
     if (waitResult == WAIT_ESC) {
         return FALSE;
     }
@@ -2780,8 +2788,10 @@ show_title:
     }
 
 fail:
+    Sound_StopHiScoreFanfare(FALSE);
     Sound_StopAmbientLoop(FALSE);
     Sound_ShutdownAmbientLoop();
+    Sound_ShutdownHiScoreFanfare();
     Sound_StopTitleMusic(FALSE);
     Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();
@@ -2791,8 +2801,10 @@ fail:
     return RETURN_FAIL;
 
 exit_ok:
+    Sound_StopHiScoreFanfare(FALSE);
     Sound_StopAmbientLoop(FALSE);
     Sound_ShutdownAmbientLoop();
+    Sound_ShutdownHiScoreFanfare();
     Sound_StopTitleMusic(FALSE);
     Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();
