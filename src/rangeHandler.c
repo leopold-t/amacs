@@ -992,6 +992,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
                     WORD aimX;
                     WORD aimY;
+                    WORD sightOffsetX;
+                    WORD sightOffsetY;
                     UWORD hitDelayTicks;
                     UBYTE hitScore = SCORE_MISS;
 
@@ -1005,8 +1007,11 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                     aimX = (WORD)(ringX - RING_OFFSET_X + FRONT_AIM_X);
                     aimY = (WORD)(ringY - RING_OFFSET_Y + FRONT_AIM_Y);
+                    sightOffsetX = (WORD)(leadX / 256);
+                    sightOffsetY = (WORD)(leadY / 256);
 
-                    if (TargetsHandler_CheckHit(aimX, aimY, &hitDelayTicks, &hitScore)) {
+                    if (TargetsHandler_CheckHit(aimX, aimY, sightOffsetX, sightOffsetY,
+                                                &hitDelayTicks, &hitScore)) {
                         RegisterHit();
                         Sound_PlayHit(hitDelayTicks);
                         lastShotHit = TRUE;

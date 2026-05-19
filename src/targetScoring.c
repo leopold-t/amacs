@@ -141,6 +141,53 @@ static BYTE GetZeroOffset(const ZeroOffset *table, UWORD count, UWORD distance) 
     return 0;
 }
 
+/*
+ * Parallax error table. Values are hundredths of a pixel for the
+ * extreme front-sight displacement from rear sight center:
+ * 33 px sight offset -> listed max error at a given distance.
+ * Kept as integers to avoid FPU use on MC68000.
+ */
+typedef struct {
+    UWORD distance;
+    UWORD maxError100;
+} ParallaxError;
+
+static const ParallaxError gParallaxMaxError[] = {{50, 659},  {100, 628},  {150, 766},
+                                                  {200, 899}, {250, 1049}, {300, 900}};
+
+#define PARALLAX_SIGHT_MAX_OFFSET_PX 33
+#define PARALLAX_SCALE_DENOMINATOR (PARALLAX_SIGHT_MAX_OFFSET_PX * 100)
+#define PARALLAX_ERROR_COUNT (sizeof(gParallaxMaxError) / sizeof(gParallaxMaxError[0]))
+
+static UWORD GetParallaxMaxError100(UWORD distance) {
+    UWORD i;
+
+    for (i = 0; i < PARALLAX_ERROR_COUNT; i++) {
+        if (gParallaxMaxError[i].distance == distance) {
+            return gParallaxMaxError[i].maxError100;
+        }
+    }
+
+    return 0;
+}
+
+WORD TargetScoring_GetParallaxOffset(UWORD distance, WORD sightOffsetPx) {
+    LONG value;
+    UWORD maxError100 = GetParallaxMaxError100(distance);
+
+    if (sightOffsetPx == 0 || maxError100 == 0) {
+        return 0;
+    }
+
+    value = (LONG)sightOffsetPx * (LONG)maxError100;
+
+    if (value >= 0) {
+        return (WORD)((value + (PARALLAX_SCALE_DENOMINATOR / 2)) / PARALLAX_SCALE_DENOMINATOR);
+    }
+
+    return (WORD)((value - (PARALLAX_SCALE_DENOMINATOR / 2)) / PARALLAX_SCALE_DENOMINATOR);
+}
+
 BYTE TargetScoring_GetZeroOffset(UWORD distance) {
     UWORD count;
     const ZeroOffset *table = GetActiveZeroTable(&count);

@@ -518,7 +518,8 @@ static UWORD GetDistanceForSeries(const TargetSeries *s) {
     return 0;
 }
 
-static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, UBYTE *hitScore) {
+static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, WORD sightOffsetX, WORD sightOffsetY,
+                           UBYTE *hitScore) {
     WORD left;
     WORD top;
     WORD width;
@@ -527,6 +528,9 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, UBYTE *hitScore) {
     WORD localY;
     UWORD distance;
     BYTE zeroOffsetY;
+    WORD parallaxX;
+    WORD parallaxY;
+    WORD bulletX;
     WORD bulletY;
 
     if (!GetSeriesVisibleRect(s, &left, &top, &width, &visibleH)) {
@@ -535,19 +539,25 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, UBYTE *hitScore) {
 
     distance = (UWORD)GetDistanceForSeries(s);
     zeroOffsetY = TargetScoring_GetZeroOffset(distance);
+    parallaxX = TargetScoring_GetParallaxOffset(distance, sightOffsetX);
+    parallaxY = TargetScoring_GetParallaxOffset(distance, sightOffsetY);
 
     /*
-     * Apply zeroing before hit detection, not during scoring.
-     * Positive offset means the bullet goes up on screen, so Y decreases.
-     * If this moves the bullet outside the target/mask, the shot is a miss.
+     * Apply sight-derived ballistic adjustments before hit detection,
+     * not during scoring. Positive BZO offset means the bullet goes up
+     * on screen, so Y decreases. Parallax offsets are applied in both
+     * axes and may move the bullet outside the target/mask, producing
+     * a clean miss.
      */
-    bulletY = (WORD)(y - zeroOffsetY);
+    bulletX = (WORD)(x + parallaxX);
+    bulletY = (WORD)(y + parallaxY - zeroOffsetY);
 
-    if (x < left || x >= (left + width) || bulletY < top || bulletY >= (top + visibleH)) {
+    if (bulletX < left || bulletX >= (left + width) || bulletY < top ||
+        bulletY >= (top + visibleH)) {
         return FALSE;
     }
 
-    localX = (WORD)(x - left);
+    localX = (WORD)(bulletX - left);
     localY = (WORD)(bulletY - top);
 
     if (!IsMaskBitSet(s->bob.mask, s->width, localX, localY)) {
@@ -881,12 +891,13 @@ void TargetsHandler_SetPaused(BOOL paused) {
     gPaused = FALSE;
 }
 
-BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks, UBYTE *hitScore) {
+BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffsetY,
+                             UWORD *hitDelayTicks, UBYTE *hitScore) {
     if (!gReady) {
         return FALSE;
     }
 
-    if (CheckSeriesHit(&gSeries050, x, y, hitScore)) {
+    if (CheckSeriesHit(&gSeries050, x, y, sightOffsetX, sightOffsetY, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries050.hitDelayTicks;
         }
@@ -894,7 +905,7 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks, UBYTE *hitSco
         return TRUE;
     }
 
-    if (CheckSeriesHit(&gSeries100, x, y, hitScore)) {
+    if (CheckSeriesHit(&gSeries100, x, y, sightOffsetX, sightOffsetY, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries100.hitDelayTicks;
         }
@@ -902,7 +913,7 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks, UBYTE *hitSco
         return TRUE;
     }
 
-    if (CheckSeriesHit(&gSeries150, x, y, hitScore)) {
+    if (CheckSeriesHit(&gSeries150, x, y, sightOffsetX, sightOffsetY, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries150.hitDelayTicks;
         }
@@ -910,7 +921,7 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks, UBYTE *hitSco
         return TRUE;
     }
 
-    if (CheckSeriesHit(&gSeries200, x, y, hitScore)) {
+    if (CheckSeriesHit(&gSeries200, x, y, sightOffsetX, sightOffsetY, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries200.hitDelayTicks;
         }
@@ -918,7 +929,7 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks, UBYTE *hitSco
         return TRUE;
     }
 
-    if (CheckSeriesHit(&gSeries250, x, y, hitScore)) {
+    if (CheckSeriesHit(&gSeries250, x, y, sightOffsetX, sightOffsetY, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries250.hitDelayTicks;
         }
@@ -926,7 +937,7 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, UWORD *hitDelayTicks, UBYTE *hitSco
         return TRUE;
     }
 
-    if (CheckSeriesHit(&gSeries300, x, y, hitScore)) {
+    if (CheckSeriesHit(&gSeries300, x, y, sightOffsetX, sightOffsetY, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries300.hitDelayTicks;
         }
