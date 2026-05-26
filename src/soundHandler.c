@@ -41,6 +41,7 @@ static AudioVoice gShotVoice = {NULL, NULL, FALSE, {AUDIO_CH_0_RIGHT_SHOT}};
 static AudioVoice gHitVoice = {NULL, NULL, FALSE, {AUDIO_CH_1_LEFT_HIT}};
 static AudioVoice gTitleVoice = {NULL, NULL, FALSE, {AUDIO_CH_2_LEFT_TITLE}};
 static AudioVoice gSpeechVoice = {NULL, NULL, FALSE, {AUDIO_CH_3_RIGHT_SPEECH}};
+static AudioVoice gDrumsVoice = {NULL, NULL, FALSE, {AUDIO_CH_0_RIGHT_SHOT}};
 
 static Sample gShot = {NULL, 0};
 static Sample gHit = {NULL, 0};
@@ -55,6 +56,7 @@ static BOOL gSpeechLoopInited = FALSE;
 static BOOL gHiScoreFanfareInited = FALSE;
 static BOOL gNarratorPrepareToFireInited = FALSE;
 static BOOL gSpeechVoiceInited = FALSE;
+static BOOL gDrumsVoiceInited = FALSE;
 static BOOL gSpeechLoopEnabled = FALSE;
 static BOOL gHitPending = FALSE;
 static BOOL gSoundPaused = FALSE;
@@ -68,6 +70,7 @@ static void ResetState(void) {
     gSoundPaused = FALSE;
     gShotVoice.playing = FALSE;
     gHitVoice.playing = FALSE;
+    gDrumsVoice.playing = FALSE;
     gHitDueStamp.ds_Days = 0;
     gHitDueStamp.ds_Minute = 0;
     gHitDueStamp.ds_Tick = 0;
@@ -262,6 +265,32 @@ static BOOL EnsureSpeechVoice(void) {
     return TRUE;
 }
 
+static BOOL EnsureDrumsVoice(void) {
+    if (gDrumsVoiceInited) {
+        return TRUE;
+    }
+
+    if (!InitVoice(&gDrumsVoice)) {
+        return FALSE;
+    }
+
+    gDrumsVoiceInited = TRUE;
+    return TRUE;
+}
+
+static void ReleaseSpeechVoiceIfIdle(void) {
+    if (!gSpeechVoiceInited) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (!gSpeechVoice.playing) {
+        CloseVoice(&gSpeechVoice);
+        gSpeechVoiceInited = FALSE;
+    }
+}
+
 static void StartVoiceSample(AudioVoice *voice, const Sample *sample, UWORD period, UBYTE volume,
                              UBYTE cycles) {
     if (!voice || !voice->io || !sample || !sample->data || sample->length == 0) {
@@ -419,7 +448,7 @@ BOOL Sound_InitSpeechLoop(void) {
         return FALSE;
     }
 
-    if (!EnsureSpeechVoice()) {
+    if (!EnsureDrumsVoice()) {
         FreeSample(&gSpeechLoop);
         return FALSE;
     }
@@ -437,12 +466,16 @@ void Sound_PlaySpeechLoop(void) {
         }
     }
 
-    ReapVoice(&gSpeechVoice);
+    if (!EnsureDrumsVoice()) {
+        return;
+    }
+
+    ReapVoice(&gDrumsVoice);
 
     gSpeechLoopEnabled = TRUE;
 
-    if (!gSpeechVoice.playing) {
-        StartVoiceSample(&gSpeechVoice, &gSpeechLoop, SOUND_11KHZ_PERIOD, 48, 1);
+    if (!gDrumsVoice.playing) {
+        StartVoiceSample(&gDrumsVoice, &gSpeechLoop, SOUND_11KHZ_PERIOD, 48, 1);
     }
 }
 
@@ -454,10 +487,15 @@ void Sound_StopSpeechLoop(BOOL fadeOut) {
     }
 
     gSpeechLoopEnabled = FALSE;
-    ReapVoice(&gSpeechVoice);
+    ReapVoice(&gDrumsVoice);
 
-    if (gSpeechVoice.playing) {
-        StopVoice(&gSpeechVoice);
+    if (gDrumsVoice.playing) {
+        StopVoice(&gDrumsVoice);
+    }
+
+    if (gDrumsVoiceInited) {
+        CloseVoice(&gDrumsVoice);
+        gDrumsVoiceInited = FALSE;
     }
 }
 
@@ -467,24 +505,23 @@ void Sound_ShutdownSpeechLoop(void) {
     }
 
     gSpeechLoopEnabled = FALSE;
-    StopVoice(&gSpeechVoice);
+    StopVoice(&gDrumsVoice);
+    if (gDrumsVoiceInited) {
+        CloseVoice(&gDrumsVoice);
+        gDrumsVoiceInited = FALSE;
+    }
     FreeSample(&gSpeechLoop);
     gSpeechLoopInited = FALSE;
-
-    if (!gHiScoreFanfareInited && !gNarratorPrepareToFireInited && gSpeechVoiceInited) {
-        CloseVoice(&gSpeechVoice);
-        gSpeechVoiceInited = FALSE;
-    }
     gLastError = SOUND_OK;
 }
 
 BOOL Sound_IsSpeechLoopPlaying(void) {
-    if (!gSpeechLoopInited) {
+    if (!gSpeechLoopInited || !gDrumsVoiceInited) {
         return FALSE;
     }
 
-    ReapVoice(&gSpeechVoice);
-    return gSpeechVoice.playing;
+    ReapVoice(&gDrumsVoice);
+    return gDrumsVoice.playing;
 }
 
 BOOL Sound_InitHiScoreFanfare(void) {
@@ -517,6 +554,11 @@ void Sound_PlayHiScoreFanfare(void) {
     }
 
     gSpeechLoopEnabled = FALSE;
+
+    if (!EnsureSpeechVoice()) {
+        return;
+    }
+
     ReapVoice(&gSpeechVoice);
 
     if (gSpeechVoice.playing) {
@@ -538,6 +580,8 @@ void Sound_StopHiScoreFanfare(BOOL fadeOut) {
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
     }
+
+    ReleaseSpeechVoiceIfIdle();
 }
 
 void Sound_ShutdownHiScoreFanfare(void) {
@@ -596,6 +640,11 @@ void Sound_PlayNarratorPrepareToFire(void) {
     }
 
     gSpeechLoopEnabled = FALSE;
+
+    if (!EnsureSpeechVoice()) {
+        return;
+    }
+
     ReapVoice(&gSpeechVoice);
 
     if (gSpeechVoice.playing) {
@@ -617,6 +666,8 @@ void Sound_StopNarratorPrepareToFire(BOOL fadeOut) {
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
     }
+
+    ReleaseSpeechVoiceIfIdle();
 }
 
 void Sound_ShutdownNarratorPrepareToFire(void) {
@@ -688,8 +739,13 @@ BOOL Sound_Init(void) {
 void Sound_Shutdown(void) {
     StopVoice(&gShotVoice);
     StopVoice(&gHitVoice);
+    StopVoice(&gDrumsVoice);
     CloseVoice(&gShotVoice);
     CloseVoice(&gHitVoice);
+    if (gDrumsVoiceInited) {
+        CloseVoice(&gDrumsVoice);
+        gDrumsVoiceInited = FALSE;
+    }
     FreeSample(&gShot);
     FreeSample(&gHit);
     ResetState();
@@ -699,12 +755,16 @@ void Sound_Shutdown(void) {
 void Sound_Update(void) {
     struct DateStamp now;
 
-    if (gSpeechLoopInited) {
-        ReapVoice(&gSpeechVoice);
+    if (gSpeechLoopInited && gDrumsVoiceInited) {
+        ReapVoice(&gDrumsVoice);
 
-        if (!gSoundPaused && gSpeechLoopEnabled && !gSpeechVoice.playing) {
-            StartVoiceSample(&gSpeechVoice, &gSpeechLoop, SOUND_11KHZ_PERIOD, 48, 1);
+        if (!gSoundPaused && gSpeechLoopEnabled && !gDrumsVoice.playing) {
+            StartVoiceSample(&gDrumsVoice, &gSpeechLoop, SOUND_11KHZ_PERIOD, 48, 1);
         }
+    }
+
+    if (gSpeechVoiceInited) {
+        ReleaseSpeechVoiceIfIdle();
     }
 
     if (gSoundPaused) {
