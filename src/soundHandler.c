@@ -50,6 +50,7 @@ static Sample gSpeechLoop = {NULL, 0};
 static Sample gHiScoreFanfare = {NULL, 0};
 static Sample gNarratorPrepareToFire = {NULL, 0};
 static Sample gSpeechHit = {NULL, 0};
+static Sample gSpeechExcellent = {NULL, 0};
 
 static BOOL gSoundInited = FALSE;
 static BOOL gTitleMusicInited = FALSE;
@@ -57,6 +58,7 @@ static BOOL gSpeechLoopInited = FALSE;
 static BOOL gHiScoreFanfareInited = FALSE;
 static BOOL gNarratorPrepareToFireInited = FALSE;
 static BOOL gSpeechHitInited = FALSE;
+static BOOL gSpeechExcellentInited = FALSE;
 static BOOL gSpeechVoiceInited = FALSE;
 static BOOL gDrumsVoiceInited = FALSE;
 static BOOL gSpeechLoopEnabled = FALSE;
@@ -764,6 +766,74 @@ void Sound_ShutdownSpeechHit(void) {
     Sound_StopSpeechHit(FALSE);
     FreeSample(&gSpeechHit);
     gSpeechHitInited = FALSE;
+}
+
+
+BOOL Sound_InitSpeechExcellent(void) {
+    if (gSpeechExcellentInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gLastError = SOUND_OK;
+
+    if (!LoadSample(SPEECH_EXCELLENT_FILE, &gSpeechExcellent)) {
+        return FALSE;
+    }
+
+    if (!EnsureSpeechVoice()) {
+        FreeSample(&gSpeechExcellent);
+        return FALSE;
+    }
+
+    gSpeechExcellentInited = TRUE;
+    return TRUE;
+}
+
+void Sound_PlaySpeechExcellent(void) {
+    if (!gSpeechExcellentInited) {
+        if (!Sound_InitSpeechExcellent()) {
+            return;
+        }
+    }
+
+    if (!EnsureSpeechVoice()) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    StartVoiceSample(&gSpeechVoice, &gSpeechExcellent, SOUND_22KHZ_PERIOD, 64, 1);
+}
+
+void Sound_StopSpeechExcellent(BOOL fadeOut) {
+    (void)fadeOut;
+
+    if (!gSpeechExcellentInited) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    ReleaseSpeechVoiceIfIdle();
+}
+
+void Sound_ShutdownSpeechExcellent(void) {
+    if (!gSpeechExcellentInited) {
+        return;
+    }
+
+    Sound_StopSpeechExcellent(FALSE);
+    FreeSample(&gSpeechExcellent);
+    gSpeechExcellentInited = FALSE;
 }
 
 SoundError Sound_GetLastError(void) {

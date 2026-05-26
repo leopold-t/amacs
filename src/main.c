@@ -1852,6 +1852,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     UWORD perfTotal;
     WORD tableY;
     WaitResult waitResult;
+    BOOL excellentPlayed = FALSE;
 
     memset(&summaryBM, 0, sizeof(summaryBM));
     memset(&summaryRP, 0, sizeof(summaryRP));
@@ -2106,6 +2107,11 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         if (!summaryVisible) {
             Gfx_FadeInCurrentScreenFromBlack(SummaryPaletteRGB4, 32);
             summaryVisible = TRUE;
+        }
+
+        if (stepIndex >= 6 && !excellentPlayed && acc >= 90) {
+            Sound_PlaySpeechExcellent();
+            excellentPlayed = TRUE;
         }
 
         waitResult = WaitForAdvanceOnly();
@@ -2795,6 +2801,8 @@ fail:
     Sound_ShutdownSpeechLoop();
     Sound_ShutdownHiScoreFanfare();
     Sound_ShutdownNarratorPrepareToFire();
+    Sound_ShutdownSpeechHit();
+    Sound_ShutdownSpeechExcellent();
     Sound_StopTitleMusic(FALSE);
     Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();
@@ -2810,6 +2818,8 @@ exit_ok:
     Sound_ShutdownSpeechLoop();
     Sound_ShutdownHiScoreFanfare();
     Sound_ShutdownNarratorPrepareToFire();
+    Sound_ShutdownSpeechHit();
+    Sound_ShutdownSpeechExcellent();
     Sound_StopTitleMusic(FALSE);
     Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();
