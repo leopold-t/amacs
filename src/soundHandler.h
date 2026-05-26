@@ -44,6 +44,10 @@ void Sound_PlayNarratorPrepareToFire(void);
 void Sound_StopNarratorPrepareToFire(BOOL fadeOut);
 void Sound_ShutdownNarratorPrepareToFire(void);
 BOOL Sound_IsNarratorPrepareToFirePlaying(void);
+BOOL Sound_InitSpeechHit(void);
+void Sound_PlaySpeechHit(void);
+void Sound_StopSpeechHit(BOOL fadeOut);
+void Sound_ShutdownSpeechHit(void);
 
 SoundError Sound_GetLastError(void);
 

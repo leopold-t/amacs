@@ -37,5 +37,6 @@ extern const UWORD RangePaletteRGB4[32];
 #define DRUMS_LOOP_FILE "audio/Yankee_Doodle_Drums.raw"
 #define HISCORE_FANFARE_FILE "audio/Four_Ruffles_and_Flourishes.raw"
 #define NARRATOR_PREPARE_TO_FIRE_FILE "audio/Speech_PrepareToFire.raw"
+#define SPEECH_HIT_FILE "audio/Speech_Hit.raw"
 
 #endif

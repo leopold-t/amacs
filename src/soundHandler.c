@@ -49,12 +49,14 @@ static Sample gTitleMusic = {NULL, 0};
 static Sample gSpeechLoop = {NULL, 0};
 static Sample gHiScoreFanfare = {NULL, 0};
 static Sample gNarratorPrepareToFire = {NULL, 0};
+static Sample gSpeechHit = {NULL, 0};
 
 static BOOL gSoundInited = FALSE;
 static BOOL gTitleMusicInited = FALSE;
 static BOOL gSpeechLoopInited = FALSE;
 static BOOL gHiScoreFanfareInited = FALSE;
 static BOOL gNarratorPrepareToFireInited = FALSE;
+static BOOL gSpeechHitInited = FALSE;
 static BOOL gSpeechVoiceInited = FALSE;
 static BOOL gDrumsVoiceInited = FALSE;
 static BOOL gSpeechLoopEnabled = FALSE;
@@ -696,6 +698,74 @@ BOOL Sound_IsNarratorPrepareToFirePlaying(void) {
     return gSpeechVoice.playing;
 }
 
+
+BOOL Sound_InitSpeechHit(void) {
+    if (gSpeechHitInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gLastError = SOUND_OK;
+
+    if (!LoadSample(SPEECH_HIT_FILE, &gSpeechHit)) {
+        return FALSE;
+    }
+
+    if (!EnsureSpeechVoice()) {
+        FreeSample(&gSpeechHit);
+        return FALSE;
+    }
+
+    gSpeechHitInited = TRUE;
+    return TRUE;
+}
+
+void Sound_PlaySpeechHit(void) {
+    if (!gSpeechHitInited) {
+        if (!Sound_InitSpeechHit()) {
+            return;
+        }
+    }
+
+    if (!EnsureSpeechVoice()) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    StartVoiceSample(&gSpeechVoice, &gSpeechHit, SOUND_22KHZ_PERIOD, 64, 1);
+}
+
+void Sound_StopSpeechHit(BOOL fadeOut) {
+    (void)fadeOut;
+
+    if (!gSpeechHitInited) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    ReleaseSpeechVoiceIfIdle();
+}
+
+void Sound_ShutdownSpeechHit(void) {
+    if (!gSpeechHitInited) {
+        return;
+    }
+
+    Sound_StopSpeechHit(FALSE);
+    FreeSample(&gSpeechHit);
+    gSpeechHitInited = FALSE;
+}
+
 SoundError Sound_GetLastError(void) {
     return gLastError;
 }
@@ -793,6 +863,7 @@ void Sound_Update(void) {
 
     gHitPending = FALSE;
     StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, HIT_VOLUME, HIT_CYCLES);
+        Sound_PlaySpeechHit();
 }
 
 void Sound_SetPaused(BOOL paused) {
@@ -865,5 +936,6 @@ void Sound_PlayHit(UWORD delayTicks) {
     if (delayTicks == 0) {
         gHitPending = FALSE;
         StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, HIT_VOLUME, HIT_CYCLES);
+        Sound_PlaySpeechHit();
     }
 }
