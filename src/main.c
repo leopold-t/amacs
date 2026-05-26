@@ -2634,8 +2634,8 @@ show_title:
 
     Sound_StopTitleMusic(TRUE);
 
-    if (Sound_InitAmbientLoop()) {
-        Sound_PlayAmbientLoop();
+    if (Sound_InitSpeechLoop()) {
+        Sound_PlaySpeechLoop();
     }
 
     if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32, trainingInfoPalette, 32)) {
@@ -2723,7 +2723,8 @@ show_title:
             }
 
             /* Enter RANGE */
-            Sound_StopAmbientLoop(TRUE);
+            Sound_StopSpeechLoop(TRUE);
+            Sound_PlayNarratorPrepareToFire();
 
             if (!Gfx_CrossFadeToImage(RANGE_FILE, currentLoPal, 32, rangePalette, 32)) {
                 goto fail;
@@ -2789,9 +2790,11 @@ show_title:
 
 fail:
     Sound_StopHiScoreFanfare(FALSE);
-    Sound_StopAmbientLoop(FALSE);
-    Sound_ShutdownAmbientLoop();
+    Sound_StopNarratorPrepareToFire(FALSE);
+    Sound_StopSpeechLoop(FALSE);
+    Sound_ShutdownSpeechLoop();
     Sound_ShutdownHiScoreFanfare();
+    Sound_ShutdownNarratorPrepareToFire();
     Sound_StopTitleMusic(FALSE);
     Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();
@@ -2802,9 +2805,11 @@ fail:
 
 exit_ok:
     Sound_StopHiScoreFanfare(FALSE);
-    Sound_StopAmbientLoop(FALSE);
-    Sound_ShutdownAmbientLoop();
+    Sound_StopNarratorPrepareToFire(FALSE);
+    Sound_StopSpeechLoop(FALSE);
+    Sound_ShutdownSpeechLoop();
     Sound_ShutdownHiScoreFanfare();
+    Sound_ShutdownNarratorPrepareToFire();
     Sound_StopTitleMusic(FALSE);
     Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();

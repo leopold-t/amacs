@@ -27,17 +27,23 @@ void Sound_StopTitleMusic(BOOL fadeOut);
 void Sound_ShutdownTitleMusic(void);
 BOOL Sound_IsTitleMusicPlaying(void);
 
-BOOL Sound_InitAmbientLoop(void);
-void Sound_PlayAmbientLoop(void);
-void Sound_StopAmbientLoop(BOOL fadeOut);
-void Sound_ShutdownAmbientLoop(void);
-BOOL Sound_IsAmbientLoopPlaying(void);
+BOOL Sound_InitSpeechLoop(void);
+void Sound_PlaySpeechLoop(void);
+void Sound_StopSpeechLoop(BOOL fadeOut);
+void Sound_ShutdownSpeechLoop(void);
+BOOL Sound_IsSpeechLoopPlaying(void);
 
 BOOL Sound_InitHiScoreFanfare(void);
 void Sound_PlayHiScoreFanfare(void);
 void Sound_StopHiScoreFanfare(BOOL fadeOut);
 void Sound_ShutdownHiScoreFanfare(void);
 BOOL Sound_IsHiScoreFanfarePlaying(void);
+
+BOOL Sound_InitNarratorPrepareToFire(void);
+void Sound_PlayNarratorPrepareToFire(void);
+void Sound_StopNarratorPrepareToFire(BOOL fadeOut);
+void Sound_ShutdownNarratorPrepareToFire(void);
+BOOL Sound_IsNarratorPrepareToFirePlaying(void);
 
 SoundError Sound_GetLastError(void);
 
