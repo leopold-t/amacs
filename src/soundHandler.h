@@ -52,6 +52,18 @@ BOOL Sound_InitSpeechExcellent(void);
 void Sound_PlaySpeechExcellent(void);
 void Sound_StopSpeechExcellent(BOOL fadeOut);
 void Sound_ShutdownSpeechExcellent(void);
+BOOL Sound_InitSpeechSuperb(void);
+void Sound_PlaySpeechSuperb(void);
+void Sound_StopSpeechSuperb(BOOL fadeOut);
+void Sound_ShutdownSpeechSuperb(void);
+BOOL Sound_InitSpeechWellDone(void);
+void Sound_PlaySpeechWellDone(void);
+void Sound_StopSpeechWellDone(BOOL fadeOut);
+void Sound_ShutdownSpeechWellDone(void);
+BOOL Sound_InitSpeechUnacceptable(void);
+void Sound_PlaySpeechUnacceptable(void);
+void Sound_StopSpeechUnacceptable(BOOL fadeOut);
+void Sound_ShutdownSpeechUnacceptable(void);
 
 SoundError Sound_GetLastError(void);
 

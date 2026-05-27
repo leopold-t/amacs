@@ -1852,7 +1852,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     UWORD perfTotal;
     WORD tableY;
     WaitResult waitResult;
-    BOOL excellentPlayed = FALSE;
+    BOOL rankSpeechPlayed = FALSE;
 
     memset(&summaryBM, 0, sizeof(summaryBM));
     memset(&summaryRP, 0, sizeof(summaryRP));
@@ -2109,9 +2109,17 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             summaryVisible = TRUE;
         }
 
-        if (stepIndex >= 6 && !excellentPlayed && acc >= 90) {
-            Sound_PlaySpeechExcellent();
-            excellentPlayed = TRUE;
+        if (stepIndex >= 6 && !rankSpeechPlayed) {
+            if (acc >= 90) {
+                Sound_PlaySpeechExcellent();
+            } else if (acc >= 75) {
+                Sound_PlaySpeechSuperb();
+            } else if (acc >= 56) {
+                Sound_PlaySpeechWellDone();
+            } else {
+                Sound_PlaySpeechUnacceptable();
+            }
+            rankSpeechPlayed = TRUE;
         }
 
         waitResult = WaitForAdvanceOnly();
@@ -2803,6 +2811,9 @@ fail:
     Sound_ShutdownNarratorPrepareToFire();
     Sound_ShutdownSpeechHit();
     Sound_ShutdownSpeechExcellent();
+    Sound_ShutdownSpeechSuperb();
+    Sound_ShutdownSpeechWellDone();
+    Sound_ShutdownSpeechUnacceptable();
     Sound_StopTitleMusic(FALSE);
     Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();
@@ -2820,6 +2831,9 @@ exit_ok:
     Sound_ShutdownNarratorPrepareToFire();
     Sound_ShutdownSpeechHit();
     Sound_ShutdownSpeechExcellent();
+    Sound_ShutdownSpeechSuperb();
+    Sound_ShutdownSpeechWellDone();
+    Sound_ShutdownSpeechUnacceptable();
     Sound_StopTitleMusic(FALSE);
     Sound_ShutdownTitleMusic();
     Gfx_CloseScreenAndWindow();

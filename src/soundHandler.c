@@ -51,6 +51,9 @@ static Sample gHiScoreFanfare = {NULL, 0};
 static Sample gNarratorPrepareToFire = {NULL, 0};
 static Sample gSpeechHit = {NULL, 0};
 static Sample gSpeechExcellent = {NULL, 0};
+static Sample gSpeechSuperb = {NULL, 0};
+static Sample gSpeechWellDone = {NULL, 0};
+static Sample gSpeechUnacceptable = {NULL, 0};
 
 static BOOL gSoundInited = FALSE;
 static BOOL gTitleMusicInited = FALSE;
@@ -59,6 +62,9 @@ static BOOL gHiScoreFanfareInited = FALSE;
 static BOOL gNarratorPrepareToFireInited = FALSE;
 static BOOL gSpeechHitInited = FALSE;
 static BOOL gSpeechExcellentInited = FALSE;
+static BOOL gSpeechSuperbInited = FALSE;
+static BOOL gSpeechWellDoneInited = FALSE;
+static BOOL gSpeechUnacceptableInited = FALSE;
 static BOOL gSpeechVoiceInited = FALSE;
 static BOOL gDrumsVoiceInited = FALSE;
 static BOOL gSpeechLoopEnabled = FALSE;
@@ -834,6 +840,208 @@ void Sound_ShutdownSpeechExcellent(void) {
     Sound_StopSpeechExcellent(FALSE);
     FreeSample(&gSpeechExcellent);
     gSpeechExcellentInited = FALSE;
+}
+
+
+BOOL Sound_InitSpeechSuperb(void) {
+    if (gSpeechSuperbInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gLastError = SOUND_OK;
+
+    if (!LoadSample(SPEECH_SUPERB_FILE, &gSpeechSuperb)) {
+        return FALSE;
+    }
+
+    if (!EnsureSpeechVoice()) {
+        FreeSample(&gSpeechSuperb);
+        return FALSE;
+    }
+
+    gSpeechSuperbInited = TRUE;
+    return TRUE;
+}
+
+void Sound_PlaySpeechSuperb(void) {
+    if (!gSpeechSuperbInited) {
+        if (!Sound_InitSpeechSuperb()) {
+            return;
+        }
+    }
+
+    if (!EnsureSpeechVoice()) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    StartVoiceSample(&gSpeechVoice, &gSpeechSuperb, SOUND_22KHZ_PERIOD, 64, 1);
+}
+
+void Sound_StopSpeechSuperb(BOOL fadeOut) {
+    (void)fadeOut;
+
+    if (!gSpeechSuperbInited) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    ReleaseSpeechVoiceIfIdle();
+}
+
+void Sound_ShutdownSpeechSuperb(void) {
+    if (!gSpeechSuperbInited) {
+        return;
+    }
+
+    Sound_StopSpeechSuperb(FALSE);
+    FreeSample(&gSpeechSuperb);
+    gSpeechSuperbInited = FALSE;
+}
+
+BOOL Sound_InitSpeechWellDone(void) {
+    if (gSpeechWellDoneInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gLastError = SOUND_OK;
+
+    if (!LoadSample(SPEECH_WELL_DONE_FILE, &gSpeechWellDone)) {
+        return FALSE;
+    }
+
+    if (!EnsureSpeechVoice()) {
+        FreeSample(&gSpeechWellDone);
+        return FALSE;
+    }
+
+    gSpeechWellDoneInited = TRUE;
+    return TRUE;
+}
+
+void Sound_PlaySpeechWellDone(void) {
+    if (!gSpeechWellDoneInited) {
+        if (!Sound_InitSpeechWellDone()) {
+            return;
+        }
+    }
+
+    if (!EnsureSpeechVoice()) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    StartVoiceSample(&gSpeechVoice, &gSpeechWellDone, SOUND_22KHZ_PERIOD, 64, 1);
+}
+
+void Sound_StopSpeechWellDone(BOOL fadeOut) {
+    (void)fadeOut;
+
+    if (!gSpeechWellDoneInited) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    ReleaseSpeechVoiceIfIdle();
+}
+
+void Sound_ShutdownSpeechWellDone(void) {
+    if (!gSpeechWellDoneInited) {
+        return;
+    }
+
+    Sound_StopSpeechWellDone(FALSE);
+    FreeSample(&gSpeechWellDone);
+    gSpeechWellDoneInited = FALSE;
+}
+
+BOOL Sound_InitSpeechUnacceptable(void) {
+    if (gSpeechUnacceptableInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gLastError = SOUND_OK;
+
+    if (!LoadSample(SPEECH_UNACCEPTABLE_FILE, &gSpeechUnacceptable)) {
+        return FALSE;
+    }
+
+    if (!EnsureSpeechVoice()) {
+        FreeSample(&gSpeechUnacceptable);
+        return FALSE;
+    }
+
+    gSpeechUnacceptableInited = TRUE;
+    return TRUE;
+}
+
+void Sound_PlaySpeechUnacceptable(void) {
+    if (!gSpeechUnacceptableInited) {
+        if (!Sound_InitSpeechUnacceptable()) {
+            return;
+        }
+    }
+
+    if (!EnsureSpeechVoice()) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    StartVoiceSample(&gSpeechVoice, &gSpeechUnacceptable, SOUND_22KHZ_PERIOD, 64, 1);
+}
+
+void Sound_StopSpeechUnacceptable(BOOL fadeOut) {
+    (void)fadeOut;
+
+    if (!gSpeechUnacceptableInited) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    ReleaseSpeechVoiceIfIdle();
+}
+
+void Sound_ShutdownSpeechUnacceptable(void) {
+    if (!gSpeechUnacceptableInited) {
+        return;
+    }
+
+    Sound_StopSpeechUnacceptable(FALSE);
+    FreeSample(&gSpeechUnacceptable);
+    gSpeechUnacceptableInited = FALSE;
 }
 
 SoundError Sound_GetLastError(void) {
