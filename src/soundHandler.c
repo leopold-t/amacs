@@ -288,19 +288,6 @@ static BOOL EnsureDrumsVoice(void) {
     return TRUE;
 }
 
-static void ReleaseSpeechVoiceIfIdle(void) {
-    if (!gSpeechVoiceInited) {
-        return;
-    }
-
-    ReapVoice(&gSpeechVoice);
-
-    if (!gSpeechVoice.playing) {
-        CloseVoice(&gSpeechVoice);
-        gSpeechVoiceInited = FALSE;
-    }
-}
-
 static void StartVoiceSample(AudioVoice *voice, const Sample *sample, UWORD period, UBYTE volume,
                              UBYTE cycles) {
     if (!voice || !voice->io || !sample || !sample->data || sample->length == 0) {
@@ -590,8 +577,6 @@ void Sound_StopHiScoreFanfare(BOOL fadeOut) {
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
     }
-
-    ReleaseSpeechVoiceIfIdle();
 }
 
 void Sound_ShutdownHiScoreFanfare(void) {
@@ -676,8 +661,6 @@ void Sound_StopNarratorPrepareToFire(BOOL fadeOut) {
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
     }
-
-    ReleaseSpeechVoiceIfIdle();
 }
 
 void Sound_ShutdownNarratorPrepareToFire(void) {
@@ -706,7 +689,6 @@ BOOL Sound_IsNarratorPrepareToFirePlaying(void) {
     return gSpeechVoice.playing;
 }
 
-
 BOOL Sound_InitSpeechHit(void) {
     if (gSpeechHitInited) {
         gLastError = SOUND_OK;
@@ -719,9 +701,13 @@ BOOL Sound_InitSpeechHit(void) {
         return FALSE;
     }
 
-    if (!EnsureSpeechVoice()) {
-        FreeSample(&gSpeechHit);
-        return FALSE;
+    if (!gSpeechVoiceInited) {
+        if (!InitVoice(&gSpeechVoice)) {
+            FreeSample(&gSpeechHit);
+            return FALSE;
+        }
+
+        gSpeechVoiceInited = TRUE;
     }
 
     gSpeechHitInited = TRUE;
@@ -733,10 +719,6 @@ void Sound_PlaySpeechHit(void) {
         if (!Sound_InitSpeechHit()) {
             return;
         }
-    }
-
-    if (!EnsureSpeechVoice()) {
-        return;
     }
 
     ReapVoice(&gSpeechVoice);
@@ -760,8 +742,6 @@ void Sound_StopSpeechHit(BOOL fadeOut) {
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
     }
-
-    ReleaseSpeechVoiceIfIdle();
 }
 
 void Sound_ShutdownSpeechHit(void) {
@@ -773,7 +753,6 @@ void Sound_ShutdownSpeechHit(void) {
     FreeSample(&gSpeechHit);
     gSpeechHitInited = FALSE;
 }
-
 
 BOOL Sound_InitSpeechExcellent(void) {
     if (gSpeechExcellentInited) {
@@ -828,8 +807,6 @@ void Sound_StopSpeechExcellent(BOOL fadeOut) {
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
     }
-
-    ReleaseSpeechVoiceIfIdle();
 }
 
 void Sound_ShutdownSpeechExcellent(void) {
@@ -841,7 +818,6 @@ void Sound_ShutdownSpeechExcellent(void) {
     FreeSample(&gSpeechExcellent);
     gSpeechExcellentInited = FALSE;
 }
-
 
 BOOL Sound_InitSpeechSuperb(void) {
     if (gSpeechSuperbInited) {
@@ -896,8 +872,6 @@ void Sound_StopSpeechSuperb(BOOL fadeOut) {
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
     }
-
-    ReleaseSpeechVoiceIfIdle();
 }
 
 void Sound_ShutdownSpeechSuperb(void) {
@@ -963,8 +937,6 @@ void Sound_StopSpeechWellDone(BOOL fadeOut) {
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
     }
-
-    ReleaseSpeechVoiceIfIdle();
 }
 
 void Sound_ShutdownSpeechWellDone(void) {
@@ -1030,8 +1002,6 @@ void Sound_StopSpeechUnacceptable(BOOL fadeOut) {
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
     }
-
-    ReleaseSpeechVoiceIfIdle();
 }
 
 void Sound_ShutdownSpeechUnacceptable(void) {
@@ -1112,7 +1082,6 @@ void Sound_Update(void) {
     }
 
     if (gSpeechVoiceInited) {
-        ReleaseSpeechVoiceIfIdle();
     }
 
     if (gSoundPaused) {
@@ -1141,7 +1110,7 @@ void Sound_Update(void) {
 
     gHitPending = FALSE;
     StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, HIT_VOLUME, HIT_CYCLES);
-        Sound_PlaySpeechHit();
+    Sound_PlaySpeechHit();
 }
 
 void Sound_SetPaused(BOOL paused) {
