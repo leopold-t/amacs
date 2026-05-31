@@ -631,6 +631,7 @@ static const SummaryPoint gSummaryMap300ToScoringEType[T300_H][T300_W] = {
 static void DrainWindowMessages(void);
 static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc);
 static WaitResult WaitForAdvanceNoTimeout(void);
+static void WaitForAdvanceRelease(void);
 static BOOL ShowNewHiScoreEntryScreen(UWORD score);
 static BOOL HiScore_InsertIfQualified(UWORD score, const char *name);
 static BOOL HiScore_IsQualified(UWORD score);
@@ -1742,7 +1743,10 @@ static void DrawSummaryHitMarks300(struct RastPort *rp, WORD targetX, WORD targe
 }
 
 static WaitResult WaitForAdvanceOnly(void) {
-    DrainWindowMessages();
+    /* Summary pages must require a fresh press; otherwise a held Fire can
+     * advance through two pages before the player releases the button.
+     */
+    WaitForAdvanceRelease();
 
     for (;;) {
         BOOL adv = FALSE, esc = FALSE;
@@ -1753,6 +1757,7 @@ static WaitResult WaitForAdvanceOnly(void) {
         }
 
         if (adv) {
+            WaitForAdvanceRelease();
             return WAIT_ADVANCE;
         }
 
@@ -2230,10 +2235,7 @@ static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack, BOOL playFanfare)
     }
 
     /* Require a fresh press on the placeholder screen. */
-    while (IsJoystickFirePressed()) {
-        WaitTOF();
-    }
-    DrainWindowMessages();
+    WaitForAdvanceRelease();
 
     waitResult = WaitForAdvanceNoTimeout();
     Sound_StopHiScoreFanfare(FALSE);
@@ -2252,6 +2254,8 @@ static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack, BOOL playFanfare)
 
 /* ---------- Helpers ---------- */
 
+static BOOL gAdvanceMouseDown = FALSE;
+
 static void DrainWindowMessages(void) {
     struct Window *win = Gfx_GetWindow();
     struct IntuiMessage *msg;
@@ -2261,6 +2265,14 @@ static void DrainWindowMessages(void) {
     }
 
     while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+        if (msg->Class == IDCMP_MOUSEBUTTONS) {
+            if (msg->Code == SELECTDOWN) {
+                gAdvanceMouseDown = TRUE;
+            } else if (msg->Code == SELECTUP) {
+                gAdvanceMouseDown = FALSE;
+            }
+        }
+
         ReplyMsg((struct Message *)msg);
     }
 }
@@ -2291,8 +2303,13 @@ static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
                 *outEsc = TRUE; /* Amiga+Q */
             }
 
-            if (msg->Class == IDCMP_MOUSEBUTTONS && msg->Code == SELECTDOWN) {
-                *outAdvance = TRUE; /* LMB */
+            if (msg->Class == IDCMP_MOUSEBUTTONS) {
+                if (msg->Code == SELECTDOWN) {
+                    gAdvanceMouseDown = TRUE;
+                    *outAdvance = TRUE; /* LMB */
+                } else if (msg->Code == SELECTUP) {
+                    gAdvanceMouseDown = FALSE;
+                }
             }
 
             ReplyMsg((struct Message *)msg);
@@ -2303,6 +2320,21 @@ static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
     if (IsJoystickFirePressed()) {
         *outAdvance = TRUE;
     }
+}
+
+static void WaitForAdvanceRelease(void) {
+    for (;;) {
+        DrainWindowMessages();
+
+        if (!IsJoystickFirePressed() && !gAdvanceMouseDown) {
+            break;
+        }
+
+        Sound_Update();
+        WaitTOF();
+    }
+
+    DrainWindowMessages();
 }
 
 /*
@@ -2328,14 +2360,7 @@ static WaitResult WaitForAdvanceOrTimeout(int seconds) {
         }
 
         if (adv) {
-            /* Debounce Fire (mouse click is one-shot anyway). */
-            WaitTOF();
-            WaitTOF();
-            while (IsJoystickFirePressed()) {
-                WaitTOF();
-            }
-
-            DrainWindowMessages();
+            WaitForAdvanceRelease();
             return WAIT_ADVANCE;
         }
 
@@ -2359,13 +2384,7 @@ static WaitResult WaitForAdvanceNoTimeout(void) {
         }
 
         if (adv) {
-            WaitTOF();
-            WaitTOF();
-            while (IsJoystickFirePressed()) {
-                WaitTOF();
-            }
-
-            DrainWindowMessages();
+            WaitForAdvanceRelease();
             return WAIT_ADVANCE;
         }
 
