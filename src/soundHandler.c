@@ -59,6 +59,9 @@ static BOOL gSoundInited = FALSE;
 static BOOL gTitleMusicInited = FALSE;
 static BOOL gSpeechLoopInited = FALSE;
 static BOOL gHiScoreFanfareInited = FALSE;
+static BOOL gTitleMusicAvailable = FALSE;
+static BOOL gSpeechLoopAvailable = FALSE;
+static BOOL gHiScoreFanfareAvailable = FALSE;
 static BOOL gNarratorPrepareToFireInited = FALSE;
 static BOOL gSpeechHitInited = FALSE;
 static BOOL gSpeechExcellentInited = FALSE;
@@ -367,16 +370,17 @@ BOOL Sound_InitTitleMusic(void) {
     }
 
     gLastError = SOUND_OK;
+    gTitleMusicAvailable = FALSE;
 
     if (!LoadSample(TITLE_MUSIC_FILE, &gTitleMusic)) {
-        return FALSE;
+        /* Optional asset: missing title music must not block the game. */
+        gTitleMusicInited = TRUE;
+        gLastError = SOUND_OK;
+        return TRUE;
     }
 
-    if (!InitVoice(&gTitleVoice)) {
-        FreeSample(&gTitleMusic);
-        return FALSE;
-    }
-
+    /* Keep the sample in memory, but allocate the Paula channel only while playing. */
+    gTitleMusicAvailable = TRUE;
     gTitleMusicInited = TRUE;
     gLastError = SOUND_OK;
     return TRUE;
@@ -385,6 +389,16 @@ BOOL Sound_InitTitleMusic(void) {
 void Sound_PlayTitleMusic(void) {
     if (!gTitleMusicInited) {
         if (!Sound_InitTitleMusic()) {
+            return;
+        }
+    }
+
+    if (!gTitleMusicAvailable || !gTitleMusic.data || gTitleMusic.length == 0) {
+        return;
+    }
+
+    if (!gTitleVoice.io) {
+        if (!InitVoice(&gTitleVoice)) {
             return;
         }
     }
@@ -410,22 +424,29 @@ void Sound_StopTitleMusic(BOOL fadeOut) {
     if (gTitleVoice.playing) {
         StopVoice(&gTitleVoice);
     }
-}
 
-void Sound_ShutdownTitleMusic(void) {
-    if (!gTitleMusicInited) {
-        return;
+    /*
+     * Title music is optional and only needed while the title screen is active.
+     * Release both the Paula channel and the CHIP sample before entering later
+     * screens/range code, so a present title track cannot reduce runtime CHIP
+     * memory or leave CH2 in a stale state when other optional tracks are absent.
+     */
+    if (gTitleVoice.io) {
+        CloseVoice(&gTitleVoice);
     }
 
-    StopVoice(&gTitleVoice);
-    CloseVoice(&gTitleVoice);
     FreeSample(&gTitleMusic);
+    gTitleMusicAvailable = FALSE;
     gTitleMusicInited = FALSE;
     gLastError = SOUND_OK;
 }
 
+void Sound_ShutdownTitleMusic(void) {
+    Sound_StopTitleMusic(FALSE);
+}
+
 BOOL Sound_IsTitleMusicPlaying(void) {
-    if (!gTitleMusicInited) {
+    if (!gTitleMusicInited || !gTitleMusicAvailable || !gTitleVoice.io) {
         return FALSE;
     }
 
@@ -440,16 +461,18 @@ BOOL Sound_InitSpeechLoop(void) {
     }
 
     gLastError = SOUND_OK;
+    gSpeechLoopAvailable = FALSE;
 
     if (!LoadSample(DRUMS_LOOP_FILE, &gSpeechLoop)) {
-        return FALSE;
+        /* Optional asset: missing drums must not block the game. */
+        gSpeechLoopInited = TRUE;
+        gSpeechLoopEnabled = FALSE;
+        gLastError = SOUND_OK;
+        return TRUE;
     }
 
-    if (!EnsureDrumsVoice()) {
-        FreeSample(&gSpeechLoop);
-        return FALSE;
-    }
-
+    /* Optional loop: allocate CH0 only when playback is actually requested. */
+    gSpeechLoopAvailable = TRUE;
     gSpeechLoopInited = TRUE;
     gSpeechLoopEnabled = FALSE;
     gLastError = SOUND_OK;
@@ -461,6 +484,11 @@ void Sound_PlaySpeechLoop(void) {
         if (!Sound_InitSpeechLoop()) {
             return;
         }
+    }
+
+    if (!gSpeechLoopAvailable || !gSpeechLoop.data || gSpeechLoop.length == 0) {
+        gSpeechLoopEnabled = FALSE;
+        return;
     }
 
     if (!EnsureDrumsVoice()) {
@@ -479,41 +507,35 @@ void Sound_PlaySpeechLoop(void) {
 void Sound_StopSpeechLoop(BOOL fadeOut) {
     (void)fadeOut;
 
-    if (!gSpeechLoopInited) {
-        return;
-    }
-
     gSpeechLoopEnabled = FALSE;
-    ReapVoice(&gDrumsVoice);
-
-    if (gDrumsVoice.playing) {
-        StopVoice(&gDrumsVoice);
-    }
 
     if (gDrumsVoiceInited) {
+        ReapVoice(&gDrumsVoice);
+
+        if (gDrumsVoice.playing) {
+            StopVoice(&gDrumsVoice);
+        }
+
         CloseVoice(&gDrumsVoice);
         gDrumsVoiceInited = FALSE;
     }
-}
 
-void Sound_ShutdownSpeechLoop(void) {
-    if (!gSpeechLoopInited) {
-        return;
+    /* Drums are optional transition audio. Free the sample after use. */
+    if (gSpeechLoopInited) {
+        FreeSample(&gSpeechLoop);
+        gSpeechLoopAvailable = FALSE;
+        gSpeechLoopInited = FALSE;
     }
 
-    gSpeechLoopEnabled = FALSE;
-    StopVoice(&gDrumsVoice);
-    if (gDrumsVoiceInited) {
-        CloseVoice(&gDrumsVoice);
-        gDrumsVoiceInited = FALSE;
-    }
-    FreeSample(&gSpeechLoop);
-    gSpeechLoopInited = FALSE;
     gLastError = SOUND_OK;
 }
 
+void Sound_ShutdownSpeechLoop(void) {
+    Sound_StopSpeechLoop(FALSE);
+}
+
 BOOL Sound_IsSpeechLoopPlaying(void) {
-    if (!gSpeechLoopInited || !gDrumsVoiceInited) {
+    if (!gSpeechLoopInited || !gSpeechLoopAvailable || !gDrumsVoiceInited) {
         return FALSE;
     }
 
@@ -528,16 +550,17 @@ BOOL Sound_InitHiScoreFanfare(void) {
     }
 
     gLastError = SOUND_OK;
+    gHiScoreFanfareAvailable = FALSE;
 
     if (!LoadSample(HISCORE_FANFARE_FILE, &gHiScoreFanfare)) {
-        return FALSE;
+        /* Optional asset: missing hi-score fanfare must not block the game. */
+        gHiScoreFanfareInited = TRUE;
+        gLastError = SOUND_OK;
+        return TRUE;
     }
 
-    if (!EnsureSpeechVoice()) {
-        FreeSample(&gHiScoreFanfare);
-        return FALSE;
-    }
-
+    /* Optional fanfare: allocate CH3 only when playback is actually requested. */
+    gHiScoreFanfareAvailable = TRUE;
     gHiScoreFanfareInited = TRUE;
     gLastError = SOUND_OK;
     return TRUE;
@@ -548,6 +571,10 @@ void Sound_PlayHiScoreFanfare(void) {
         if (!Sound_InitHiScoreFanfare()) {
             return;
         }
+    }
+
+    if (!gHiScoreFanfareAvailable || !gHiScoreFanfare.data || gHiScoreFanfare.length == 0) {
+        return;
     }
 
     gSpeechLoopEnabled = FALSE;
@@ -568,36 +595,30 @@ void Sound_PlayHiScoreFanfare(void) {
 void Sound_StopHiScoreFanfare(BOOL fadeOut) {
     (void)fadeOut;
 
-    if (!gHiScoreFanfareInited) {
-        return;
+    if (gSpeechVoiceInited) {
+        ReapVoice(&gSpeechVoice);
+
+        if (gSpeechVoice.playing) {
+            StopVoice(&gSpeechVoice);
+        }
     }
 
-    ReapVoice(&gSpeechVoice);
-
-    if (gSpeechVoice.playing) {
-        StopVoice(&gSpeechVoice);
-    }
-}
-
-void Sound_ShutdownHiScoreFanfare(void) {
-    if (!gHiScoreFanfareInited) {
-        return;
-    }
-
-    Sound_StopHiScoreFanfare(FALSE);
-    FreeSample(&gHiScoreFanfare);
-    gHiScoreFanfareInited = FALSE;
-
-    if (!gSpeechLoopInited && !gNarratorPrepareToFireInited && gSpeechVoiceInited) {
-        CloseVoice(&gSpeechVoice);
-        gSpeechVoiceInited = FALSE;
+    /* Fanfare is optional transition audio. Free the sample after use. */
+    if (gHiScoreFanfareInited) {
+        FreeSample(&gHiScoreFanfare);
+        gHiScoreFanfareAvailable = FALSE;
+        gHiScoreFanfareInited = FALSE;
     }
 
     gLastError = SOUND_OK;
 }
 
+void Sound_ShutdownHiScoreFanfare(void) {
+    Sound_StopHiScoreFanfare(FALSE);
+}
+
 BOOL Sound_IsHiScoreFanfarePlaying(void) {
-    if (!gHiScoreFanfareInited) {
+    if (!gHiScoreFanfareInited || !gHiScoreFanfareAvailable || !gSpeechVoiceInited) {
         return FALSE;
     }
 
@@ -672,7 +693,7 @@ void Sound_ShutdownNarratorPrepareToFire(void) {
     FreeSample(&gNarratorPrepareToFire);
     gNarratorPrepareToFireInited = FALSE;
 
-    if (!gSpeechLoopInited && !gHiScoreFanfareInited && gSpeechVoiceInited) {
+    if ((!gSpeechLoopInited || !gSpeechLoopAvailable) && (!gHiScoreFanfareInited || !gHiScoreFanfareAvailable) && gSpeechVoiceInited) {
         CloseVoice(&gSpeechVoice);
         gSpeechVoiceInited = FALSE;
     }
@@ -1073,7 +1094,7 @@ void Sound_Shutdown(void) {
 void Sound_Update(void) {
     struct DateStamp now;
 
-    if (gSpeechLoopInited && gDrumsVoiceInited) {
+    if (gSpeechLoopInited && gSpeechLoopAvailable && gDrumsVoiceInited) {
         ReapVoice(&gDrumsVoice);
 
         if (!gSoundPaused && gSpeechLoopEnabled && !gDrumsVoice.playing) {
