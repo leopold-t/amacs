@@ -64,6 +64,7 @@ static BOOL gSpeechLoopAvailable = FALSE;
 static BOOL gHiScoreFanfareAvailable = FALSE;
 static BOOL gNarratorPrepareToFireInited = FALSE;
 static BOOL gSpeechHitInited = FALSE;
+static BOOL gSpeechHitAvailable = FALSE;
 static BOOL gSpeechExcellentInited = FALSE;
 static BOOL gSpeechSuperbInited = FALSE;
 static BOOL gSpeechWellDoneInited = FALSE;
@@ -516,15 +517,13 @@ void Sound_StopSpeechLoop(BOOL fadeOut) {
             StopVoice(&gDrumsVoice);
         }
 
+        /*
+         * DRUMS_LOOP_FILE is loaded once after leaving the title screen and
+         * kept in CHIP RAM.  Only the Paula channel is released here so CH0
+         * can be reused by shot samples on the firing range.
+         */
         CloseVoice(&gDrumsVoice);
         gDrumsVoiceInited = FALSE;
-    }
-
-    /* Drums are optional transition audio. Free the sample after use. */
-    if (gSpeechLoopInited) {
-        FreeSample(&gSpeechLoop);
-        gSpeechLoopAvailable = FALSE;
-        gSpeechLoopInited = FALSE;
     }
 
     gLastError = SOUND_OK;
@@ -532,6 +531,14 @@ void Sound_StopSpeechLoop(BOOL fadeOut) {
 
 void Sound_ShutdownSpeechLoop(void) {
     Sound_StopSpeechLoop(FALSE);
+
+    if (gSpeechLoopInited) {
+        FreeSample(&gSpeechLoop);
+        gSpeechLoopAvailable = FALSE;
+        gSpeechLoopInited = FALSE;
+    }
+
+    gLastError = SOUND_OK;
 }
 
 BOOL Sound_IsSpeechLoopPlaying(void) {
@@ -717,21 +724,34 @@ BOOL Sound_InitSpeechHit(void) {
     }
 
     gLastError = SOUND_OK;
+    gSpeechHitAvailable = FALSE;
 
+    /*
+     * Speech_Hit is a gameplay cue.  It must be preloaded before entering the
+     * firing range, just like Shot/TargetHit, so the first target hit never
+     * performs floppy I/O during active gameplay.
+     */
     if (!LoadSample(SPEECH_HIT_FILE, &gSpeechHit)) {
-        return FALSE;
+        /* Optional speech cue: remember the attempt to avoid retrying on hits. */
+        gSpeechHitInited = TRUE;
+        gLastError = SOUND_OK;
+        return TRUE;
     }
 
     if (!gSpeechVoiceInited) {
         if (!InitVoice(&gSpeechVoice)) {
             FreeSample(&gSpeechHit);
-            return FALSE;
+            gSpeechHitInited = TRUE;
+            gLastError = SOUND_OK;
+            return TRUE;
         }
 
         gSpeechVoiceInited = TRUE;
     }
 
+    gSpeechHitAvailable = TRUE;
     gSpeechHitInited = TRUE;
+    gLastError = SOUND_OK;
     return TRUE;
 }
 
@@ -740,6 +760,10 @@ void Sound_PlaySpeechHit(void) {
         if (!Sound_InitSpeechHit()) {
             return;
         }
+    }
+
+    if (!gSpeechHitAvailable || !gSpeechHit.data || gSpeechHit.length == 0 || !gSpeechVoiceInited) {
+        return;
     }
 
     ReapVoice(&gSpeechVoice);
@@ -772,6 +796,7 @@ void Sound_ShutdownSpeechHit(void) {
 
     Sound_StopSpeechHit(FALSE);
     FreeSample(&gSpeechHit);
+    gSpeechHitAvailable = FALSE;
     gSpeechHitInited = FALSE;
 }
 

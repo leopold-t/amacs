@@ -2746,6 +2746,14 @@ show_title:
                 for (int i = 0; i < 32; i++) {
                     currentLoPal[i] = nextLoPal[i];
                 }
+
+                /*
+                 * Speech_Hit is used during live gameplay.  Preload it on the
+                 * Performance screen so the first target hit does not trigger
+                 * floppy I/O and pause the firing range.
+                 */
+                Sound_InitSpeechHit();
+
                 {
                     WaitResult rr = WaitForAdvanceNoTimeout();
 
