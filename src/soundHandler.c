@@ -642,12 +642,17 @@ BOOL Sound_InitNarratorPrepareToFire(void) {
     gLastError = SOUND_OK;
 
     if (!LoadSample(NARRATOR_PREPARE_TO_FIRE_FILE, &gNarratorPrepareToFire)) {
-        return FALSE;
+        /* Optional narrator cue: remember the attempt to avoid floppy I/O on Fire. */
+        gNarratorPrepareToFireInited = TRUE;
+        gLastError = SOUND_OK;
+        return TRUE;
     }
 
     if (!EnsureSpeechVoice()) {
         FreeSample(&gNarratorPrepareToFire);
-        return FALSE;
+        gNarratorPrepareToFireInited = TRUE;
+        gLastError = SOUND_OK;
+        return TRUE;
     }
 
     gNarratorPrepareToFireInited = TRUE;
@@ -660,6 +665,10 @@ void Sound_PlayNarratorPrepareToFire(void) {
         if (!Sound_InitNarratorPrepareToFire()) {
             return;
         }
+    }
+
+    if (!gNarratorPrepareToFire.data || gNarratorPrepareToFire.length == 0) {
+        return;
     }
 
     gSpeechLoopEnabled = FALSE;
@@ -700,7 +709,11 @@ void Sound_ShutdownNarratorPrepareToFire(void) {
     FreeSample(&gNarratorPrepareToFire);
     gNarratorPrepareToFireInited = FALSE;
 
-    if ((!gSpeechLoopInited || !gSpeechLoopAvailable) && (!gHiScoreFanfareInited || !gHiScoreFanfareAvailable) && gSpeechVoiceInited) {
+    if ((!gSpeechLoopInited || !gSpeechLoopAvailable) &&
+        (!gHiScoreFanfareInited || !gHiScoreFanfareAvailable) &&
+        (!gSpeechHitInited || !gSpeechHitAvailable) &&
+        !gSpeechExcellentInited && !gSpeechSuperbInited && !gSpeechWellDoneInited &&
+        !gSpeechUnacceptableInited && gSpeechVoiceInited) {
         CloseVoice(&gSpeechVoice);
         gSpeechVoiceInited = FALSE;
     }

@@ -2411,6 +2411,9 @@ typedef struct TargetRangesBob {
     WORD bottomY;
 } TargetRangesBob;
 
+static TargetRangesBob gTargetRangesBobs[6];
+static BOOL gTargetRangesBobsLoaded = FALSE;
+
 static void DrawTargetRangesBobReveal(struct RastPort *rp, const TargetRangesBob *tb,
                                       UWORD revealTicks) {
     WORD risePx;
@@ -2501,9 +2504,31 @@ static BOOL LoadTargetRangesBobs(TargetRangesBob *targets) {
     return TRUE;
 }
 
+static BOOL PreloadTargetRangesBobs(void) {
+    if (gTargetRangesBobsLoaded) {
+        return TRUE;
+    }
+
+    memset(gTargetRangesBobs, 0, sizeof(gTargetRangesBobs));
+
+    if (!LoadTargetRangesBobs(gTargetRangesBobs)) {
+        return FALSE;
+    }
+
+    gTargetRangesBobsLoaded = TRUE;
+    return TRUE;
+}
+
+static void ShutdownTargetRangesBobs(void) {
+    if (!gTargetRangesBobsLoaded) {
+        return;
+    }
+
+    FreeTargetRangesBobs(gTargetRangesBobs, 6);
+    gTargetRangesBobsLoaded = FALSE;
+}
+
 static WaitResult WaitForTargetRangesAdvance(void) {
-    TargetRangesBob targets[6] = {0};
-    BOOL loaded = FALSE;
     UWORD delayTicks = 0;
     UWORD revealTicks = 0;
     BOOL inputEnabled = FALSE;
@@ -2517,11 +2542,12 @@ static WaitResult WaitForTargetRangesAdvance(void) {
 
     DrainWindowMessages();
 
-    if (!LoadTargetRangesBobs(targets)) {
-        return WAIT_ESC;
+    if (!gTargetRangesBobsLoaded) {
+        if (!PreloadTargetRangesBobs()) {
+            return WAIT_ESC;
+        }
     }
 
-    loaded = TRUE;
     rp = &screen->RastPort;
 
     for (;;) {
@@ -2535,7 +2561,7 @@ static WaitResult WaitForTargetRangesAdvance(void) {
                     revealTicks++;
 
                     for (i = 0; i < 6; i++) {
-                        DrawTargetRangesBobReveal(rp, &targets[i], revealTicks);
+                        DrawTargetRangesBobReveal(rp, &gTargetRangesBobs[i], revealTicks);
                     }
                 }
 
@@ -2548,10 +2574,6 @@ static WaitResult WaitForTargetRangesAdvance(void) {
         PollAdvanceAndEsc(&adv, &esc);
 
         if (esc) {
-            if (loaded) {
-                FreeTargetRangesBobs(targets, 6);
-            }
-
             return WAIT_ESC;
         }
 
@@ -2564,10 +2586,6 @@ static WaitResult WaitForTargetRangesAdvance(void) {
             }
 
             DrainWindowMessages();
-
-            if (loaded) {
-                FreeTargetRangesBobs(targets, 6);
-            }
 
             return WAIT_ADVANCE;
         }
@@ -2720,7 +2738,15 @@ show_title:
                     nextLoPal[i] = targetRangesPalette[i];
                 }
 
+                /* Preload all target BOBs before showing Target Ranges.
+                 * On floppy this avoids visible disk I/O during the reveal animation.
+                 */
+                if (!PreloadTargetRangesBobs()) {
+                    goto fail;
+                }
+
                 if (!Gfx_CrossFadeToImage(TARGET_RANGES_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                    ShutdownTargetRangesBobs();
                     goto fail;
                 }
 
@@ -2731,9 +2757,12 @@ show_title:
                     WaitResult rr = WaitForTargetRangesAdvance();
 
                     if (rr == WAIT_ESC) {
+                        ShutdownTargetRangesBobs();
                         goto exit_ok;
                     }
                 }
+
+                ShutdownTargetRangesBobs();
 
                 for (int i = 0; i < 32; i++) {
                     nextLoPal[i] = performancePalette[i];
@@ -2753,6 +2782,7 @@ show_title:
                  * floppy I/O and pause the firing range.
                  */
                 Sound_InitSpeechHit();
+                Sound_InitNarratorPrepareToFire();
 
                 {
                     WaitResult rr = WaitForAdvanceNoTimeout();
@@ -2830,6 +2860,7 @@ show_title:
     }
 
 fail:
+    ShutdownTargetRangesBobs();
     Sound_StopHiScoreFanfare(FALSE);
     Sound_StopNarratorPrepareToFire(FALSE);
     Sound_StopSpeechLoop(FALSE);
@@ -2850,6 +2881,7 @@ fail:
     return RETURN_FAIL;
 
 exit_ok:
+    ShutdownTargetRangesBobs();
     Sound_StopHiScoreFanfare(FALSE);
     Sound_StopNarratorPrepareToFire(FALSE);
     Sound_StopSpeechLoop(FALSE);
