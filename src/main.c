@@ -138,6 +138,25 @@ typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
 
 #define RAWKEY_Q 0x10
 
+/* ==================== DECLARATIONS ==================== */
+static void ShutdownTargetRangesBobs(void);
+extern void Sound_FullShutdown(void);
+static void CleanupAllResources(void);
+
+/* ==================== DEFINITIONS ==================== */
+static void CleanupAllResources(void) {
+    ShutdownTargetRangesBobs();
+    Sound_FullShutdown();
+
+    Gfx_CloseScreenAndWindow();
+    Gfx_CloseBlackScreen();
+    LevelManager_Shutdown();
+    Input_Shutdown();
+
+    WaitBlit();
+    SettleDisplay(5);
+}
+
 static BOOL IsAmigaQualifierMain(UWORD qualifier) {
     return (qualifier & (IEQUALIFIER_LCOMMAND | IEQUALIFIER_RCOMMAND)) ? TRUE : FALSE;
 }
@@ -884,8 +903,10 @@ static UWORD CountHitMapMain(const UWORD *map, UWORD width, UWORD height) {
     }
 
     cells = (ULONG)width * (ULONG)height;
+
     for (i = 0; i < cells; i++) {
         total += map[i];
+
         if (total > 65535) {
             return 65535;
         }
@@ -944,6 +965,7 @@ static UWORD AppendPaddedUnsignedMain(char *buf, UWORD pos, UWORD value, UWORD w
     }
 
     zeroCount = (count < width) ? (UWORD)(width - count) : 0;
+
     while (zeroCount > 0) {
         buf[pos++] = '0';
         zeroCount--;
@@ -1051,6 +1073,7 @@ static void HiScore_SetEntry(UWORD index, const char *name, UWORD score) {
     for (i = 0; i < HISCORE_NAME_LEN; i++) {
         gHiScores[index].name[i] = ' ';
     }
+
     gHiScores[index].name[HISCORE_NAME_LEN] = '\0';
 
     if (name) {
@@ -1075,6 +1098,7 @@ static void HiScore_TrimLineEnd(char *line) {
             line[i] = '\0';
             return;
         }
+
         i++;
     }
 }
@@ -1095,9 +1119,11 @@ static BOOL HiScore_ParseScoreLine(char *line, char **outName, UWORD *outScore) 
     while (line[pos] >= '0' && line[pos] <= '9') {
         hasDigit = TRUE;
         score = (score * 10) + (ULONG)(line[pos] - '0');
+
         if (score > 65535) {
             return FALSE;
         }
+
         pos++;
     }
 
@@ -1140,9 +1166,10 @@ static void HiScore_LoadOnce(void) {
     if (gHiScoreLoadAttempted) {
         return;
     }
-    gHiScoreLoadAttempted = TRUE;
 
+    gHiScoreLoadAttempted = TRUE;
     fh = fopen(HISCORE_FILE_NAME, "r");
+
     if (!fh) {
         HiScore_ResetToDefaults();
         return;
@@ -1155,6 +1182,7 @@ static void HiScore_LoadOnce(void) {
     }
 
     HiScore_TrimLineEnd(line);
+
     if (strcmp(line, HISCORE_FILE_HEADER) != 0) {
         fclose(fh);
         HiScore_ResetToDefaults();
@@ -1168,7 +1196,6 @@ static void HiScore_LoadOnce(void) {
     while (loaded < HISCORE_ENTRY_COUNT && fgets(line, sizeof(line), fh)) {
         char *name = NULL;
         UWORD score = 0;
-
         HiScore_TrimLineEnd(line);
 
         if (!HiScore_ParseScoreLine(line, &name, &score)) {
@@ -1180,12 +1207,14 @@ static void HiScore_LoadOnce(void) {
         for (i = 0; i < HISCORE_NAME_LEN; i++) {
             loadedScores[loaded].name[i] = ' ';
         }
+
         loadedScores[loaded].name[HISCORE_NAME_LEN] = '\0';
 
         for (i = 0; i < HISCORE_NAME_LEN && name[i] != '\0' && name[i] != '\n' && name[i] != '\r';
              i++) {
             loadedScores[loaded].name[i] = name[i];
         }
+
         loadedScores[loaded].score = score;
         loaded++;
     }
@@ -1222,8 +1251,8 @@ static UWORD HiScore_NameLengthForSave(const char *name) {
 static BOOL HiScore_Save(void) {
     FILE *fh;
     UWORD i;
-
     fh = fopen(HISCORE_FILE_NAME, "w");
+
     if (!fh) {
         return FALSE;
     }
@@ -1309,7 +1338,6 @@ static BOOL HiScore_InsertIfQualified(UWORD score, const char *name) {
     }
 
     HiScore_SetEntry((UWORD)insertAt, name, score);
-
     return TRUE;
 }
 
@@ -1493,8 +1521,8 @@ static BOOL ShowNewHiScoreEntryScreen(UWORD score) {
     name[0] = '\0';
 
     Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
-
     scr = Gfx_GetScreen();
+
     if (!scr || !scr->RastPort.BitMap) {
         return FALSE;
     }
@@ -1525,6 +1553,7 @@ static BOOL ShowNewHiScoreEntryScreen(UWORD score) {
             if (font) {
                 CloseFont(font);
             }
+
             return FALSE;
         }
 
@@ -1532,15 +1561,18 @@ static BOOL ShowNewHiScoreEntryScreen(UWORD score) {
             if (len == 0) {
                 static const char fallback[] = "PLAYER";
                 UWORD i;
+
                 for (i = 0; fallback[i] != '\0' && i < HISCORE_NAME_LEN; i++) {
                     name[i] = fallback[i];
                 }
+
                 name[i] = '\0';
             }
 
             if (HiScore_InsertIfQualified(score, name)) {
                 gHiScoreSaveFailed = HiScore_Save() ? FALSE : TRUE;
             }
+
             break;
         }
 
@@ -1659,8 +1691,8 @@ static void DrawSummaryHitMarks100(struct RastPort *rp, WORD targetX, WORD targe
     UWORD x;
     UWORD y;
     const SummaryPoint *point;
-
     hitMap = TargetScoring_GetHitMap100(&width, &height);
+
     if (!rp || !hitMap) {
         return;
     }
@@ -1787,6 +1819,7 @@ static BOOL InitSummaryBackBuffer(struct BitMap *bm, struct RastPort *rp, UWORD 
                     bm->Planes[q] = NULL;
                 }
             }
+
             return FALSE;
         }
     }
@@ -1884,6 +1917,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     if (!InitSummaryBackBuffer(&summaryBM, &summaryRP, LO_WIDTH, LO_HEIGHT, summaryDepth)) {
         return FALSE;
     }
+
     summaryBufferReady = TRUE;
 
     if (Bob_LoadRawAndMask(&scoringFTypeBob, SUMMARY_SCORING_FTYPE_RAW, SUMMARY_SCORING_FTYPE_MASK,
@@ -2124,10 +2158,12 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             } else {
                 Sound_PlaySpeechUnacceptable();
             }
+
             rankSpeechPlayed = TRUE;
         }
 
         waitResult = WaitForAdvanceOnly();
+
         if (waitResult == WAIT_ESC) {
             if (font)
                 CloseFont(font);
@@ -2170,6 +2206,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             if (!ShowNewHiScoreEntryScreen(totalScore)) {
                 return FALSE;
             }
+
             alreadyBlack = TRUE;
             playFanfare = TRUE;
         }
@@ -2224,6 +2261,7 @@ static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack, BOOL playFanfare)
             DrawHiScoreSaveErrorOverlay(rp, font);
             gHiScoreSaveFailed = FALSE;
         }
+
         CloseFont(font);
     }
 
@@ -2253,7 +2291,6 @@ static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack, BOOL playFanfare)
 }
 
 /* ---------- Helpers ---------- */
-
 static BOOL gAdvanceMouseDown = FALSE;
 
 static void DrainWindowMessages(void) {
@@ -2347,12 +2384,10 @@ static void WaitForAdvanceRelease(void) {
  */
 static WaitResult WaitForAdvanceOrTimeout(int seconds) {
     LONG ticks = (LONG)seconds * TICKS_PER_SEC;
-
     DrainWindowMessages();
 
     while (ticks-- > 0) {
         BOOL adv = FALSE, esc = FALSE;
-
         PollAdvanceAndEsc(&adv, &esc);
 
         if (esc) {
@@ -2396,6 +2431,7 @@ static WaitResult WaitForAdvanceNoTimeout(void) {
 /* Check if double buffering is safe on this system (graphics.library >= 39, Kick 3.0+) */
 static BOOL UseDoubleBuffering(void) {
     struct Library *GfxBase = OpenLibrary("graphics.library", 0);
+
     if (!GfxBase)
         return FALSE;
 
@@ -2586,7 +2622,6 @@ static WaitResult WaitForTargetRangesAdvance(void) {
             }
 
             DrainWindowMessages();
-
             return WAIT_ADVANCE;
         }
 
@@ -2598,7 +2633,6 @@ static WaitResult WaitForTargetRangesAdvance(void) {
 /* ------------------------------------------------------------------ */
 /*                            MAIN                                    */
 /* ------------------------------------------------------------------ */
-
 typedef enum { ATTR_TRAINING_INFO = 0, ATTR_FUNDAMENTALS } AttractScreen;
 
 int main(void) {
@@ -2841,7 +2875,6 @@ show_title:
             if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, currentLoPal, 32, nextLoPal, 32)) {
                 goto fail;
             }
-
         } else {
             attr = ATTR_TRAINING_INFO;
 
@@ -2860,44 +2893,10 @@ show_title:
     }
 
 fail:
-    ShutdownTargetRangesBobs();
-    Sound_StopHiScoreFanfare(FALSE);
-    Sound_StopNarratorPrepareToFire(FALSE);
-    Sound_StopSpeechLoop(FALSE);
-    Sound_ShutdownSpeechLoop();
-    Sound_ShutdownHiScoreFanfare();
-    Sound_ShutdownNarratorPrepareToFire();
-    Sound_ShutdownSpeechHit();
-    Sound_ShutdownSpeechExcellent();
-    Sound_ShutdownSpeechSuperb();
-    Sound_ShutdownSpeechWellDone();
-    Sound_ShutdownSpeechUnacceptable();
-    Sound_StopTitleMusic(FALSE);
-    Sound_ShutdownTitleMusic();
-    Gfx_CloseScreenAndWindow();
-    Gfx_CloseBlackScreen();
-    LevelManager_Shutdown();
-    Input_Shutdown();
+    CleanupAllResources();
     return RETURN_FAIL;
 
 exit_ok:
-    ShutdownTargetRangesBobs();
-    Sound_StopHiScoreFanfare(FALSE);
-    Sound_StopNarratorPrepareToFire(FALSE);
-    Sound_StopSpeechLoop(FALSE);
-    Sound_ShutdownSpeechLoop();
-    Sound_ShutdownHiScoreFanfare();
-    Sound_ShutdownNarratorPrepareToFire();
-    Sound_ShutdownSpeechHit();
-    Sound_ShutdownSpeechExcellent();
-    Sound_ShutdownSpeechSuperb();
-    Sound_ShutdownSpeechWellDone();
-    Sound_ShutdownSpeechUnacceptable();
-    Sound_StopTitleMusic(FALSE);
-    Sound_ShutdownTitleMusic();
-    Gfx_CloseScreenAndWindow();
-    Gfx_CloseBlackScreen();
-    LevelManager_Shutdown();
-    Input_Shutdown();
+    CleanupAllResources();
     return RETURN_OK;
 }

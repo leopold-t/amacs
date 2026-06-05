@@ -1,9 +1,9 @@
 #include <exec/libraries.h>
 #include <exec/types.h>
 
+#include <devices/inputevent.h>
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
-#include <devices/inputevent.h>
 
 #include <libraries/lowlevel.h>
 #include <proto/exec.h>
@@ -186,6 +186,7 @@ BOOL Input_FirePressed(void) {
 BOOL Input_IsFireDown(void) {
     return (joyFireDown || mouseFireDown) ? TRUE : FALSE;
 }
+
 void Input_ResetState(void) {
     UWORD i;
     firePressedEdge = FALSE;

@@ -33,9 +33,9 @@ extern const UWORD RangePaletteRGB4[32];
 /* RAW sound files */
 #define SHOT_FILE "audio/Shot.raw"
 #define TARGET_HIT_FILE "audio/TargetHit.raw"
-#define TITLE_MUSIC_FILE "audio/Adjutants_Call.raw"
+#define TITLE_MUSIC_FILE "audio/Adjutants_Call_Title.raw"
 #define DRUMS_LOOP_FILE "audio/Yankee_Doodle_Drums.raw"
-#define HISCORE_FANFARE_FILE "audio/Four_Ruffles_and_Flourishes.raw"
+#define HISCORE_FANFARE_FILE "audio/Four_Ruffles_Fanfare.raw"
 #define NARRATOR_PREPARE_TO_FIRE_FILE "audio/Speech_PrepareToFire.raw"
 #define SPEECH_HIT_FILE "audio/Speech_Hit.raw"
 #define SPEECH_EXCELLENT_FILE "audio/Speech_Excellent.raw"

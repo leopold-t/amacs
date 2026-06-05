@@ -63,7 +63,7 @@ static void ShowPointer(struct Window *win) {
 }
 
 /* ---- Stability helpers ---- */
-static void SettleDisplay(int frames) {
+void SettleDisplay(int frames) {
     for (int i = 0; i < frames; i++) {
         WaitTOF();
     }
@@ -387,12 +387,15 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
 
 void Gfx_CloseScreenAndWindow(void) {
     DrainIDCMP(window);
-
     WaitBlit();
-    SettleDisplay(1);
+    SettleDisplay(2);
 
+    /* Najpierw double buffering */
     if (dbufEnabled) {
         Gfx_DisableDoubleBuffering();
+        dbufEnabled = FALSE;
+        WaitBlit();
+        SettleDisplay(2);
     }
 
     ShowPointer(window);
@@ -400,19 +403,17 @@ void Gfx_CloseScreenAndWindow(void) {
     if (window) {
         CloseWindow(window);
         window = NULL;
+        WaitBlit();
         SettleDisplay(2);
     }
 
-    /* Pointer image no longer needed once app window is gone */
     FreeBlankPointer();
-
-    WaitBlit();
-    SettleDisplay(1);
 
     if (screen) {
         CloseScreen(screen);
         screen = NULL;
-        SettleDisplay(2);
+        WaitBlit();
+        SettleDisplay(3);
     }
 }
 

@@ -245,6 +245,7 @@ UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY) {
             if (localX < 0 || localX >= T300_W || localY < 0 || localY >= T300_H) {
                 return SCORE_MISS;
             }
+
             return RegisterScore((UWORD *)gHitMap300, T300_W, localX, localY,
                                  (const UBYTE *)gScoreMap300, &gScore300);
 
@@ -252,6 +253,7 @@ UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY) {
             if (localX < 0 || localX >= T250_W || localY < 0 || localY >= T250_H) {
                 return SCORE_MISS;
             }
+
             return RegisterScore((UWORD *)gHitMap250, T250_W, localX, localY,
                                  (const UBYTE *)gScoreMap250, &gScore250);
 
@@ -259,6 +261,7 @@ UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY) {
             if (localX < 0 || localX >= T200_W || localY < 0 || localY >= T200_H) {
                 return SCORE_MISS;
             }
+
             return RegisterScore((UWORD *)gHitMap200, T200_W, localX, localY,
                                  (const UBYTE *)gScoreMap200, &gScore200);
 
@@ -266,6 +269,7 @@ UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY) {
             if (localX < 0 || localX >= T150_W || localY < 0 || localY >= T150_H) {
                 return SCORE_MISS;
             }
+
             return RegisterScore((UWORD *)gHitMap150, T150_W, localX, localY,
                                  (const UBYTE *)gScoreMap150, &gScore150);
 
@@ -273,6 +277,7 @@ UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY) {
             if (localX < 0 || localX >= T100_W || localY < 0 || localY >= T100_H) {
                 return SCORE_MISS;
             }
+
             return RegisterScore((UWORD *)gHitMap100, T100_W, localX, localY,
                                  (const UBYTE *)gScoreMap100, &gScore100);
 
@@ -280,6 +285,7 @@ UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY) {
             if (localX < 0 || localX >= T050_W || localY < 0 || localY >= T050_H) {
                 return SCORE_MISS;
             }
+
             return RegisterScore((UWORD *)gHitMap050, T050_W, localX, localY,
                                  (const UBYTE *)gScoreMap050, &gScore050);
 

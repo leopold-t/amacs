@@ -635,6 +635,7 @@ BOOL TargetsHandler_Init(void) {
         TargetsHandler_Reset();
         return TRUE;
     }
+
     gInited = TRUE;
 
     InitSeries(&gSeries050, gSlot050X, gSlot050Y, SLOT050_COUNT, T050_W, T050_H, SERIES050_DELAY,

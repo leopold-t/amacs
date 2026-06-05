@@ -7,6 +7,18 @@
 #include <exec/types.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
+#include <string.h>
+
+/* Error codes */
+#define SOUND_OK 0
+#define SOUND_ERR_DEVICE 1
+#define SOUND_ERR_SPEECH 2
+#define SOUND_ERR_SAMPLE 3
+#define SOUND_ERR_VOICE 4
+
+/* Global flags */
+static BOOL gAudioDeviceOpened = FALSE;
+static struct IOAudio gAudioIO = {0};
 
 extern VOID BeginIO(struct IORequest *);
 
@@ -711,9 +723,9 @@ void Sound_ShutdownNarratorPrepareToFire(void) {
 
     if ((!gSpeechLoopInited || !gSpeechLoopAvailable) &&
         (!gHiScoreFanfareInited || !gHiScoreFanfareAvailable) &&
-        (!gSpeechHitInited || !gSpeechHitAvailable) &&
-        !gSpeechExcellentInited && !gSpeechSuperbInited && !gSpeechWellDoneInited &&
-        !gSpeechUnacceptableInited && gSpeechVoiceInited) {
+        (!gSpeechHitInited || !gSpeechHitAvailable) && !gSpeechExcellentInited &&
+        !gSpeechSuperbInited && !gSpeechWellDoneInited && !gSpeechUnacceptableInited &&
+        gSpeechVoiceInited) {
         CloseVoice(&gSpeechVoice);
         gSpeechVoiceInited = FALSE;
     }
@@ -1079,33 +1091,37 @@ SoundError Sound_GetLastError(void) {
 
 BOOL Sound_Init(void) {
     if (gSoundInited) {
-        gLastError = SOUND_OK;
         return TRUE;
     }
 
     ResetState();
-    gLastError = SOUND_OK;
 
-    if (!LoadSample(SHOT_FILE, &gShot)) {
+    /* Open audio.device if it is not already open */
+    if (!gAudioDeviceOpened) {
+        if (OpenDevice((STRPTR) "audio.device", 0, (struct IORequest *)&gAudioIO, 0) != 0) {
+            gLastError = SOUND_ERR_DEVICE;
+            return FALSE;
+        }
+        gAudioDeviceOpened = TRUE;
+    }
+
+    /* Initialize common samples */
+    if (!LoadSample(SHOT_FILE, &gShot) || !LoadSample(TARGET_HIT_FILE, &gHit)) {
         return FALSE;
     }
 
-    if (!LoadSample(TARGET_HIT_FILE, &gHit)) {
-        FreeSample(&gShot);
+    if (!InitVoice(&gShotVoice) || !InitVoice(&gHitVoice)) {
         return FALSE;
     }
 
-    if (!InitVoice(&gShotVoice)) {
-        FreeSample(&gShot);
-        FreeSample(&gHit);
-        return FALSE;
-    }
-
-    if (!InitVoice(&gHitVoice)) {
-        CloseVoice(&gShotVoice);
-        FreeSample(&gShot);
-        FreeSample(&gHit);
-        return FALSE;
+    /* Initialize narrator */
+    if (!gSpeechVoiceInited) {
+        if (!InitVoice(&gSpeechVoice)) {
+            gLastError = SOUND_ERR_SPEECH;
+            /* Do not return FALSE here - the remaining audio can still work */
+        } else {
+            gSpeechVoiceInited = TRUE;
+        }
     }
 
     gSoundInited = TRUE;
@@ -1117,14 +1133,21 @@ void Sound_Shutdown(void) {
     StopVoice(&gShotVoice);
     StopVoice(&gHitVoice);
     StopVoice(&gDrumsVoice);
+    StopVoice(&gSpeechVoice);
+    StopVoice(&gTitleVoice);
+
     CloseVoice(&gShotVoice);
     CloseVoice(&gHitVoice);
+
     if (gDrumsVoiceInited) {
         CloseVoice(&gDrumsVoice);
         gDrumsVoiceInited = FALSE;
     }
+
     FreeSample(&gShot);
     FreeSample(&gHit);
+
+    /* We leave the audio.device open during a normal shutdown */
     ResetState();
     gLastError = SOUND_OK;
 }
@@ -1244,4 +1267,31 @@ void Sound_PlayHit(UWORD delayTicks) {
         StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, HIT_VOLUME, HIT_CYCLES);
         Sound_PlaySpeechHit();
     }
+}
+
+void Sound_FullShutdown(void) {
+    /* Stop and close regular voices */
+    Sound_Shutdown();
+
+    /* Narrator cleanup */
+    if (gSpeechVoiceInited) {
+        StopVoice(&gSpeechVoice);
+        CloseVoice(&gSpeechVoice);
+        gSpeechVoiceInited = FALSE;
+    }
+
+    /* Fully close audio.device */
+    if (gAudioDeviceOpened) {
+        CloseDevice((struct IORequest *)&gAudioIO);
+        gAudioDeviceOpened = FALSE;
+    }
+
+    /* Forced reset of data structures */
+    memset(&gSpeechVoice, 0, sizeof(gSpeechVoice));
+    memset(&gAudioIO, 0, sizeof(gAudioIO));
+
+    ResetState();
+
+    /* Give the system a moment to reclaim audio channels */
+    Delay(5); // ~0.1 seconds
 }

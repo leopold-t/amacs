@@ -34,18 +34,19 @@ BOOL LoadRawImageToRastPort(const char *filename, struct RastPort *rp, UWORD wid
         memset(tmp.Planes[p], 0, planeSize);
     }
 
-    BPTR fh = Open((STRPTR)filename, MODE_OLDFILE);
+    BPTR fileHandle = Open((STRPTR)filename, MODE_OLDFILE);
 
-    if (!fh) {
+    if (!fileHandle) {
         for (UWORD p = 0; p < depth; p++) {
             FreeRaster(tmp.Planes[p], width, height);
         }
+
         return FALSE;
     }
 
     for (UWORD p = 0; p < depth; p++) {
-        if (Read(fh, tmp.Planes[p], planeSize) != (LONG)planeSize) {
-            Close(fh);
+        if (Read(fileHandle, tmp.Planes[p], planeSize) != (LONG)planeSize) {
+            Close(fileHandle);
 
             for (UWORD p2 = 0; p2 < depth; p2++) {
                 FreeRaster(tmp.Planes[p2], width, height);
@@ -55,7 +56,7 @@ BOOL LoadRawImageToRastPort(const char *filename, struct RastPort *rp, UWORD wid
         }
     }
 
-    Close(fh);
+    Close(fileHandle);
 
     WaitBlit();
     BltBitMap(&tmp, 0, 0, dst, 0, 0, width, height, 0xC0, 0xFF, NULL);
@@ -67,8 +68,6 @@ BOOL LoadRawImageToRastPort(const char *filename, struct RastPort *rp, UWORD wid
 
     return TRUE;
 }
-
-
 
 BOOL LoadRawImageToScreen(const char *filename, struct Screen *screen) {
     if (!screen || !screen->RastPort.BitMap)
@@ -101,17 +100,17 @@ BOOL LoadRawImageToScreen(const char *filename, struct Screen *screen) {
         memset(tmp.Planes[p], 0, planeSize);
     }
 
-    BPTR fh = Open((STRPTR)filename, MODE_OLDFILE);
+    BPTR fileHandle = Open((STRPTR)filename, MODE_OLDFILE);
 
-    if (!fh) {
+    if (!fileHandle) {
         for (UWORD p = 0; p < depth; p++)
             FreeRaster(tmp.Planes[p], width, height);
         return FALSE;
     }
 
     for (UWORD p = 0; p < depth; p++) {
-        if (Read(fh, tmp.Planes[p], planeSize) != (LONG)planeSize) {
-            Close(fh);
+        if (Read(fileHandle, tmp.Planes[p], planeSize) != (LONG)planeSize) {
+            Close(fileHandle);
 
             for (UWORD p2 = 0; p2 < depth; p2++)
                 FreeRaster(tmp.Planes[p2], width, height);
@@ -120,7 +119,7 @@ BOOL LoadRawImageToScreen(const char *filename, struct Screen *screen) {
         }
     }
 
-    Close(fh);
+    Close(fileHandle);
 
     WaitBlit();
     BltBitMap(&tmp, 0, 0, dst, 0, 0, width, height, 0xC0, 0xFF, NULL);

@@ -53,4 +53,6 @@ void Gfx_SwapBuffers(void);
 /* Returns TRUE if DBuf is currently active. */
 BOOL Gfx_IsDoubleBufferingEnabled(void);
 
+extern void SettleDisplay(int frames);
+
 #endif /* GFX_H */
