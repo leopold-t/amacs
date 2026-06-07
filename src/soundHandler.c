@@ -43,6 +43,7 @@ typedef struct AudioVoice {
 
 #define HIT_VOLUME 64
 #define HIT_CYCLES 1
+#define LOOP_FOREVER_CYCLES 0
 
 #define AUDIO_CH_0_RIGHT_SHOT 1
 #define AUDIO_CH_1_LEFT_HIT 2
@@ -513,7 +514,7 @@ void Sound_PlaySpeechLoop(void) {
     gSpeechLoopEnabled = TRUE;
 
     if (!gDrumsVoice.playing) {
-        StartVoiceSample(&gDrumsVoice, &gSpeechLoop, SOUND_11KHZ_PERIOD, 48, 1);
+        StartVoiceSample(&gDrumsVoice, &gSpeechLoop, SOUND_11KHZ_PERIOD, 48, LOOP_FOREVER_CYCLES);
     }
 }
 
@@ -1159,7 +1160,7 @@ void Sound_Update(void) {
         ReapVoice(&gDrumsVoice);
 
         if (!gSoundPaused && gSpeechLoopEnabled && !gDrumsVoice.playing) {
-            StartVoiceSample(&gDrumsVoice, &gSpeechLoop, SOUND_11KHZ_PERIOD, 48, 1);
+            StartVoiceSample(&gDrumsVoice, &gSpeechLoop, SOUND_11KHZ_PERIOD, 48, LOOP_FOREVER_CYCLES);
         }
     }
 
