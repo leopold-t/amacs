@@ -86,6 +86,7 @@ static BOOL gSpeechVoiceInited = FALSE;
 static BOOL gDrumsVoiceInited = FALSE;
 static BOOL gSpeechLoopEnabled = FALSE;
 static BOOL gHitPending = FALSE;
+static UBYTE gHitPendingVolume = HIT_VOLUME;
 static BOOL gSoundPaused = FALSE;
 static struct DateStamp gHitDueStamp;
 static struct DateStamp gPauseStamp;
@@ -94,6 +95,7 @@ static SoundError gLastError = SOUND_OK;
 static void ResetState(void) {
     gSoundInited = FALSE;
     gHitPending = FALSE;
+    gHitPendingVolume = HIT_VOLUME;
     gSoundPaused = FALSE;
     gShotVoice.playing = FALSE;
     gHitVoice.playing = FALSE;
@@ -1192,7 +1194,7 @@ void Sound_Update(void) {
     }
 
     gHitPending = FALSE;
-    StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, HIT_VOLUME, HIT_CYCLES);
+    StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, gHitPendingVolume, HIT_CYCLES);
     Sound_PlaySpeechHit();
 }
 
@@ -1245,8 +1247,12 @@ void Sound_PlayShot(void) {
     StartVoiceSample(&gShotVoice, &gShot, SOUND_11KHZ_PERIOD, SHOT_VOLUME, SHOT_CYCLES);
 }
 
-void Sound_PlayHit(UWORD delayTicks) {
+void Sound_PlayHit(UWORD delayTicks, UBYTE volume) {
     struct DateStamp now;
+
+    if (volume > HIT_VOLUME) {
+        volume = HIT_VOLUME;
+    }
 
     if (!gSoundInited || !gHitVoice.io || !gHit.data || gHit.length == 0) {
         return;
@@ -1261,11 +1267,12 @@ void Sound_PlayHit(UWORD delayTicks) {
     DateStamp(&now);
     gHitDueStamp = now;
     AddTicksToDateStamp(&gHitDueStamp, delayTicks);
+    gHitPendingVolume = volume;
     gHitPending = TRUE;
 
     if (delayTicks == 0) {
         gHitPending = FALSE;
-        StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, HIT_VOLUME, HIT_CYCLES);
+        StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, volume, HIT_CYCLES);
         Sound_PlaySpeechHit();
     }
 }

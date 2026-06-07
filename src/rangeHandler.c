@@ -996,6 +996,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     WORD sightOffsetY;
                     UWORD hitDelayTicks;
                     UBYTE hitScore = SCORE_MISS;
+                    UBYTE hitVolume = 64;
 
                     ammoCount--;
                     Sound_PlayShot();
@@ -1011,9 +1012,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     sightOffsetY = (WORD)(leadY / 256);
 
                     if (TargetsHandler_CheckHit(aimX, aimY, sightOffsetX, sightOffsetY,
-                                                &hitDelayTicks, &hitScore)) {
+                                                &hitDelayTicks, &hitScore, &hitVolume)) {
                         RegisterHit();
-                        Sound_PlayHit(hitDelayTicks);
+                        Sound_PlayHit(hitDelayTicks, hitVolume);
                         lastShotHit = TRUE;
                         lastShotScore = hitScore;
                         resultFlashColor = GetFlashColorForScore(hitScore);

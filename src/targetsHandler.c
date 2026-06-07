@@ -1,5 +1,13 @@
 #include "targetsHandler.h"
 
+#define TARGET_HIT_VOLUME_050 64
+#define TARGET_HIT_VOLUME_100 42
+#define TARGET_HIT_VOLUME_150 33
+#define TARGET_HIT_VOLUME_200 28
+#define TARGET_HIT_VOLUME_250 24
+#define TARGET_HIT_VOLUME_300 22
+
+
 #include <dos/dos.h>
 #include <exec/types.h>
 #include <proto/dos.h>
@@ -893,7 +901,7 @@ void TargetsHandler_SetPaused(BOOL paused) {
 }
 
 BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffsetY,
-                             UWORD *hitDelayTicks, UBYTE *hitScore) {
+                             UWORD *hitDelayTicks, UBYTE *hitScore, UBYTE *hitVolume) {
     if (!gReady) {
         return FALSE;
     }
@@ -901,6 +909,9 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffset
     if (CheckSeriesHit(&gSeries050, x, y, sightOffsetX, sightOffsetY, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries050.hitDelayTicks;
+        }
+        if (hitVolume) {
+            *hitVolume = TARGET_HIT_VOLUME_050;
         }
 
         return TRUE;
@@ -910,6 +921,9 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffset
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries100.hitDelayTicks;
         }
+        if (hitVolume) {
+            *hitVolume = TARGET_HIT_VOLUME_100;
+        }
 
         return TRUE;
     }
@@ -917,6 +931,9 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffset
     if (CheckSeriesHit(&gSeries150, x, y, sightOffsetX, sightOffsetY, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries150.hitDelayTicks;
+        }
+        if (hitVolume) {
+            *hitVolume = TARGET_HIT_VOLUME_150;
         }
 
         return TRUE;
@@ -926,6 +943,9 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffset
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries200.hitDelayTicks;
         }
+        if (hitVolume) {
+            *hitVolume = TARGET_HIT_VOLUME_200;
+        }
 
         return TRUE;
     }
@@ -934,6 +954,9 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffset
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries250.hitDelayTicks;
         }
+        if (hitVolume) {
+            *hitVolume = TARGET_HIT_VOLUME_250;
+        }
 
         return TRUE;
     }
@@ -941,6 +964,9 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffset
     if (CheckSeriesHit(&gSeries300, x, y, sightOffsetX, sightOffsetY, hitScore)) {
         if (hitDelayTicks) {
             *hitDelayTicks = gSeries300.hitDelayTicks;
+        }
+        if (hitVolume) {
+            *hitVolume = TARGET_HIT_VOLUME_300;
         }
 
         return TRUE;
