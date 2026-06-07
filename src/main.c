@@ -2713,7 +2713,11 @@ show_title:
         }
 
         if (r == WAIT_ADVANCE) {
-            engaged = TRUE;
+            /* Fire/LMB on the title screen only starts the intro carousel.
+             * The player should leave the carousel only by pressing Fire/LMB
+             * on Training Info or Fundamentals.
+             */
+            engaged = FALSE;
         }
     }
 
@@ -2739,7 +2743,13 @@ show_title:
 
     /* ---------------- Attract loop: TRAINING_INFO -> FUNDAMENTALS ---------------- */
     for (;;) {
-        WaitResult r = WaitForAdvanceOrTimeout(INFO_SECONDS);
+        WaitResult r;
+
+        if (engaged) {
+            r = WaitForAdvanceNoTimeout();
+        } else {
+            r = WaitForAdvanceOrTimeout(INFO_SECONDS);
+        }
 
         if (r == WAIT_ESC) {
             goto exit_ok;
@@ -2750,7 +2760,7 @@ show_title:
         }
 
         if (engaged) {
-            /* Engaged path: ensure order FUNDAMENTALS -> TARGET_RANGES -> RANGE */
+            /* Engaged path: one fresh Fire/LMB advances one pre-range screen. */
             if (attr == ATTR_TRAINING_INFO) {
                 for (int i = 0; i < 32; i++) {
                     nextLoPal[i] = fundamentalsPalette[i];
@@ -2765,6 +2775,7 @@ show_title:
                 }
 
                 attr = ATTR_FUNDAMENTALS;
+                continue;
             }
 
             if (attr == ATTR_FUNDAMENTALS) {
