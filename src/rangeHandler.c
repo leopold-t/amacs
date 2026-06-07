@@ -67,6 +67,14 @@ extern BOOL Input_Down(void);
 #define RECOIL_TOTAL_TICKS (RECOIL_UP_TICKS + RECOIL_DOWN_TICKS)
 #define RECOIL_REAR_DELAY_TICKS 2
 
+#define BREATH_PHASE_REST 0
+#define BREATH_PHASE_UP 1
+#define BREATH_PHASE_DOWN 2
+#define BREATH_REST_TICKS (3 * DOS_TICKS_PER_SEC)
+#define BREATH_MOVE_TICKS (2 * DOS_TICKS_PER_SEC)
+#define BREATH_AMPLITUDE_PX 8
+#define BREATH_LEAD_FP (2 * 256)
+
 #define FRONT_AIM_X 41
 #define FRONT_AIM_Y 10
 
@@ -117,6 +125,7 @@ static UWORD gHitCount = 0;
 static void ResetHitCounter(void);
 static UWORD CalculateAccuracyPercent(UWORD score);
 static ULONG ElapsedSecondsSince(const struct DateStamp *start);
+static ULONG ElapsedTicksSince(const struct DateStamp *start);
 static UWORD CalculateTimeBonus(UWORD totalTime, UWORD accuracyPercent);
 static UWORD ScaleSummaryScore(UWORD score);
 
@@ -170,6 +179,12 @@ typedef struct RangeSessionState {
     struct DateStamp finalScoreStamp;
     BOOL finalScoreStampValid;
     struct DateStamp roundStartStamp;
+
+    UBYTE breathPhase;
+    WORD breathOffsetY;
+    LONG breathLeadTargetY;
+    struct DateStamp breathPhaseStamp;
+    BOOL breathPhaseStampValid;
 } RangeSessionState;
 
 /* Mandatory function to reset and restore range state */
@@ -193,6 +208,10 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
     state->finalShotValid = FALSE;
     state->finalShotHitSnap = FALSE;
     state->finalShotScoreSnap = SCORE_MISS;
+    state->breathPhase = BREATH_PHASE_REST;
+    state->breathOffsetY = 0;
+    state->breathLeadTargetY = 0;
+    state->breathPhaseStampValid = FALSE;
 
     Input_ResetState();
     TargetsHandler_Reset();
@@ -232,6 +251,85 @@ static ULONG ElapsedSecondsSince(const struct DateStamp *start) {
     }
 
     return (ULONG)(totalTicks / DOS_TICKS_PER_SEC);
+}
+
+static void StartBreathPhase(RangeSessionState *state, UBYTE phase) {
+    state->breathPhase = phase;
+    state->breathPhaseStampValid = TRUE;
+    DateStamp(&state->breathPhaseStamp);
+
+    if (phase == BREATH_PHASE_REST) {
+        state->breathOffsetY = 0;
+        state->breathLeadTargetY = 0;
+    } else if (phase == BREATH_PHASE_UP) {
+        state->breathOffsetY = 0;
+        state->breathLeadTargetY = -BREATH_LEAD_FP;
+    } else {
+        state->breathOffsetY = -BREATH_AMPLITUDE_PX;
+        state->breathLeadTargetY = BREATH_LEAD_FP;
+    }
+}
+
+static WORD UpdateBreathing(RangeSessionState *state, BOOL joystickMoving) {
+    ULONG elapsed;
+    WORD oldOffset;
+    WORD newOffset;
+
+    if (!state) {
+        return 0;
+    }
+
+    if (joystickMoving) {
+        state->breathPhase = BREATH_PHASE_REST;
+        state->breathOffsetY = 0;
+        state->breathLeadTargetY = 0;
+        state->breathPhaseStampValid = FALSE;
+        return 0;
+    }
+
+    if (!state->breathPhaseStampValid) {
+        StartBreathPhase(state, BREATH_PHASE_REST);
+        return 0;
+    }
+
+    oldOffset = state->breathOffsetY;
+    newOffset = oldOffset;
+    elapsed = ElapsedTicksSince(&state->breathPhaseStamp);
+
+    if (state->breathPhase == BREATH_PHASE_REST) {
+        newOffset = 0;
+        state->breathLeadTargetY = 0;
+
+        if (elapsed >= BREATH_REST_TICKS) {
+            StartBreathPhase(state, BREATH_PHASE_UP);
+            return 0;
+        }
+    } else if (state->breathPhase == BREATH_PHASE_UP) {
+        state->breathLeadTargetY = -BREATH_LEAD_FP;
+
+        if (elapsed >= BREATH_MOVE_TICKS) {
+            newOffset = -BREATH_AMPLITUDE_PX;
+            state->breathOffsetY = newOffset;
+            StartBreathPhase(state, BREATH_PHASE_DOWN);
+            return (WORD)(newOffset - oldOffset);
+        } else {
+            newOffset = (WORD)-(((LONG)elapsed * BREATH_AMPLITUDE_PX) / BREATH_MOVE_TICKS);
+        }
+    } else {
+        state->breathLeadTargetY = BREATH_LEAD_FP;
+
+        if (elapsed >= BREATH_MOVE_TICKS) {
+            newOffset = 0;
+            state->breathOffsetY = newOffset;
+            StartBreathPhase(state, BREATH_PHASE_REST);
+            return (WORD)(newOffset - oldOffset);
+        } else {
+            newOffset = (WORD)(-BREATH_AMPLITUDE_PX + (((LONG)elapsed * BREATH_AMPLITUDE_PX) / BREATH_MOVE_TICKS));
+        }
+    }
+
+    state->breathOffsetY = newOffset;
+    return (WORD)(newOffset - oldOffset);
 }
 
 static UWORD CalculateTimeBonus(UWORD totalTime, UWORD accuracyPercent) {
@@ -1188,6 +1286,15 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     }
                 }
 
+                {
+                    BOOL joystickMoving = (dirX != 0 || dirY != 0) ? TRUE : FALSE;
+                    WORD breathDeltaY = UpdateBreathing(&state, joystickMoving);
+
+                    if (!joystickMoving && breathDeltaY != 0) {
+                        ringY = (WORD)(ringY + breathDeltaY);
+                    }
+                }
+
                 prevDirX = dirX;
                 prevDirY = dirY;
             }
@@ -1212,13 +1319,17 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 LONG targetLeadX = (vx * LEAD_MAX_FP) / V_MAX;
                 LONG targetLeadY = (vy * LEAD_MAX_FP) / V_MAX;
 
+                if (state.breathLeadTargetY != 0 && vx == 0 && vy == 0) {
+                    targetLeadY += state.breathLeadTargetY;
+                }
+
                 targetLeadX = ClampLeadFP(targetLeadX);
                 targetLeadY = ClampLeadFP(targetLeadY);
 
                 leadX += (targetLeadX - leadX) / LEAD_FOLLOW_DIV;
                 leadY += (targetLeadY - leadY) / LEAD_FOLLOW_DIV;
 
-                if (vx == 0 && vy == 0) {
+                if (vx == 0 && vy == 0 && state.breathLeadTargetY == 0) {
                     leadX = (leadX * LEAD_DECAY_NUM) / LEAD_DECAY_DEN;
                     leadY = (leadY * LEAD_DECAY_NUM) / LEAD_DECAY_DEN;
 
