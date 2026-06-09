@@ -1067,7 +1067,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     AmacsBob rearSight;
     struct TextFont *hudFont = NULL;
 
-    const LONG V_MAX = 16384;
+    const LONG V_MAX = 13312;
     const LONG V_MIN = 96;
     const LONG V_STOP = 32;
     const LONG ACCEL_DIV = 12;
