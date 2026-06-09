@@ -75,6 +75,16 @@ extern BOOL Input_Down(void);
 #define BREATH_AMPLITUDE_PX 8
 #define BREATH_LEAD_FP (2 * 256)
 
+#define HAND_SWAY_PHASE_REST 0
+#define HAND_SWAY_PHASE_LEFT 1
+#define HAND_SWAY_PHASE_LEFT_RETURN 2
+#define HAND_SWAY_PHASE_RIGHT 3
+#define HAND_SWAY_PHASE_RIGHT_RETURN 4
+#define HAND_SWAY_REST_TICKS (DOS_TICKS_PER_SEC / 2)
+#define HAND_SWAY_MOVE_TICKS (DOS_TICKS_PER_SEC / 2)
+#define HAND_SWAY_AMPLITUDE_PX 3
+#define HAND_SWAY_LEAD_FP (3 * 256)
+
 #define FRONT_AIM_X 41
 #define FRONT_AIM_Y 10
 
@@ -185,6 +195,13 @@ typedef struct RangeSessionState {
     LONG breathLeadTargetY;
     struct DateStamp breathPhaseStamp;
     BOOL breathPhaseStampValid;
+
+    UBYTE handSwayPhase;
+    WORD handSwayOffsetX;
+    WORD handSwayRearOffsetX;
+    LONG handSwayLeadTargetX;
+    struct DateStamp handSwayPhaseStamp;
+    BOOL handSwayPhaseStampValid;
 } RangeSessionState;
 
 /* Mandatory function to reset and restore range state */
@@ -212,6 +229,11 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
     state->breathOffsetY = 0;
     state->breathLeadTargetY = 0;
     state->breathPhaseStampValid = FALSE;
+    state->handSwayPhase = HAND_SWAY_PHASE_REST;
+    state->handSwayOffsetX = 0;
+    state->handSwayRearOffsetX = 0;
+    state->handSwayLeadTargetX = 0;
+    state->handSwayPhaseStampValid = FALSE;
 
     Input_ResetState();
     TargetsHandler_Reset();
@@ -313,7 +335,7 @@ static WORD UpdateBreathing(RangeSessionState *state, BOOL joystickMoving) {
             StartBreathPhase(state, BREATH_PHASE_DOWN);
             return (WORD)(newOffset - oldOffset);
         } else {
-            newOffset = (WORD)-(((LONG)elapsed * BREATH_AMPLITUDE_PX) / BREATH_MOVE_TICKS);
+            newOffset = (WORD) - (((LONG)elapsed * BREATH_AMPLITUDE_PX) / BREATH_MOVE_TICKS);
         }
     } else {
         state->breathLeadTargetY = BREATH_LEAD_FP;
@@ -324,12 +346,142 @@ static WORD UpdateBreathing(RangeSessionState *state, BOOL joystickMoving) {
             StartBreathPhase(state, BREATH_PHASE_REST);
             return (WORD)(newOffset - oldOffset);
         } else {
-            newOffset = (WORD)(-BREATH_AMPLITUDE_PX + (((LONG)elapsed * BREATH_AMPLITUDE_PX) / BREATH_MOVE_TICKS));
+            newOffset = (WORD)(-BREATH_AMPLITUDE_PX +
+                               (((LONG)elapsed * BREATH_AMPLITUDE_PX) / BREATH_MOVE_TICKS));
         }
     }
 
     state->breathOffsetY = newOffset;
     return (WORD)(newOffset - oldOffset);
+}
+
+static WORD HandSwayRearOffsetFromSightOffset(WORD sightOffsetX) {
+    if (sightOffsetX <= -2) {
+        return -1;
+    }
+
+    if (sightOffsetX >= 2) {
+        return 1;
+    }
+
+    return 0;
+}
+
+static void StartHandSwayPhase(RangeSessionState *state, UBYTE phase) {
+    state->handSwayPhase = phase;
+    state->handSwayPhaseStampValid = TRUE;
+    DateStamp(&state->handSwayPhaseStamp);
+
+    if (phase == HAND_SWAY_PHASE_REST) {
+        state->handSwayOffsetX = 0;
+        state->handSwayLeadTargetX = 0;
+    } else if (phase == HAND_SWAY_PHASE_LEFT) {
+        state->handSwayOffsetX = 0;
+        state->handSwayLeadTargetX = -HAND_SWAY_LEAD_FP;
+    } else if (phase == HAND_SWAY_PHASE_LEFT_RETURN) {
+        state->handSwayOffsetX = -HAND_SWAY_AMPLITUDE_PX;
+        state->handSwayLeadTargetX = HAND_SWAY_LEAD_FP;
+    } else if (phase == HAND_SWAY_PHASE_RIGHT) {
+        state->handSwayOffsetX = 0;
+        state->handSwayLeadTargetX = HAND_SWAY_LEAD_FP;
+    } else {
+        state->handSwayOffsetX = HAND_SWAY_AMPLITUDE_PX;
+        state->handSwayLeadTargetX = -HAND_SWAY_LEAD_FP;
+    }
+
+    state->handSwayRearOffsetX = HandSwayRearOffsetFromSightOffset(state->handSwayOffsetX);
+}
+
+static WORD UpdateHandSway(RangeSessionState *state, BOOL joystickMoving) {
+    ULONG elapsed;
+    WORD oldOffset;
+    WORD newOffset;
+    WORD oldRearOffset;
+    WORD newRearOffset;
+
+    if (!state) {
+        return 0;
+    }
+
+    if (joystickMoving) {
+        state->handSwayPhase = HAND_SWAY_PHASE_REST;
+        state->handSwayOffsetX = 0;
+        state->handSwayRearOffsetX = 0;
+        state->handSwayLeadTargetX = 0;
+        state->handSwayPhaseStampValid = FALSE;
+        return 0;
+    }
+
+    if (!state->handSwayPhaseStampValid) {
+        StartHandSwayPhase(state, HAND_SWAY_PHASE_REST);
+        return 0;
+    }
+
+    oldOffset = state->handSwayOffsetX;
+    oldRearOffset = state->handSwayRearOffsetX;
+    newOffset = oldOffset;
+    elapsed = ElapsedTicksSince(&state->handSwayPhaseStamp);
+
+    if (state->handSwayPhase == HAND_SWAY_PHASE_REST) {
+        newOffset = 0;
+        state->handSwayLeadTargetX = 0;
+
+        if (elapsed >= HAND_SWAY_REST_TICKS) {
+            StartHandSwayPhase(state, HAND_SWAY_PHASE_LEFT);
+            return 0;
+        }
+    } else if (state->handSwayPhase == HAND_SWAY_PHASE_LEFT) {
+        state->handSwayLeadTargetX = -HAND_SWAY_LEAD_FP;
+
+        if (elapsed >= HAND_SWAY_MOVE_TICKS) {
+            newOffset = -HAND_SWAY_AMPLITUDE_PX;
+            state->handSwayOffsetX = newOffset;
+            StartHandSwayPhase(state, HAND_SWAY_PHASE_LEFT_RETURN);
+            return (WORD)(state->handSwayRearOffsetX - oldRearOffset);
+        } else {
+            newOffset = (WORD) - (((LONG)elapsed * HAND_SWAY_AMPLITUDE_PX) / HAND_SWAY_MOVE_TICKS);
+        }
+    } else if (state->handSwayPhase == HAND_SWAY_PHASE_LEFT_RETURN) {
+        state->handSwayLeadTargetX = HAND_SWAY_LEAD_FP;
+
+        if (elapsed >= HAND_SWAY_MOVE_TICKS) {
+            newOffset = 0;
+            state->handSwayOffsetX = newOffset;
+            StartHandSwayPhase(state, HAND_SWAY_PHASE_RIGHT);
+            return (WORD)(state->handSwayRearOffsetX - oldRearOffset);
+        } else {
+            newOffset = (WORD)(-HAND_SWAY_AMPLITUDE_PX +
+                               (((LONG)elapsed * HAND_SWAY_AMPLITUDE_PX) / HAND_SWAY_MOVE_TICKS));
+        }
+    } else if (state->handSwayPhase == HAND_SWAY_PHASE_RIGHT) {
+        state->handSwayLeadTargetX = HAND_SWAY_LEAD_FP;
+
+        if (elapsed >= HAND_SWAY_MOVE_TICKS) {
+            newOffset = HAND_SWAY_AMPLITUDE_PX;
+            state->handSwayOffsetX = newOffset;
+            StartHandSwayPhase(state, HAND_SWAY_PHASE_RIGHT_RETURN);
+            return (WORD)(state->handSwayRearOffsetX - oldRearOffset);
+        } else {
+            newOffset = (WORD)(((LONG)elapsed * HAND_SWAY_AMPLITUDE_PX) / HAND_SWAY_MOVE_TICKS);
+        }
+    } else {
+        state->handSwayLeadTargetX = -HAND_SWAY_LEAD_FP;
+
+        if (elapsed >= HAND_SWAY_MOVE_TICKS) {
+            newOffset = 0;
+            state->handSwayOffsetX = newOffset;
+            StartHandSwayPhase(state, HAND_SWAY_PHASE_REST);
+            return (WORD)(state->handSwayRearOffsetX - oldRearOffset);
+        } else {
+            newOffset = (WORD)(HAND_SWAY_AMPLITUDE_PX -
+                               (((LONG)elapsed * HAND_SWAY_AMPLITUDE_PX) / HAND_SWAY_MOVE_TICKS));
+        }
+    }
+
+    state->handSwayOffsetX = newOffset;
+    newRearOffset = HandSwayRearOffsetFromSightOffset(newOffset);
+    state->handSwayRearOffsetX = newRearOffset;
+    return (WORD)(newRearOffset - oldRearOffset);
 }
 
 static UWORD CalculateTimeBonus(UWORD totalTime, UWORD accuracyPercent) {
@@ -1288,7 +1440,12 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                 {
                     BOOL joystickMoving = (dirX != 0 || dirY != 0) ? TRUE : FALSE;
+                    WORD handSwayDeltaX = UpdateHandSway(&state, joystickMoving);
                     WORD breathDeltaY = UpdateBreathing(&state, joystickMoving);
+
+                    if (!joystickMoving && handSwayDeltaX != 0) {
+                        ringX = (WORD)(ringX + handSwayDeltaX);
+                    }
 
                     if (!joystickMoving && breathDeltaY != 0) {
                         ringY = (WORD)(ringY + breathDeltaY);
@@ -1319,6 +1476,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 LONG targetLeadX = (vx * LEAD_MAX_FP) / V_MAX;
                 LONG targetLeadY = (vy * LEAD_MAX_FP) / V_MAX;
 
+                if (state.handSwayLeadTargetX != 0 && vx == 0 && vy == 0) {
+                    targetLeadX += state.handSwayLeadTargetX;
+                }
+
                 if (state.breathLeadTargetY != 0 && vx == 0 && vy == 0) {
                     targetLeadY += state.breathLeadTargetY;
                 }
@@ -1329,7 +1490,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 leadX += (targetLeadX - leadX) / LEAD_FOLLOW_DIV;
                 leadY += (targetLeadY - leadY) / LEAD_FOLLOW_DIV;
 
-                if (vx == 0 && vy == 0 && state.breathLeadTargetY == 0) {
+                if (vx == 0 && vy == 0 && state.breathLeadTargetY == 0 &&
+                    state.handSwayLeadTargetX == 0) {
                     leadX = (leadX * LEAD_DECAY_NUM) / LEAD_DECAY_DEN;
                     leadY = (leadY * LEAD_DECAY_NUM) / LEAD_DECAY_DEN;
 
