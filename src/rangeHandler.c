@@ -88,6 +88,8 @@ extern BOOL Input_Down(void);
 #define RELOAD_STATE_NONE 0
 #define RELOAD_STATE_WAIT_PUSH 1
 #define RELOAD_STATE_WAIT_PULL 2
+#define RELOAD_SPEECH_INITIAL_DELAY_TICKS (2 * DOS_TICKS_PER_SEC)
+#define RELOAD_SPEECH_INTERVAL_TICKS (5 * DOS_TICKS_PER_SEC)
 
 #define FRONT_AIM_X 41
 #define FRONT_AIM_Y 10
@@ -140,6 +142,7 @@ static void ResetHitCounter(void);
 static UWORD CalculateAccuracyPercent(UWORD score);
 static ULONG ElapsedSecondsSince(const struct DateStamp *start);
 static ULONG ElapsedTicksSince(const struct DateStamp *start);
+static void AddTicksToDateStamp(struct DateStamp *stamp, ULONG ticks);
 static UWORD CalculateTimeBonus(UWORD totalTime, UWORD accuracyPercent);
 static UWORD ScaleSummaryScore(UWORD score);
 
@@ -181,6 +184,9 @@ typedef struct RangeSessionState {
     UWORD ammoCount;
     UBYTE reloadState;
     BOOL reloadNeedsNeutral;
+    struct DateStamp reloadSpeechStamp;
+    BOOL reloadSpeechStampValid;
+    BOOL reloadSpeechFirstPromptPending;
     UWORD sessionScore;
 
     BOOL showFinalScore;
@@ -224,6 +230,8 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
     state->ammoCount = HUD_MAGAZINE_COUNT * HUD_MAGAZINE_SIZE;
     state->reloadState = RELOAD_STATE_NONE;
     state->reloadNeedsNeutral = FALSE;
+    state->reloadSpeechStampValid = FALSE;
+    state->reloadSpeechFirstPromptPending = FALSE;
     state->sessionScore = 0;
     state->lastShotScore = SCORE_MISS;
     state->resultFlashColor = SCORE_FLASH_MISS_COLOR;
@@ -674,6 +682,76 @@ static ULONG ElapsedTicksSince(const struct DateStamp *start) {
     return (ULONG)total;
 }
 
+static void AddTicksToDateStamp(struct DateStamp *stamp, ULONG ticks) {
+    ULONG ticksPerMinute = (ULONG)(60L * DOS_TICKS_PER_SEC);
+    ULONG minutesPerDay = (ULONG)(24L * 60L);
+    ULONG totalTicks;
+    ULONG extraMinutes;
+    ULONG totalMinutes;
+
+    if (!stamp || ticks == 0) {
+        return;
+    }
+
+    totalTicks = (ULONG)stamp->ds_Tick + ticks;
+    extraMinutes = totalTicks / ticksPerMinute;
+    stamp->ds_Tick = (LONG)(totalTicks % ticksPerMinute);
+
+    totalMinutes = (ULONG)stamp->ds_Minute + extraMinutes;
+    stamp->ds_Days += (LONG)(totalMinutes / minutesPerDay);
+    stamp->ds_Minute = (LONG)(totalMinutes % minutesPerDay);
+}
+
+static void StartReloadPrompt(RangeSessionState *state) {
+    if (!state) {
+        return;
+    }
+
+    state->reloadState = RELOAD_STATE_WAIT_PUSH;
+    state->reloadNeedsNeutral = TRUE;
+    DateStamp(&state->reloadSpeechStamp);
+    state->reloadSpeechStampValid = TRUE;
+    state->reloadSpeechFirstPromptPending = TRUE;
+}
+
+static void FinishReloadPrompt(RangeSessionState *state) {
+    if (!state) {
+        return;
+    }
+
+    state->reloadState = RELOAD_STATE_NONE;
+    state->reloadNeedsNeutral = TRUE;
+    state->reloadSpeechStampValid = FALSE;
+    state->reloadSpeechFirstPromptPending = FALSE;
+    Sound_StopSpeechReload(FALSE);
+}
+
+static void UpdateReloadSpeech(RangeSessionState *state) {
+    ULONG elapsed;
+    ULONG delayTicks;
+
+    if (!state || state->reloadState == RELOAD_STATE_NONE) {
+        return;
+    }
+
+    if (!state->reloadSpeechStampValid) {
+        DateStamp(&state->reloadSpeechStamp);
+        state->reloadSpeechStampValid = TRUE;
+        state->reloadSpeechFirstPromptPending = TRUE;
+        return;
+    }
+
+    elapsed = ElapsedTicksSince(&state->reloadSpeechStamp);
+    delayTicks = state->reloadSpeechFirstPromptPending ? RELOAD_SPEECH_INITIAL_DELAY_TICKS
+                                                       : RELOAD_SPEECH_INTERVAL_TICKS;
+
+    if (elapsed >= delayTicks) {
+        Sound_PlaySpeechReload();
+        DateStamp(&state->reloadSpeechStamp);
+        state->reloadSpeechFirstPromptPending = FALSE;
+    }
+}
+
 static BOOL ShotCooldownReady(BOOL active, const struct DateStamp *lastShotStamp) {
     if (!active) {
         return TRUE;
@@ -1003,7 +1081,8 @@ static void DrawReloadLine(struct RastPort *rp, struct TextFont *font, WORD y, c
     len = TextLen(text);
     width = TextLength(rp, (STRPTR)text, len);
     x = (WORD)((SCR_W - width) / 2);
-    DrawTextWithShadow(rp, font, x, y, HUD_TEXT_PEN, text, len);
+    DrawTextWithShadowEx(rp, font, x, y, SCORE_FLASH_BELOW_AVG_COLOR, HUD_QUALITY_SHADOW_PEN, text,
+                         len);
 }
 
 static void DrawReloadStatusText(struct RastPort *rp, struct TextFont *font, BOOL reloadRequired,
@@ -1104,6 +1183,8 @@ static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL
 BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     RangeSessionState state;
     BOOL endScreenDrawn = FALSE;
+    struct DateStamp reloadPauseStamp;
+    BOOL reloadPauseStampValid = FALSE;
     InitRangeSessionState(&state, IS_NEW_GAME_SESSION);
 
     AmacsBob frontSight;
@@ -1153,6 +1234,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #define ammoCount state.ammoCount
 #define reloadState state.reloadState
 #define reloadNeedsNeutral state.reloadNeedsNeutral
+#define reloadSpeechStamp state.reloadSpeechStamp
+#define reloadSpeechStampValid state.reloadSpeechStampValid
+#define reloadSpeechFirstPromptPending state.reloadSpeechFirstPromptPending
 #define showFinalScore state.showFinalScore
 #define sessionComplete state.sessionComplete
 #define roundEnding state.roundEnding
@@ -1273,9 +1357,25 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         }
 
         if (!roundEnding && !showFinalScore && Input_KeyPressed(0x19)) {
+            BOOL wasPaused = paused;
             paused = (BOOL)!paused;
             Sound_SetPaused(paused);
             TargetsHandler_SetPaused(paused);
+
+            /* Do not stop an already playing Speech_Reload sample when the
+             * game is paused.  Just prevent new reload reminders from being
+             * started while paused, and make the 5s reminder timer count only
+             * active gameplay time.
+             */
+            if (!wasPaused && paused && reloadState != RELOAD_STATE_NONE) {
+                DateStamp(&reloadPauseStamp);
+                reloadPauseStampValid = TRUE;
+            } else if (wasPaused && !paused && reloadPauseStampValid) {
+                if (reloadState != RELOAD_STATE_NONE && reloadSpeechStampValid) {
+                    AddTicksToDateStamp(&reloadSpeechStamp, ElapsedTicksSince(&reloadPauseStamp));
+                }
+                reloadPauseStampValid = FALSE;
+            }
         }
 
         if (!paused) {
@@ -1283,7 +1383,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 shotNeedsRelease = FALSE;
             }
 
-            if (!roundEnding && !showFinalScore && reloadState == RELOAD_STATE_NONE && Input_FirePressed()) {
+            if (!roundEnding && !showFinalScore && reloadState == RELOAD_STATE_NONE &&
+                Input_FirePressed()) {
                 if (ammoCount > 0 && !shotNeedsRelease &&
                     ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
                     WORD aimX;
@@ -1356,8 +1457,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         DateStamp(&finalScoreStamp);
                         finalScoreStampValid = TRUE;
                     } else if ((ammoCount % HUD_MAGAZINE_SIZE) == 0) {
-                        reloadState = RELOAD_STATE_WAIT_PUSH;
-                        reloadNeedsNeutral = TRUE;
+                        StartReloadPrompt(&state);
                         shotNeedsRelease = TRUE;
                     }
                 }
@@ -1386,11 +1486,15 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     }
                 } else if (reloadState == RELOAD_STATE_WAIT_PULL) {
                     if (reloadDown) {
-                        reloadState = RELOAD_STATE_NONE;
-                        reloadNeedsNeutral = TRUE;
+                        FinishReloadPrompt(&state);
+                        reloadPauseStampValid = FALSE;
                         shotNeedsRelease = TRUE;
                     }
                 }
+            }
+
+            if (!roundEnding && !showFinalScore) {
+                UpdateReloadSpeech(&state);
             }
 
             if (!roundEnding) {
@@ -1746,6 +1850,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #undef ammoCount
 #undef reloadState
 #undef reloadNeedsNeutral
+#undef reloadSpeechStamp
+#undef reloadSpeechStampValid
+#undef reloadSpeechFirstPromptPending
 #undef showFinalScore
 #undef sessionComplete
 #undef roundEnding

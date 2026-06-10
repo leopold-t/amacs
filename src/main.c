@@ -2822,11 +2822,12 @@ show_title:
                 }
 
                 /*
-                 * Speech_Hit is used during live gameplay.  Preload it on the
-                 * Performance screen so the first target hit does not trigger
-                 * floppy I/O and pause the firing range.
+                 * Speech_Hit and Speech_Reload are used during live gameplay.
+                 * Preload them on the Performance screen so firing range cues
+                 * never trigger floppy I/O while the simulation is running.
                  */
                 Sound_InitSpeechHit();
+                Sound_InitSpeechReload();
                 Sound_InitNarratorPrepareToFire();
 
                 {

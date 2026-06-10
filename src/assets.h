@@ -38,6 +38,7 @@ extern const UWORD RangePaletteRGB4[32];
 #define HISCORE_FANFARE_FILE "audio/Four_Ruffles_Fanfare.raw"
 #define NARRATOR_PREPARE_TO_FIRE_FILE "audio/Speech_PrepareToFire.raw"
 #define SPEECH_HIT_FILE "audio/Speech_Hit.raw"
+#define SPEECH_RELOAD_FILE "audio/Speech_Reload.raw"
 #define SPEECH_EXCELLENT_FILE "audio/Speech_Excellent.raw"
 #define SPEECH_SUPERB_FILE "audio/Speech_Superb.raw"
 #define SPEECH_WELL_DONE_FILE "audio/Speech_WellDone.raw"

@@ -63,6 +63,7 @@ static Sample gSpeechLoop = {NULL, 0};
 static Sample gHiScoreFanfare = {NULL, 0};
 static Sample gNarratorPrepareToFire = {NULL, 0};
 static Sample gSpeechHit = {NULL, 0};
+static Sample gSpeechReload = {NULL, 0};
 static Sample gSpeechExcellent = {NULL, 0};
 static Sample gSpeechSuperb = {NULL, 0};
 static Sample gSpeechWellDone = {NULL, 0};
@@ -78,6 +79,8 @@ static BOOL gHiScoreFanfareAvailable = FALSE;
 static BOOL gNarratorPrepareToFireInited = FALSE;
 static BOOL gSpeechHitInited = FALSE;
 static BOOL gSpeechHitAvailable = FALSE;
+static BOOL gSpeechReloadInited = FALSE;
+static BOOL gSpeechReloadAvailable = FALSE;
 static BOOL gSpeechExcellentInited = FALSE;
 static BOOL gSpeechSuperbInited = FALSE;
 static BOOL gSpeechWellDoneInited = FALSE;
@@ -726,7 +729,8 @@ void Sound_ShutdownNarratorPrepareToFire(void) {
 
     if ((!gSpeechLoopInited || !gSpeechLoopAvailable) &&
         (!gHiScoreFanfareInited || !gHiScoreFanfareAvailable) &&
-        (!gSpeechHitInited || !gSpeechHitAvailable) && !gSpeechExcellentInited &&
+        (!gSpeechHitInited || !gSpeechHitAvailable) &&
+        (!gSpeechReloadInited || !gSpeechReloadAvailable) && !gSpeechExcellentInited &&
         !gSpeechSuperbInited && !gSpeechWellDoneInited && !gSpeechUnacceptableInited &&
         gSpeechVoiceInited) {
         CloseVoice(&gSpeechVoice);
@@ -826,6 +830,85 @@ void Sound_ShutdownSpeechHit(void) {
     FreeSample(&gSpeechHit);
     gSpeechHitAvailable = FALSE;
     gSpeechHitInited = FALSE;
+}
+
+BOOL Sound_InitSpeechReload(void) {
+    if (gSpeechReloadInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gLastError = SOUND_OK;
+    gSpeechReloadAvailable = FALSE;
+
+    /* Speech_Reload is used during live gameplay.  Preload it before entering
+     * the firing range so reload reminders never perform floppy I/O while the
+     * simulation is running.
+     */
+    if (!LoadSample(SPEECH_RELOAD_FILE, &gSpeechReload)) {
+        /* Optional speech cue: remember the attempt to avoid retrying in reload. */
+        gSpeechReloadInited = TRUE;
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    if (!EnsureSpeechVoice()) {
+        FreeSample(&gSpeechReload);
+        gSpeechReloadInited = TRUE;
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gSpeechReloadAvailable = TRUE;
+    gSpeechReloadInited = TRUE;
+    gLastError = SOUND_OK;
+    return TRUE;
+}
+
+void Sound_PlaySpeechReload(void) {
+    if (!gSpeechReloadInited) {
+        if (!Sound_InitSpeechReload()) {
+            return;
+        }
+    }
+
+    if (!gSpeechReloadAvailable || !gSpeechReload.data || gSpeechReload.length == 0 ||
+        !gSpeechVoiceInited) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+
+    StartVoiceSample(&gSpeechVoice, &gSpeechReload, SOUND_22KHZ_PERIOD, 64, 1);
+}
+
+void Sound_StopSpeechReload(BOOL fadeOut) {
+    (void)fadeOut;
+
+    if (!gSpeechReloadInited) {
+        return;
+    }
+
+    ReapVoice(&gSpeechVoice);
+
+    if (gSpeechVoice.playing) {
+        StopVoice(&gSpeechVoice);
+    }
+}
+
+void Sound_ShutdownSpeechReload(void) {
+    if (!gSpeechReloadInited) {
+        return;
+    }
+
+    Sound_StopSpeechReload(FALSE);
+    FreeSample(&gSpeechReload);
+    gSpeechReloadAvailable = FALSE;
+    gSpeechReloadInited = FALSE;
 }
 
 BOOL Sound_InitSpeechExcellent(void) {
