@@ -85,6 +85,10 @@ extern BOOL Input_Down(void);
 #define HAND_SWAY_AMPLITUDE_PX 3
 #define HAND_SWAY_LEAD_FP (3 * 256)
 
+#define RELOAD_STATE_NONE 0
+#define RELOAD_STATE_WAIT_PUSH 1
+#define RELOAD_STATE_WAIT_PULL 2
+
 #define FRONT_AIM_X 41
 #define FRONT_AIM_Y 10
 
@@ -175,6 +179,8 @@ typedef struct RangeSessionState {
     UWORD resultFlashColor;
 
     UWORD ammoCount;
+    UBYTE reloadState;
+    BOOL reloadNeedsNeutral;
     UWORD sessionScore;
 
     BOOL showFinalScore;
@@ -216,6 +222,8 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
     state->ringX = (SCR_W - REARSIGHT_W) / 2;
     state->ringY = (SCR_H - REARSIGHT_H) / 2;
     state->ammoCount = HUD_MAGAZINE_COUNT * HUD_MAGAZINE_SIZE;
+    state->reloadState = RELOAD_STATE_NONE;
+    state->reloadNeedsNeutral = FALSE;
     state->sessionScore = 0;
     state->lastShotScore = SCORE_MISS;
     state->resultFlashColor = SCORE_FLASH_MISS_COLOR;
@@ -979,6 +987,39 @@ static void DrawCenterStatusText(struct RastPort *rp, struct TextFont *font, BOO
     DrawTextWithShadow(rp, font, x, HUD_PAUSED_Y, HUD_TEXT_PEN, text, len);
 }
 
+static void DrawReloadLine(struct RastPort *rp, struct TextFont *font, WORD y, const char *text) {
+    UWORD len;
+    WORD x;
+    WORD width;
+
+    if (!rp || !text) {
+        return;
+    }
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    len = TextLen(text);
+    width = TextLength(rp, (STRPTR)text, len);
+    x = (WORD)((SCR_W - width) / 2);
+    DrawTextWithShadow(rp, font, x, y, HUD_TEXT_PEN, text, len);
+}
+
+static void DrawReloadStatusText(struct RastPort *rp, struct TextFont *font, BOOL reloadRequired,
+                                 BOOL paused, BOOL showFinalScore) {
+    (void)paused;
+
+    if (!rp || !reloadRequired || showFinalScore) {
+        return;
+    }
+
+    /* Keep reload messages in fixed lines reserved below PAUSED.
+       When the game is not paused, the PAUSED line simply remains empty. */
+    DrawReloadLine(rp, font, HUD_PAUSED_Y + 13, "RELOAD!");
+    DrawReloadLine(rp, font, HUD_PAUSED_Y + 26, "(PUSH FORWARD AND PULL BACK)");
+}
+
 static void DrawAccuracy(struct RastPort *rp, struct TextFont *font, BOOL showFinalScore) {
     char text[24];
     UWORD len;
@@ -1110,6 +1151,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #define currentFrontRecoilY state.currentFrontRecoilY
 #define currentRearRecoilY state.currentRearRecoilY
 #define ammoCount state.ammoCount
+#define reloadState state.reloadState
+#define reloadNeedsNeutral state.reloadNeedsNeutral
 #define showFinalScore state.showFinalScore
 #define sessionComplete state.sessionComplete
 #define roundEnding state.roundEnding
@@ -1240,7 +1283,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 shotNeedsRelease = FALSE;
             }
 
-            if (!roundEnding && !showFinalScore && Input_FirePressed()) {
+            if (!roundEnding && !showFinalScore && reloadState == RELOAD_STATE_NONE && Input_FirePressed()) {
                 if (ammoCount > 0 && !shotNeedsRelease &&
                     ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
                     WORD aimX;
@@ -1312,6 +1355,40 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                         DateStamp(&finalScoreStamp);
                         finalScoreStampValid = TRUE;
+                    } else if ((ammoCount % HUD_MAGAZINE_SIZE) == 0) {
+                        reloadState = RELOAD_STATE_WAIT_PUSH;
+                        reloadNeedsNeutral = TRUE;
+                        shotNeedsRelease = TRUE;
+                    }
+                }
+            }
+
+            if (!roundEnding && !showFinalScore && reloadState != RELOAD_STATE_NONE) {
+                BOOL reloadUp = Input_Up();
+                BOOL reloadDown = Input_Down();
+
+                /* Fire during reload is ignored completely.  Consume the edge
+                 * here so it cannot be applied immediately after the magazine
+                 * is seated.  If Fire is held, require a release before the
+                 * next valid shot.
+                 */
+                if (Input_FirePressed() || Input_IsFireDown()) {
+                    shotNeedsRelease = TRUE;
+                }
+
+                if (reloadNeedsNeutral) {
+                    if (!reloadUp && !reloadDown) {
+                        reloadNeedsNeutral = FALSE;
+                    }
+                } else if (reloadState == RELOAD_STATE_WAIT_PUSH) {
+                    if (reloadUp) {
+                        reloadState = RELOAD_STATE_WAIT_PULL;
+                    }
+                } else if (reloadState == RELOAD_STATE_WAIT_PULL) {
+                    if (reloadDown) {
+                        reloadState = RELOAD_STATE_NONE;
+                        reloadNeedsNeutral = TRUE;
+                        shotNeedsRelease = TRUE;
                     }
                 }
             }
@@ -1581,6 +1658,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
                 DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
                 DrawCenterStatusText(rp, hudFont, paused, showFinalScore);
+                DrawReloadStatusText(rp, hudFont, reloadState != RELOAD_STATE_NONE, paused,
+                                     showFinalScore);
                 DrawAccuracy(rp, hudFont, showFinalScore);
 
                 if (useDBuf) {
@@ -1665,6 +1744,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #undef currentFrontRecoilY
 #undef currentRearRecoilY
 #undef ammoCount
+#undef reloadState
+#undef reloadNeedsNeutral
 #undef showFinalScore
 #undef sessionComplete
 #undef roundEnding
