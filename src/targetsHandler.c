@@ -861,6 +861,11 @@ void TargetsHandler_Draw(struct RastPort *rp) {
     DrawSeries(&gSeries050, rp);
 }
 
+
+BOOL TargetsHandler_IsComplete(void) {
+    return (BOOL)(gReady && gKilledTargets >= DEMO_TARGET_LIMIT);
+}
+
 void TargetsHandler_SetPaused(BOOL paused) {
     struct DateStamp now;
     struct DateStamp delta;

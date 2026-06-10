@@ -53,6 +53,7 @@ void TargetsHandler_Tick(void);
 void TargetsHandler_Draw(struct RastPort *rp);
 void TargetsHandler_SetPaused(BOOL paused);
 BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffsetY, UWORD *hitDelayTicks, UBYTE *hitScore, UBYTE *hitVolume);
+BOOL TargetsHandler_IsComplete(void);
 UWORD TargetsHandler_GetSlotCount(TargetDistance distance);
 BOOL TargetsHandler_SelectSlot(TargetDistance distance, UWORD slotIndex);
 BOOL TargetsHandler_GetTargetInfo(TargetDistance distance, TargetInfo *outInfo);

@@ -180,6 +180,7 @@ typedef struct RangeSessionState {
     BOOL showFinalScore;
     BOOL sessionComplete;
     BOOL roundEnding;
+    BOOL levelCompleted;
 
     /* Frozen snapshot of the last shot, used by the end-of-round screen. */
     BOOL finalShotValid;
@@ -222,6 +223,7 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
     state->showFinalScore = FALSE;
     state->sessionComplete = FALSE;
     state->roundEnding = FALSE;
+    state->levelCompleted = FALSE;
     state->finalShotValid = FALSE;
     state->finalShotHitSnap = FALSE;
     state->finalShotScoreSnap = SCORE_MISS;
@@ -1031,8 +1033,8 @@ static void DrawCenteredTextWithShadow(struct RastPort *rp, struct TextFont *fon
     DrawTextWithShadowEx(rp, font, x, y, pen, shadowPenValue, text, len);
 }
 
-static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL lastShotHit,
-                                UBYTE lastShotScore, UWORD sessionScore) {
+static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL levelCompleted,
+                                BOOL lastShotHit, UBYTE lastShotScore, UWORD sessionScore) {
     const char *qualityText;
 
     if (!rp) {
@@ -1040,7 +1042,7 @@ static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL
     }
 
     DrawCenteredTextWithShadow(rp, font, ENDROUND_TITLE_Y, HUD_TEXT_PEN, HUD_SHADOW_PEN,
-                               "LEVEL COMPLETED");
+                               levelCompleted ? "LEVEL COMPLETED" : "OUT OF AMMO");
 
     DrawHitCounter(rp, font);
 
@@ -1111,6 +1113,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #define showFinalScore state.showFinalScore
 #define sessionComplete state.sessionComplete
 #define roundEnding state.roundEnding
+#define levelCompleted state.levelCompleted
 #define finalScoreStamp state.finalScoreStamp
 #define finalScoreStampValid state.finalScoreStampValid
 
@@ -1247,6 +1250,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     UWORD hitDelayTicks;
                     UBYTE hitScore = SCORE_MISS;
                     UBYTE hitVolume = 64;
+                    BOOL targetsComplete = FALSE;
 
                     ammoCount--;
                     Sound_PlayShot();
@@ -1281,8 +1285,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     }
 
                     resultFlashTicks = RESULT_FLASH_TICKS;
+                    targetsComplete = TargetsHandler_IsComplete();
 
-                    if (ammoCount == 0) {
+                    if (targetsComplete || ammoCount == 0) {
+                        levelCompleted = targetsComplete;
                         state.finalShotValid = TRUE;
                         state.finalShotHitSnap = lastShotHit;
                         state.finalShotScoreSnap = lastShotScore;
@@ -1587,8 +1593,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     WaitBlit();
                 }
 
-                DrawEndRoundOverlay(rp, hudFont, state.finalShotHitSnap, state.finalShotScoreSnap,
-                                    state.sessionScore);
+                DrawEndRoundOverlay(rp, hudFont, levelCompleted, state.finalShotHitSnap,
+                                    state.finalShotScoreSnap, state.sessionScore);
 
                 if (useDBuf) {
                     Gfx_SwapBuffers();
@@ -1662,6 +1668,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #undef showFinalScore
 #undef sessionComplete
 #undef roundEnding
+#undef levelCompleted
 
     return state.sessionComplete;
 }
