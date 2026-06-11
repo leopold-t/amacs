@@ -88,7 +88,7 @@ extern BOOL Input_Down(void);
 #define RELOAD_STATE_NONE 0
 #define RELOAD_STATE_WAIT_PUSH 1
 #define RELOAD_STATE_WAIT_PULL 2
-#define RELOAD_SPEECH_INITIAL_DELAY_TICKS (2 * DOS_TICKS_PER_SEC)
+#define RELOAD_SPEECH_INITIAL_DELAY_TICKS (3 * DOS_TICKS_PER_SEC)
 #define RELOAD_SPEECH_INTERVAL_TICKS (5 * DOS_TICKS_PER_SEC)
 
 #define FRONT_AIM_X 41
@@ -723,7 +723,11 @@ static void FinishReloadPrompt(RangeSessionState *state) {
     state->reloadNeedsNeutral = TRUE;
     state->reloadSpeechStampValid = FALSE;
     state->reloadSpeechFirstPromptPending = FALSE;
-    Sound_StopSpeechReload(FALSE);
+    /* Do not stop Speech_Reload here. If the instructor has already started
+     * saying "Reload! Reload!", let the sample finish naturally. Any
+     * Speech_Hit cue that happens during this short window is intentionally
+     * skipped by the speech channel priority logic.
+     */
 }
 
 static void UpdateReloadSpeech(RangeSessionState *state) {

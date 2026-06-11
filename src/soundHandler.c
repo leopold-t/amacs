@@ -81,6 +81,7 @@ static BOOL gSpeechHitInited = FALSE;
 static BOOL gSpeechHitAvailable = FALSE;
 static BOOL gSpeechReloadInited = FALSE;
 static BOOL gSpeechReloadAvailable = FALSE;
+static BOOL gSpeechReloadPlaying = FALSE;
 static BOOL gSpeechExcellentInited = FALSE;
 static BOOL gSpeechSuperbInited = FALSE;
 static BOOL gSpeechWellDoneInited = FALSE;
@@ -103,6 +104,7 @@ static void ResetState(void) {
     gShotVoice.playing = FALSE;
     gHitVoice.playing = FALSE;
     gDrumsVoice.playing = FALSE;
+    gSpeechReloadPlaying = FALSE;
     gHitDueStamp.ds_Days = 0;
     gHitDueStamp.ds_Minute = 0;
     gHitDueStamp.ds_Tick = 0;
@@ -800,6 +802,17 @@ void Sound_PlaySpeechHit(void) {
 
     ReapVoice(&gSpeechVoice);
 
+    if (gSpeechReloadPlaying) {
+        if (gSpeechVoice.playing) {
+            /* Reload speech has priority once it has started.  Do not cut it
+             * with Speech_Hit; this rare hit cue is intentionally skipped.
+             */
+            return;
+        }
+
+        gSpeechReloadPlaying = FALSE;
+    }
+
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
     }
@@ -879,11 +892,17 @@ void Sound_PlaySpeechReload(void) {
 
     ReapVoice(&gSpeechVoice);
 
+    if (!gSpeechVoice.playing) {
+        gSpeechReloadPlaying = FALSE;
+    }
+
     if (gSpeechVoice.playing) {
         StopVoice(&gSpeechVoice);
+        gSpeechReloadPlaying = FALSE;
     }
 
     StartVoiceSample(&gSpeechVoice, &gSpeechReload, SOUND_22KHZ_PERIOD, 64, 1);
+    gSpeechReloadPlaying = gSpeechVoice.playing;
 }
 
 void Sound_StopSpeechReload(BOOL fadeOut) {
@@ -895,8 +914,14 @@ void Sound_StopSpeechReload(BOOL fadeOut) {
 
     ReapVoice(&gSpeechVoice);
 
-    if (gSpeechVoice.playing) {
+    if (!gSpeechVoice.playing) {
+        gSpeechReloadPlaying = FALSE;
+        return;
+    }
+
+    if (gSpeechReloadPlaying) {
         StopVoice(&gSpeechVoice);
+        gSpeechReloadPlaying = FALSE;
     }
 }
 
