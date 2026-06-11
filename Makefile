@@ -3,7 +3,7 @@
 CC = m68k-amigaos-gcc
 CFLAGS = -O2 -noixemul -Wall -Wno-pointer-sign \
          -I/opt/amiga/m68k-amigaos/ndk-include
-LFLAGS = -lamiga
+LFLAGS = -noixemul -lamiga
 
 SRC_DIR = src
 BUILD_DIR = build

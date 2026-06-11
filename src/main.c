@@ -7,7 +7,6 @@
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
-#include <stdio.h>
 #include <string.h>
 
 #include "assets.h"
@@ -1156,8 +1155,88 @@ static void HiScore_ResetToDefaults(void) {
     }
 }
 
+static BOOL Dos_ReadLine(BPTR fh, char *line, UWORD maxLen) {
+    UWORD pos = 0;
+    char ch;
+    LONG got;
+
+    if (!fh || !line || maxLen == 0) {
+        return FALSE;
+    }
+
+    while (pos < (UWORD)(maxLen - 1)) {
+        got = Read(fh, &ch, 1);
+
+        if (got == 0) {
+            break;
+        }
+
+        if (got != 1) {
+            return FALSE;
+        }
+
+        line[pos++] = ch;
+
+        if (ch == '\n') {
+            break;
+        }
+    }
+
+    line[pos] = '\0';
+    return (pos > 0) ? TRUE : FALSE;
+}
+
+static BOOL Dos_WriteBytes(BPTR fh, const void *data, ULONG len) {
+    if (!fh || (!data && len > 0)) {
+        return FALSE;
+    }
+
+    if (len == 0) {
+        return TRUE;
+    }
+
+    return (Write(fh, (APTR)data, len) == (LONG)len) ? TRUE : FALSE;
+}
+
+static BOOL Dos_WriteCString(BPTR fh, const char *text) {
+    ULONG len = 0;
+
+    if (!text) {
+        return FALSE;
+    }
+
+    while (text[len] != '\0') {
+        len++;
+    }
+
+    return Dos_WriteBytes(fh, text, len);
+}
+
+static BOOL Dos_WriteChar(BPTR fh, char ch) {
+    return Dos_WriteBytes(fh, &ch, 1);
+}
+
+static BOOL Dos_WriteUWord(BPTR fh, UWORD value) {
+    char buf[6];
+    WORD pos = 0;
+    WORD i;
+
+    do {
+        buf[pos++] = (char)('0' + (value % 10));
+        value = (UWORD)(value / 10);
+    } while (value > 0 && pos < (WORD)sizeof(buf));
+
+    for (i = pos - 1; i >= 0; i--) {
+        if (!Dos_WriteChar(fh, buf[i])) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
 static void HiScore_LoadOnce(void) {
-    FILE *fh;
+    BPTR fh;
     char line[96];
     HiScoreEntry loadedScores[HISCORE_ENTRY_COUNT];
     UWORD loaded = 0;
@@ -1168,15 +1247,15 @@ static void HiScore_LoadOnce(void) {
     }
 
     gHiScoreLoadAttempted = TRUE;
-    fh = fopen(HISCORE_FILE_NAME, "r");
+    fh = Open((STRPTR)HISCORE_FILE_NAME, MODE_OLDFILE);
 
     if (!fh) {
         HiScore_ResetToDefaults();
         return;
     }
 
-    if (!fgets(line, sizeof(line), fh)) {
-        fclose(fh);
+    if (!Dos_ReadLine(fh, line, sizeof(line))) {
+        Close(fh);
         HiScore_ResetToDefaults();
         return;
     }
@@ -1184,7 +1263,7 @@ static void HiScore_LoadOnce(void) {
     HiScore_TrimLineEnd(line);
 
     if (strcmp(line, HISCORE_FILE_HEADER) != 0) {
-        fclose(fh);
+        Close(fh);
         HiScore_ResetToDefaults();
         return;
     }
@@ -1193,13 +1272,13 @@ static void HiScore_LoadOnce(void) {
         loadedScores[i] = gDefaultHiScores[i];
     }
 
-    while (loaded < HISCORE_ENTRY_COUNT && fgets(line, sizeof(line), fh)) {
+    while (loaded < HISCORE_ENTRY_COUNT && Dos_ReadLine(fh, line, sizeof(line))) {
         char *name = NULL;
         UWORD score = 0;
         HiScore_TrimLineEnd(line);
 
         if (!HiScore_ParseScoreLine(line, &name, &score)) {
-            fclose(fh);
+            Close(fh);
             HiScore_ResetToDefaults();
             return;
         }
@@ -1219,7 +1298,7 @@ static void HiScore_LoadOnce(void) {
         loaded++;
     }
 
-    fclose(fh);
+    Close(fh);
 
     if (loaded < HISCORE_ENTRY_COUNT) {
         HiScore_ResetToDefaults();
@@ -1249,50 +1328,48 @@ static UWORD HiScore_NameLengthForSave(const char *name) {
 }
 
 static BOOL HiScore_Save(void) {
-    FILE *fh;
+    BPTR fh;
     UWORD i;
-    fh = fopen(HISCORE_FILE_NAME, "w");
+    BOOL ok = TRUE;
+
+    fh = Open((STRPTR)HISCORE_FILE_NAME, MODE_NEWFILE);
 
     if (!fh) {
         return FALSE;
     }
 
-    if (fprintf(fh, "%s\n", HISCORE_FILE_HEADER) < 0) {
-        fclose(fh);
-        return FALSE;
+    if (!Dos_WriteCString(fh, HISCORE_FILE_HEADER) || !Dos_WriteChar(fh, '\n')) {
+        ok = FALSE;
     }
 
-    for (i = 0; i < HISCORE_ENTRY_COUNT; i++) {
+    for (i = 0; ok && i < HISCORE_ENTRY_COUNT; i++) {
         UWORD nameLen = HiScore_NameLengthForSave(gHiScores[i].name);
 
-        if (fprintf(fh, "%u ", gHiScores[i].score) < 0) {
-            fclose(fh);
-            return FALSE;
+        if (!Dos_WriteUWord(fh, gHiScores[i].score) || !Dos_WriteChar(fh, ' ')) {
+            ok = FALSE;
+            break;
         }
 
         if (nameLen > 0) {
-            if (fwrite(gHiScores[i].name, 1, nameLen, fh) != nameLen) {
-                fclose(fh);
-                return FALSE;
+            if (!Dos_WriteBytes(fh, gHiScores[i].name, nameLen)) {
+                ok = FALSE;
+                break;
             }
         } else {
-            if (fputs("PLAYER", fh) < 0) {
-                fclose(fh);
-                return FALSE;
+            if (!Dos_WriteCString(fh, "PLAYER")) {
+                ok = FALSE;
+                break;
             }
         }
 
-        if (fputc('\n', fh) == EOF) {
-            fclose(fh);
-            return FALSE;
+        if (!Dos_WriteChar(fh, '\n')) {
+            ok = FALSE;
+            break;
         }
     }
 
-    if (fclose(fh) != 0) {
-        return FALSE;
-    }
-
-    return TRUE;
+    Close(fh);
+    return ok;
 }
 
 static void DrawHiScoreSaveErrorOverlay(struct RastPort *rp, struct TextFont *font) {
