@@ -1,4 +1,6 @@
 #include <devices/inputevent.h>
+#include <dos/dosextens.h>
+#include <exec/tasks.h>
 #include <exec/types.h>
 #include <graphics/gfx.h>
 #include <graphics/text.h>
@@ -2707,6 +2709,30 @@ static WaitResult WaitForTargetRangesAdvance(void) {
     }
 }
 
+static void ShowMissingLowLevelLibraryMessage(void) {
+    struct Process *proc = (struct Process *)FindTask(NULL);
+
+    if (proc && proc->pr_CLI) {
+        PutStr("AMACS Startup Error:\n"
+               "lowlevel.library is required.\n\n"
+               "Please copy lowlevel.library to LIBS:\n"
+               "and restart AMACS.\n");
+    } else {
+        struct EasyStruct req;
+
+        req.es_StructSize = sizeof(struct EasyStruct);
+        req.es_Flags = 0;
+        req.es_Title = "AMACS Startup Error";
+        req.es_TextFormat = "lowlevel.library is required.\n\n"
+                            "Please copy lowlevel.library\n"
+                            "to the LIBS: drawer and\n"
+                            "restart AMACS.";
+        req.es_GadgetFormat = "OK";
+
+        EasyRequest(NULL, &req, NULL);
+    }
+}
+
 /* ------------------------------------------------------------------ */
 /*                            MAIN                                    */
 /* ------------------------------------------------------------------ */
@@ -2718,6 +2744,7 @@ int main(void) {
     UWORD nextLoPal[32];
 
     if (!Input_Init()) {
+        ShowMissingLowLevelLibraryMessage();
         return RETURN_FAIL;
     }
 

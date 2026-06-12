@@ -9,6 +9,11 @@
 #include <proto/exec.h>
 #include <proto/lowlevel.h>
 
+/* Keep lowlevel.library optional until Input_Init() succeeds.
+   Providing our own base symbol prevents the C runtime/libamiga
+   from treating lowlevel.library as a mandatory startup dependency. */
+struct Library *LowLevelBase = NULL;
+
 #include "input.h"
 
 static ULONG ReadJoyPort2(void) {
