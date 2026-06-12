@@ -88,6 +88,8 @@ extern BOOL Input_Down(void);
 #define RELOAD_STATE_NONE 0
 #define RELOAD_STATE_WAIT_PUSH 1
 #define RELOAD_STATE_WAIT_PULL 2
+#define RELOAD_STATE_FINISHING 3
+#define RELOAD_FINISH_TICKS ((DOS_TICKS_PER_SEC * 5) / 2)
 #define RELOAD_SPEECH_INITIAL_DELAY_TICKS (3 * DOS_TICKS_PER_SEC)
 #define RELOAD_SPEECH_INTERVAL_TICKS (5 * DOS_TICKS_PER_SEC)
 
@@ -187,6 +189,8 @@ typedef struct RangeSessionState {
     struct DateStamp reloadSpeechStamp;
     BOOL reloadSpeechStampValid;
     BOOL reloadSpeechFirstPromptPending;
+    struct DateStamp reloadFinishStamp;
+    BOOL reloadFinishStampValid;
     UWORD sessionScore;
 
     BOOL showFinalScore;
@@ -232,6 +236,7 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
     state->reloadNeedsNeutral = FALSE;
     state->reloadSpeechStampValid = FALSE;
     state->reloadSpeechFirstPromptPending = FALSE;
+    state->reloadFinishStampValid = FALSE;
     state->sessionScore = 0;
     state->lastShotScore = SCORE_MISS;
     state->resultFlashColor = SCORE_FLASH_MISS_COLOR;
@@ -714,7 +719,7 @@ static void StartReloadPrompt(RangeSessionState *state) {
     state->reloadSpeechFirstPromptPending = TRUE;
 }
 
-static void FinishReloadPrompt(RangeSessionState *state) {
+static void CompleteReloadPrompt(RangeSessionState *state) {
     if (!state) {
         return;
     }
@@ -723,6 +728,7 @@ static void FinishReloadPrompt(RangeSessionState *state) {
     state->reloadNeedsNeutral = TRUE;
     state->reloadSpeechStampValid = FALSE;
     state->reloadSpeechFirstPromptPending = FALSE;
+    state->reloadFinishStampValid = FALSE;
     /* Do not stop Speech_Reload here. If the instructor has already started
      * saying "Reload! Reload!", let the sample finish naturally. Any
      * Speech_Hit cue that happens during this short window is intentionally
@@ -730,11 +736,41 @@ static void FinishReloadPrompt(RangeSessionState *state) {
      */
 }
 
+static void StartReloadFinishing(RangeSessionState *state) {
+    if (!state) {
+        return;
+    }
+
+    state->reloadState = RELOAD_STATE_FINISHING;
+    state->reloadNeedsNeutral = TRUE;
+    state->reloadSpeechStampValid = FALSE;
+    state->reloadSpeechFirstPromptPending = FALSE;
+    DateStamp(&state->reloadFinishStamp);
+    state->reloadFinishStampValid = TRUE;
+}
+
+static void UpdateReloadFinishing(RangeSessionState *state) {
+    if (!state || state->reloadState != RELOAD_STATE_FINISHING) {
+        return;
+    }
+
+    if (!state->reloadFinishStampValid) {
+        DateStamp(&state->reloadFinishStamp);
+        state->reloadFinishStampValid = TRUE;
+        return;
+    }
+
+    if (ElapsedTicksSince(&state->reloadFinishStamp) >= RELOAD_FINISH_TICKS) {
+        CompleteReloadPrompt(state);
+    }
+}
+
 static void UpdateReloadSpeech(RangeSessionState *state) {
     ULONG elapsed;
     ULONG delayTicks;
 
-    if (!state || state->reloadState == RELOAD_STATE_NONE) {
+    if (!state || (state->reloadState != RELOAD_STATE_WAIT_PUSH &&
+                   state->reloadState != RELOAD_STATE_WAIT_PULL)) {
         return;
     }
 
@@ -1241,6 +1277,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #define reloadSpeechStamp state.reloadSpeechStamp
 #define reloadSpeechStampValid state.reloadSpeechStampValid
 #define reloadSpeechFirstPromptPending state.reloadSpeechFirstPromptPending
+#define reloadFinishStamp state.reloadFinishStamp
+#define reloadFinishStampValid state.reloadFinishStampValid
 #define showFinalScore state.showFinalScore
 #define sessionComplete state.sessionComplete
 #define roundEnding state.roundEnding
@@ -1378,6 +1416,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 if (reloadState != RELOAD_STATE_NONE && reloadSpeechStampValid) {
                     AddTicksToDateStamp(&reloadSpeechStamp, ElapsedTicksSince(&reloadPauseStamp));
                 }
+                if (reloadState == RELOAD_STATE_FINISHING && reloadFinishStampValid) {
+                    AddTicksToDateStamp(&reloadFinishStamp, ElapsedTicksSince(&reloadPauseStamp));
+                }
                 reloadPauseStampValid = FALSE;
             }
         }
@@ -1486,11 +1527,13 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     }
                 } else if (reloadState == RELOAD_STATE_WAIT_PUSH) {
                     if (reloadUp) {
+                        Sound_PlayReloadMagOut();
                         reloadState = RELOAD_STATE_WAIT_PULL;
                     }
                 } else if (reloadState == RELOAD_STATE_WAIT_PULL) {
                     if (reloadDown) {
-                        FinishReloadPrompt(&state);
+                        Sound_PlayReloadMagIn();
+                        StartReloadFinishing(&state);
                         reloadPauseStampValid = FALSE;
                         shotNeedsRelease = TRUE;
                     }
@@ -1498,6 +1541,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             }
 
             if (!roundEnding && !showFinalScore) {
+                UpdateReloadFinishing(&state);
                 UpdateReloadSpeech(&state);
             }
 
@@ -1857,6 +1901,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #undef reloadSpeechStamp
 #undef reloadSpeechStampValid
 #undef reloadSpeechFirstPromptPending
+#undef reloadFinishStamp
+#undef reloadFinishStampValid
 #undef showFinalScore
 #undef sessionComplete
 #undef roundEnding

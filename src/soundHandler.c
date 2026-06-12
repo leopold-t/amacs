@@ -64,6 +64,8 @@ static Sample gHiScoreFanfare = {NULL, 0};
 static Sample gNarratorPrepareToFire = {NULL, 0};
 static Sample gSpeechHit = {NULL, 0};
 static Sample gSpeechReload = {NULL, 0};
+static Sample gReloadMagOut = {NULL, 0};
+static Sample gReloadMagIn = {NULL, 0};
 static Sample gSpeechExcellent = {NULL, 0};
 static Sample gSpeechSuperb = {NULL, 0};
 static Sample gSpeechWellDone = {NULL, 0};
@@ -82,6 +84,8 @@ static BOOL gSpeechHitAvailable = FALSE;
 static BOOL gSpeechReloadInited = FALSE;
 static BOOL gSpeechReloadAvailable = FALSE;
 static BOOL gSpeechReloadPlaying = FALSE;
+static BOOL gReloadSfxInited = FALSE;
+static BOOL gReloadSfxAvailable = FALSE;
 static BOOL gSpeechExcellentInited = FALSE;
 static BOOL gSpeechSuperbInited = FALSE;
 static BOOL gSpeechWellDoneInited = FALSE;
@@ -1200,6 +1204,68 @@ SoundError Sound_GetLastError(void) {
     return gLastError;
 }
 
+
+BOOL Sound_InitReloadSfx(void) {
+    if (gReloadSfxInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gReloadSfxAvailable = FALSE;
+    gLastError = SOUND_OK;
+
+    if (!LoadSample(RELOAD_MAG_OUT_FILE, &gReloadMagOut)) {
+        gReloadSfxInited = TRUE;
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    if (!LoadSample(RELOAD_MAG_IN_FILE, &gReloadMagIn)) {
+        FreeSample(&gReloadMagOut);
+        gReloadSfxInited = TRUE;
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gReloadSfxAvailable = TRUE;
+    gReloadSfxInited = TRUE;
+    gLastError = SOUND_OK;
+    return TRUE;
+}
+
+static void PlayReloadSfx(const Sample *sample) {
+    if (!gSoundInited || !gReloadSfxInited || !gReloadSfxAvailable ||
+        !sample || !sample->data || sample->length == 0) {
+        return;
+    }
+
+    if (!gShotVoice.io) {
+        return;
+    }
+
+    ReapVoice(&gShotVoice);
+    if (gShotVoice.playing) {
+        StopVoice(&gShotVoice);
+    }
+
+    StartVoiceSample(&gShotVoice, sample, SOUND_22KHZ_PERIOD, 64, 1);
+}
+
+void Sound_PlayReloadMagOut(void) {
+    PlayReloadSfx(&gReloadMagOut);
+}
+
+void Sound_PlayReloadMagIn(void) {
+    PlayReloadSfx(&gReloadMagIn);
+}
+
+void Sound_ShutdownReloadSfx(void) {
+    FreeSample(&gReloadMagOut);
+    FreeSample(&gReloadMagIn);
+    gReloadSfxAvailable = FALSE;
+    gReloadSfxInited = FALSE;
+}
+
 BOOL Sound_Init(void) {
     if (gSoundInited) {
         return TRUE;
@@ -1257,6 +1323,7 @@ void Sound_Shutdown(void) {
 
     FreeSample(&gShot);
     FreeSample(&gHit);
+    Sound_ShutdownReloadSfx();
 
     /* We leave the audio.device open during a normal shutdown */
     ResetState();
