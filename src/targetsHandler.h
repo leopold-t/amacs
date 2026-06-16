@@ -7,17 +7,17 @@
 #define T050_W 48
 #define T050_H 23
 
-#define T100_W 24
-#define T100_H 11
+#define T100_W 24 // TODO: 27
+#define T100_H 11 // TODO: 13
 
 #define T150_W 9
-#define T150_H 17
+#define T150_H 19
 
-#define T200_W 8
+#define T200_W 7
 #define T200_H 15
 
 #define T250_W 7
-#define T250_H 14
+#define T250_H 13
 
 #define T300_W 5
 #define T300_H 10
@@ -52,7 +52,8 @@ void TargetsHandler_ToggleSlot(UWORD slot);
 void TargetsHandler_Tick(void);
 void TargetsHandler_Draw(struct RastPort *rp);
 void TargetsHandler_SetPaused(BOOL paused);
-BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffsetY, UWORD *hitDelayTicks, UBYTE *hitScore, UBYTE *hitVolume);
+BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffsetY,
+                             UWORD *hitDelayTicks, UBYTE *hitScore, UBYTE *hitVolume);
 BOOL TargetsHandler_IsComplete(void);
 UWORD TargetsHandler_GetSlotCount(TargetDistance distance);
 BOOL TargetsHandler_SelectSlot(TargetDistance distance, UWORD slotIndex);
