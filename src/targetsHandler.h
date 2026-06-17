@@ -4,11 +4,11 @@
 #include <exec/types.h>
 #include <graphics/rastport.h>
 
-#define T050_W 48
+#define T050_W 47
 #define T050_H 23
 
-#define T100_W 24 // TODO: 27
-#define T100_H 11 // TODO: 13
+#define T100_W 27
+#define T100_H 13
 
 #define T150_W 9
 #define T150_H 19
