@@ -47,12 +47,12 @@ typedef struct AudioVoice {
 
 #define AUDIO_CH_0_RIGHT_SHOT 1
 #define AUDIO_CH_1_LEFT_HIT 2
-#define AUDIO_CH_2_LEFT_TITLE 4 // TODO: Rename this channel from TITLE to AMBIENT
+#define AUDIO_CH_2_LEFT_AMBIENT 4
 #define AUDIO_CH_3_RIGHT_SPEECH 8
 
 static AudioVoice gShotVoice = {NULL, NULL, FALSE, {AUDIO_CH_0_RIGHT_SHOT}};
 static AudioVoice gHitVoice = {NULL, NULL, FALSE, {AUDIO_CH_1_LEFT_HIT}};
-static AudioVoice gTitleVoice = {NULL, NULL, FALSE, {AUDIO_CH_2_LEFT_TITLE}};
+static AudioVoice gTitleVoice = {NULL, NULL, FALSE, {AUDIO_CH_2_LEFT_AMBIENT}};
 static AudioVoice gSpeechVoice = {NULL, NULL, FALSE, {AUDIO_CH_3_RIGHT_SPEECH}};
 static AudioVoice gDrumsVoice = {NULL, NULL, FALSE, {AUDIO_CH_0_RIGHT_SHOT}};
 
@@ -66,6 +66,7 @@ static Sample gSpeechHit = {NULL, 0};
 static Sample gSpeechReload = {NULL, 0};
 static Sample gReloadMagOut = {NULL, 0};
 static Sample gReloadMagIn = {NULL, 0};
+static Sample gBirdCall = {NULL, 0};
 static Sample gSpeechExcellent = {NULL, 0};
 static Sample gSpeechSuperb = {NULL, 0};
 static Sample gSpeechWellDone = {NULL, 0};
@@ -86,6 +87,9 @@ static BOOL gSpeechReloadAvailable = FALSE;
 static BOOL gSpeechReloadPlaying = FALSE;
 static BOOL gReloadSfxInited = FALSE;
 static BOOL gReloadSfxAvailable = FALSE;
+static BOOL gBirdAmbientInited = FALSE;
+static BOOL gBirdAmbientAvailable = FALSE;
+static BOOL gBirdAmbientPlaying = FALSE;
 static BOOL gSpeechExcellentInited = FALSE;
 static BOOL gSpeechSuperbInited = FALSE;
 static BOOL gSpeechWellDoneInited = FALSE;
@@ -108,7 +112,9 @@ static void ResetState(void) {
     gShotVoice.playing = FALSE;
     gHitVoice.playing = FALSE;
     gDrumsVoice.playing = FALSE;
+    gTitleVoice.playing = FALSE;
     gSpeechReloadPlaying = FALSE;
+    gBirdAmbientPlaying = FALSE;
     gHitDueStamp.ds_Days = 0;
     gHitDueStamp.ds_Minute = 0;
     gHitDueStamp.ds_Tick = 0;
@@ -1205,6 +1211,123 @@ SoundError Sound_GetLastError(void) {
 }
 
 
+BOOL Sound_InitBirdAmbient(void) {
+    if (gBirdAmbientInited) {
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gBirdAmbientAvailable = FALSE;
+    gBirdAmbientPlaying = FALSE;
+    gLastError = SOUND_OK;
+
+    /* Bird_Call is an in-range ambient cue.  Load the sample before entering
+     * the firing range so the random ambient loop never performs floppy I/O
+     * during active gameplay.
+     */
+    if (!LoadSample(BIRD_CALL_FILE, &gBirdCall)) {
+        /* Optional ambient cue: missing file must not block the game. */
+        gBirdAmbientInited = TRUE;
+        gLastError = SOUND_OK;
+        return TRUE;
+    }
+
+    gBirdAmbientAvailable = TRUE;
+    gBirdAmbientInited = TRUE;
+    gLastError = SOUND_OK;
+    return TRUE;
+}
+
+void Sound_PlayBirdAmbient(void) {
+    if (!gSoundInited) {
+        return;
+    }
+
+    if (!gBirdAmbientInited) {
+        if (!Sound_InitBirdAmbient()) {
+            return;
+        }
+    }
+
+    if (!gBirdAmbientAvailable || !gBirdCall.data || gBirdCall.length == 0) {
+        return;
+    }
+
+    if (!gTitleVoice.io) {
+        if (!InitVoice(&gTitleVoice)) {
+            return;
+        }
+    }
+
+    ReapVoice(&gTitleVoice);
+    if (!gTitleVoice.playing) {
+        gBirdAmbientPlaying = FALSE;
+    }
+
+    if (gTitleVoice.playing) {
+        StopVoice(&gTitleVoice);
+    }
+
+    StartVoiceSample(&gTitleVoice, &gBirdCall, SOUND_22KHZ_PERIOD, 48, 1);
+    gBirdAmbientPlaying = gTitleVoice.playing;
+}
+
+void Sound_StopBirdAmbient(BOOL fadeOut) {
+    (void)fadeOut;
+
+    if (!gBirdAmbientInited) {
+        return;
+    }
+
+    if (gTitleVoice.io) {
+        ReapVoice(&gTitleVoice);
+
+        if (!gTitleVoice.playing) {
+            gBirdAmbientPlaying = FALSE;
+        }
+
+        if (gBirdAmbientPlaying && gTitleVoice.playing) {
+            StopVoice(&gTitleVoice);
+        }
+    }
+
+    gBirdAmbientPlaying = FALSE;
+    gLastError = SOUND_OK;
+}
+
+void Sound_ShutdownBirdAmbient(void) {
+    if (!gBirdAmbientInited) {
+        return;
+    }
+
+    Sound_StopBirdAmbient(FALSE);
+    FreeSample(&gBirdCall);
+    gBirdAmbientAvailable = FALSE;
+    gBirdAmbientInited = FALSE;
+
+    /* Release CH2 after leaving the range so title music can allocate and play
+     * normally on the next title screen.
+     */
+    if (gTitleVoice.io) {
+        CloseVoice(&gTitleVoice);
+    }
+
+    gLastError = SOUND_OK;
+}
+
+BOOL Sound_IsBirdAmbientPlaying(void) {
+    if (!gBirdAmbientInited || !gBirdAmbientAvailable || !gTitleVoice.io) {
+        return FALSE;
+    }
+
+    ReapVoice(&gTitleVoice);
+    if (!gTitleVoice.playing) {
+        gBirdAmbientPlaying = FALSE;
+    }
+
+    return gBirdAmbientPlaying;
+}
+
 BOOL Sound_InitReloadSfx(void) {
     if (gReloadSfxInited) {
         gLastError = SOUND_OK;
@@ -1234,8 +1357,8 @@ BOOL Sound_InitReloadSfx(void) {
 }
 
 static void PlayReloadSfx(const Sample *sample) {
-    if (!gSoundInited || !gReloadSfxInited || !gReloadSfxAvailable ||
-        !sample || !sample->data || sample->length == 0) {
+    if (!gSoundInited || !gReloadSfxInited || !gReloadSfxAvailable || !sample || !sample->data ||
+        sample->length == 0) {
         return;
     }
 
@@ -1324,6 +1447,7 @@ void Sound_Shutdown(void) {
     FreeSample(&gShot);
     FreeSample(&gHit);
     Sound_ShutdownReloadSfx();
+    Sound_ShutdownBirdAmbient();
 
     /* We leave the audio.device open during a normal shutdown */
     ResetState();
@@ -1337,11 +1461,19 @@ void Sound_Update(void) {
         ReapVoice(&gDrumsVoice);
 
         if (!gSoundPaused && gSpeechLoopEnabled && !gDrumsVoice.playing) {
-            StartVoiceSample(&gDrumsVoice, &gSpeechLoop, SOUND_11KHZ_PERIOD, 48, LOOP_FOREVER_CYCLES);
+            StartVoiceSample(&gDrumsVoice, &gSpeechLoop, SOUND_11KHZ_PERIOD, 48,
+                             LOOP_FOREVER_CYCLES);
         }
     }
 
     if (gSpeechVoiceInited) {
+    }
+
+    if (gBirdAmbientInited && gBirdAmbientAvailable && gTitleVoice.io) {
+        ReapVoice(&gTitleVoice);
+        if (!gTitleVoice.playing) {
+            gBirdAmbientPlaying = FALSE;
+        }
     }
 
     if (gSoundPaused) {

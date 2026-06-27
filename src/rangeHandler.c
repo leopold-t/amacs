@@ -92,6 +92,8 @@ extern BOOL Input_Down(void);
 #define RELOAD_FINISH_TICKS ((DOS_TICKS_PER_SEC * 5) / 2)
 #define RELOAD_SPEECH_INITIAL_DELAY_TICKS (3 * DOS_TICKS_PER_SEC)
 #define RELOAD_SPEECH_INTERVAL_TICKS (5 * DOS_TICKS_PER_SEC)
+#define BIRD_AMBIENT_MIN_DELAY_TICKS (6 * DOS_TICKS_PER_SEC)
+#define BIRD_AMBIENT_MAX_DELAY_TICKS (8 * DOS_TICKS_PER_SEC)
 
 #define FRONT_AIM_X 41
 #define FRONT_AIM_Y 10
@@ -140,11 +142,17 @@ static const struct TextAttr gHudFontAttr = {HUD_FONT_NAME, HUD_FONT_SIZE, FS_NO
 
 static UWORD gHitCount = 0;
 
+typedef struct RangeSessionState RangeSessionState;
+
 static void ResetHitCounter(void);
 static UWORD CalculateAccuracyPercent(UWORD score);
 static ULONG ElapsedSecondsSince(const struct DateStamp *start);
 static ULONG ElapsedTicksSince(const struct DateStamp *start);
 static void AddTicksToDateStamp(struct DateStamp *stamp, ULONG ticks);
+static UWORD RandomBirdAmbientDelayTicks(void);
+static void ScheduleBirdAmbient(RangeSessionState *state);
+static void StopBirdAmbient(RangeSessionState *state);
+static void UpdateBirdAmbient(RangeSessionState *state);
 static UWORD CalculateTimeBonus(UWORD totalTime, UWORD accuracyPercent);
 static UWORD ScaleSummaryScore(UWORD score);
 
@@ -219,6 +227,11 @@ typedef struct RangeSessionState {
     LONG handSwayLeadTargetX;
     struct DateStamp handSwayPhaseStamp;
     BOOL handSwayPhaseStampValid;
+
+    BOOL birdAmbientEnabled;
+    struct DateStamp birdAmbientStamp;
+    BOOL birdAmbientStampValid;
+    UWORD birdAmbientDelayTicks;
 } RangeSessionState;
 
 /* Mandatory function to reset and restore range state */
@@ -257,6 +270,9 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
     state->handSwayRearOffsetX = 0;
     state->handSwayLeadTargetX = 0;
     state->handSwayPhaseStampValid = FALSE;
+    state->birdAmbientEnabled = FALSE;
+    state->birdAmbientStampValid = FALSE;
+    state->birdAmbientDelayTicks = 0;
 
     Input_ResetState();
     TargetsHandler_Reset();
@@ -705,6 +721,57 @@ static void AddTicksToDateStamp(struct DateStamp *stamp, ULONG ticks) {
     totalMinutes = (ULONG)stamp->ds_Minute + extraMinutes;
     stamp->ds_Days += (LONG)(totalMinutes / minutesPerDay);
     stamp->ds_Minute = (LONG)(totalMinutes % minutesPerDay);
+}
+
+
+static UWORD RandomBirdAmbientDelayTicks(void) {
+    struct DateStamp now;
+    UWORD span;
+    ULONG seed;
+
+    DateStamp(&now);
+    span = (UWORD)(BIRD_AMBIENT_MAX_DELAY_TICKS - BIRD_AMBIENT_MIN_DELAY_TICKS + 1);
+    seed = (ULONG)now.ds_Tick + ((ULONG)now.ds_Minute * 37UL) + ((ULONG)now.ds_Days * 13UL);
+    return (UWORD)(BIRD_AMBIENT_MIN_DELAY_TICKS + (seed % span));
+}
+
+static void ScheduleBirdAmbient(RangeSessionState *state) {
+    if (!state) {
+        return;
+    }
+
+    state->birdAmbientEnabled = TRUE;
+    DateStamp(&state->birdAmbientStamp);
+    state->birdAmbientDelayTicks = RandomBirdAmbientDelayTicks();
+    state->birdAmbientStampValid = TRUE;
+}
+
+static void StopBirdAmbient(RangeSessionState *state) {
+    if (state) {
+        state->birdAmbientEnabled = FALSE;
+        state->birdAmbientStampValid = FALSE;
+        state->birdAmbientDelayTicks = 0;
+    }
+
+    Sound_StopBirdAmbient(FALSE);
+}
+
+static void UpdateBirdAmbient(RangeSessionState *state) {
+    if (!state || !state->birdAmbientEnabled) {
+        return;
+    }
+
+    if (!state->birdAmbientStampValid) {
+        ScheduleBirdAmbient(state);
+        return;
+    }
+
+    if (ElapsedTicksSince(&state->birdAmbientStamp) < state->birdAmbientDelayTicks) {
+        return;
+    }
+
+    Sound_PlayBirdAmbient();
+    ScheduleBirdAmbient(state);
 }
 
 static void StartReloadPrompt(RangeSessionState *state) {
@@ -1318,6 +1385,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     TargetsHandler_SetPaused(FALSE);
     Sound_SetPaused(FALSE);
     DateStamp(&state.roundStartStamp);
+    ScheduleBirdAmbient(&state);
 
     tempMaskPlane = (PLANEPTR)AllocRaster(FRONTSIGHT_W, FRONTSIGHT_H);
 
@@ -1392,6 +1460,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
         if (!paused) {
             Sound_Update();
+            if (!roundEnding && !showFinalScore) {
+                UpdateBirdAmbient(&state);
+            }
         }
 
         if (Input_QuitPressed()) {
@@ -1443,6 +1514,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                     ammoCount--;
                     Sound_PlayShot();
+                    Sound_StopBirdAmbient(FALSE);
+                    ScheduleBirdAmbient(&state);
                     MarkShotFired(&shotCooldownActive, &lastShotStamp);
                     shotNeedsRelease = TRUE;
                     recoilActive = TRUE;
@@ -1496,6 +1569,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                             outSummary->summaryLastShotScore = state.finalShotScoreSnap;
                         }
 
+                        StopBirdAmbient(&state);
                         roundEnding = TRUE;
                         sessionComplete = TRUE;
 
@@ -1844,6 +1918,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         WaitTOF();
     }
 
+    StopBirdAmbient(&state);
     Sound_Shutdown();
     TargetsHandler_Shutdown();
 

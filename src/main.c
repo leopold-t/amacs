@@ -3001,6 +3001,7 @@ show_title:
                 Sound_InitSpeechHit();
                 Sound_InitSpeechReload();
                 Sound_InitReloadSfx();
+                Sound_InitBirdAmbient();
                 Sound_InitNarratorPrepareToFire();
 
                 {

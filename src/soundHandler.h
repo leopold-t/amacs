@@ -56,6 +56,12 @@ BOOL Sound_InitReloadSfx(void);
 void Sound_PlayReloadMagOut(void);
 void Sound_PlayReloadMagIn(void);
 void Sound_ShutdownReloadSfx(void);
+
+BOOL Sound_InitBirdAmbient(void);
+void Sound_PlayBirdAmbient(void);
+void Sound_StopBirdAmbient(BOOL fadeOut);
+void Sound_ShutdownBirdAmbient(void);
+BOOL Sound_IsBirdAmbientPlaying(void);
 BOOL Sound_InitSpeechExcellent(void);
 void Sound_PlaySpeechExcellent(void);
 void Sound_StopSpeechExcellent(BOOL fadeOut);
