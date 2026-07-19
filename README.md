@@ -20,15 +20,28 @@ The game uses sampled sound effects and narration generated with ElevenLabs. Mus
 - Floppy disk compatible distribution
 - Real hardware focused development
 
-### Current Version
-AMACS v0.556
-Development is ongoing, with future plans including additional game modes, expanded range content and an experimental Multiscan/VGA showcase version.
-
 ### Requirements
 - AmigaOS 3.x
 - lowlevel.library
 - Motorola 68000 CPU or higher
 - 1 MB RAM minimum
+
+## Controls
+### Global
+- **Amiga + Q** – Quit to Workbench.
+
+### Menu Navigation
+- **Joystick Fire** / **Left Mouse Button** – Pull the trigger to continue.
+
+### Firing Range
+- **Joystick** – Aim using the iron sights.
+- **Joystick Forward then Back** – Reload the weapon.
+- **Joystick Fire** / **Left Mouse Button** – Pull the trigger to fire.
+- **P** – Pause the simulation.
+
+## Floppy Disk Edition
+The floppy disk must be writable in order to save the high-score table.
+AMACS stores high scores in the `Scores.dat` file on the game disk.
 
 ## Acknowledgments
 The floppy disk edition of AMACS uses **GoWB**, a utility written by **Oliver Wagner**, to automatically load Workbench before launching the game. This ensures that the required Workbench environment and system libraries are available while keeping the startup process simple and transparent for the user.
@@ -39,6 +52,10 @@ AMACS includes excerpts from the following public domain recordings performed by
 - **"Four Ruffles and Flourishes"** — United States Army Band
 
 These recordings are public domain works of the United States federal government and are available through Wikimedia Commons.
+
+### Current Version
+AMACS v0.556
+Development is ongoing, with future plans including additional game modes, expanded range content and an experimental Multiscan/VGA showcase version.
 
 ## Project Information
 ### Repository:
