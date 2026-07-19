@@ -30,6 +30,16 @@ Development is ongoing, with future plans including additional game modes, expan
 - Motorola 68000 CPU or higher
 - 1 MB RAM minimum
 
+## Acknowledgments
+The floppy disk edition of AMACS uses **GoWB**, a utility written by **Oliver Wagner**, to automatically load Workbench before launching the game. This ensures that the required Workbench environment and system libraries are available while keeping the startup process simple and transparent for the user.
+
+AMACS includes excerpts from the following public domain recordings performed by official United States military ensembles:
+- **"Adjutant's Call"** — Sgt. Codie Lynn Williams, United States Marine Corps
+- **"Yankee Doodle"** — United States Army Chorus
+- **"Four Ruffles and Flourishes"** — United States Army Band
+
+These recordings are public domain works of the United States federal government and are available through Wikimedia Commons.
+
 ## Project Information
 ### Repository:
 https://github.com/leopold-t/amacs
