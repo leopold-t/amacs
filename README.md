@@ -40,8 +40,7 @@ The game uses sampled sound effects and narration generated with ElevenLabs. Mus
 - **P** – Pause the simulation.
 
 ## Floppy Disk Edition
-The floppy disk must be writable in order to save the high-score table.
-AMACS stores high scores in the `Scores.dat` file on the game disk.
+The floppy disk must be writable in order to save the high-score table. AMACS stores high scores in the `Scores.dat` file on the game disk. Due to the limited capacity of a standard Amiga floppy disk, the floppy edition includes only a single music track: **"Yankee Doodle"**.
 
 ## Acknowledgments
 The floppy disk edition of AMACS uses **GoWB**, a utility written by **Oliver Wagner**, to automatically load Workbench before launching the game. This ensures that the required Workbench environment and system libraries are available while keeping the startup process simple and transparent for the user.
