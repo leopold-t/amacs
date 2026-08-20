@@ -53,12 +53,32 @@ BOOL Bob_LoadRawAndMask(AmacsBob *b, const char *rawFile, const char *maskFile, 
             return FALSE;
         }
 
+        UWORD loadedPlanes = 0;
+
         for (UWORD p = 0; p < depth; p++) {
-            if (Read(fh, b->bm.Planes[p], planeSize) != (LONG)planeSize) {
-                Close(fh);
-                Bob_Free(b);
-                return FALSE;
+            LONG got = Read(fh, b->bm.Planes[p], planeSize);
+
+            if (got == (LONG)planeSize) {
+                loadedPlanes++;
+                continue;
             }
+
+            /*
+             * Some overlay RAWs use fewer bitplanes than the 5-plane
+             * destination screen.  If the file ends cleanly on a plane
+             * boundary, keep the remaining allocated planes cleared.
+             */
+            if (got == 0 && loadedPlanes > 0) {
+                for (UWORD q = p; q < depth; q++) {
+                    BltClear(b->bm.Planes[q], planeSize, 0);
+                }
+                WaitBlit();
+                break;
+            }
+
+            Close(fh);
+            Bob_Free(b);
+            return FALSE;
         }
         Close(fh);
     }
