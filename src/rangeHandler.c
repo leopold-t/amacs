@@ -1564,6 +1564,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         lastShotHit = FALSE;
                         lastShotScore = SCORE_MISS;
                         resultFlashColor = SCORE_FLASH_MISS_COLOR;
+                        Sound_PlaySpeechMiss();
                     }
 
                     resultFlashTicks = RESULT_FLASH_TICKS;

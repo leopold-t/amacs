@@ -2973,6 +2973,7 @@ show_title:
 
                     /* Gameplay audio is preloaded while the first Performance page is visible. */
                     Sound_InitSpeechHit();
+                    Sound_InitSpeechMiss();
                     Sound_InitSpeechReload();
                     Sound_InitReloadSfx();
                     Sound_InitBirdAmbient();
