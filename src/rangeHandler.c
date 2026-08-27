@@ -723,7 +723,6 @@ static void AddTicksToDateStamp(struct DateStamp *stamp, ULONG ticks) {
     stamp->ds_Minute = (LONG)(totalMinutes % minutesPerDay);
 }
 
-
 static UWORD RandomBirdAmbientDelayTicks(void) {
     struct DateStamp now;
     UWORD span;
@@ -1021,6 +1020,27 @@ static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
 
     len = BuildHitCounterText(text, GetHitCount());
     DrawTextWithShadow(rp, font, HUD_TEXT_X, HUD_TEXT_Y, HUD_TEXT_PEN, text, len);
+}
+
+static void DrawLevelTitle(struct RastPort *rp, struct TextFont *font) {
+    static const char gLevelTitle[] = "TEN SHOT CHALLENGE";
+    UWORD len;
+    WORD width;
+    WORD x;
+
+    if (!rp) {
+        return;
+    }
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    len = TextLen(gLevelTitle);
+    width = TextLength(rp, (STRPTR)gLevelTitle, len);
+    x = (WORD)((SCR_W - width) / 2);
+
+    DrawTextWithShadow(rp, font, x, HUD_TEXT_Y, HUD_TEXT_PEN, gLevelTitle, len);
 }
 
 static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD ammoCount) {
@@ -1880,6 +1900,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 }
 
                 DrawHitCounter(rp, hudFont);
+                DrawLevelTitle(rp, hudFont);
                 DrawAmmoBlocks(rp, hudFont, ammoCount);
                 DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
                 DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
