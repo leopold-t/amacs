@@ -89,7 +89,8 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define SUMMARY_TIME_BONUS_Y 179
 #define SUMMARY_TOTAL_SCORE_Y 195
 #define SUMMARY_ACCURACY_Y 163
-#define SUMMARY_RANK_Y 179
+#define SUMMARY_SHOT_LOCATION_Y 179
+#define SUMMARY_RANK_Y 195
 #define SUMMARY_HOLD_WAIT 0
 #define SUMMARY_SCORING_ETYPE_RAW "gfx/ScoringEType.raw"
 #define SUMMARY_SCORING_ETYPE_MASK "gfx/ScoringEType.mask"
@@ -729,6 +730,63 @@ static void BuildSummaryAccuracyLine(char *buf, UWORD accuracy) {
     buf[pos] = '\0';
     pos = AppendUnsignedMain(buf, pos, accuracy);
     buf[pos++] = '%';
+    buf[pos] = '\0';
+}
+
+static const char *GetSummaryShotLocationText(UWORD performance, UWORD hits) {
+    ULONG scaledPerformance;
+
+    if (hits == 0) {
+        return "POOR";
+    }
+
+    /*
+     * Shot Location uses only actual hits.  Each hit can score 1..5 points,
+     * so compare the average hit quality against exact 20% steps without
+     * rounding the percentage first.
+     */
+    scaledPerformance = (ULONG)performance * 100UL;
+
+    if (scaledPerformance <= (ULONG)hits * 5UL * 20UL) {
+        return "POOR";
+    }
+
+    if (scaledPerformance <= (ULONG)hits * 5UL * 40UL) {
+        return "BELOW AVERAGE";
+    }
+
+    if (scaledPerformance <= (ULONG)hits * 5UL * 60UL) {
+        return "AVERAGE";
+    }
+
+    if (scaledPerformance <= (ULONG)hits * 5UL * 80UL) {
+        return "GOOD";
+    }
+
+    return "EXCELLENT";
+}
+
+static void BuildSummaryShotLocationLine(char *buf, UWORD performance, UWORD hits) {
+    /* Full "SHOT LOCATION" plus the longest rating does not fit the right
+     * Summary column in Topaz 8, so keep the on-screen label compact. */
+    static const char prefix[] = "SHOT LOC: ";
+    const char *rating = GetSummaryShotLocationText(performance, hits);
+    UWORD i = 0;
+    UWORD pos = 0;
+
+    if (!buf) {
+        return;
+    }
+
+    while (prefix[i] != '\0') {
+        buf[pos++] = prefix[i++];
+    }
+
+    i = 0;
+    while (rating[i] != '\0') {
+        buf[pos++] = rating[i++];
+    }
+
     buf[pos] = '\0';
 }
 
@@ -2165,9 +2223,15 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_RIGHT_X, SUMMARY_ACCURACY_Y,
                                      31, 24, line, (UWORD)strlen(line));
 
+            BuildSummaryShotLocationLine(line, perfTotal, hitsTotal);
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_RIGHT_X,
+                                     SUMMARY_SHOT_LOCATION_Y, 31, 24, line,
+                                     (UWORD)strlen(line));
+
             BuildSummaryRankLine(line, acc);
-            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_RIGHT_X, SUMMARY_RANK_Y, 31,
-                                     24, line, (UWORD)strlen(line));
+            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_RIGHT_X, SUMMARY_RANK_Y,
+                                     SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN, line,
+                                     (UWORD)strlen(line));
         }
 
         DrawCenteredTextWithShadowMain(&summaryRP, font, PULL_TRIGGER_POSITION_Y,
