@@ -113,6 +113,25 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define SUMMARY_DISTANCE_PEN 16
 #define SUMMARY_HIT_MARK_PEN 20
 #define SUMMARY_HIT_MARK_CENTER_PEN 24
+
+/* Generated TEN SHOT CHALLENGE briefing shown between Performance and Range.
+ * It reuses the Performance palette, so no additional bitmap asset is needed. */
+#define LEVEL_INFO_BACKGROUND_PEN 4
+#define LEVEL_INFO_PANEL_PEN 0
+#define LEVEL_INFO_TEXT_PEN 31
+#define LEVEL_INFO_SHADOW_PEN 7
+#define LEVEL_INFO_PROMPT_PEN 26
+#define LEVEL_INFO_FRAME_X1 32
+#define LEVEL_INFO_FRAME_Y1 60
+#define LEVEL_INFO_FRAME_X2 287
+#define LEVEL_INFO_FRAME_Y2 170
+#define LEVEL_INFO_TITLE_Y 76
+#define LEVEL_INFO_LINE1_Y 96
+#define LEVEL_INFO_LINE2_Y 109
+#define LEVEL_INFO_LINE3_Y 122
+#define LEVEL_INFO_LINE4_Y 135
+#define LEVEL_INFO_LINE5_Y 148
+#define LEVEL_INFO_PROMPT_Y 214
 #define TARGET100_RAW "gfx/Target100.raw"
 #define TARGET100_MASK "gfx/Target100.mask"
 #define TARGET150_RAW "gfx/Target150.raw"
@@ -1892,6 +1911,86 @@ static WaitResult WaitForAdvanceOnly(void) {
     }
 }
 
+static void DrawLevelInfoFrame(struct RastPort *rp) {
+    /* Seven nested outlines reproduce the blue -> grey -> white -> grey -> blue
+     * bevel/gradient from the supplied mock-up, using only Performance palette pens. */
+    static const UWORD framePens[7] = {1, 15, 28, 31, 28, 15, 1};
+    UWORD i;
+
+    if (!rp) {
+        return;
+    }
+
+    for (i = 0; i < 7; i++) {
+        WORD x1 = (WORD)(LEVEL_INFO_FRAME_X1 + i);
+        WORD y1 = (WORD)(LEVEL_INFO_FRAME_Y1 + i);
+        WORD x2 = (WORD)(LEVEL_INFO_FRAME_X2 - i);
+        WORD y2 = (WORD)(LEVEL_INFO_FRAME_Y2 - i);
+
+        SetAPen(rp, framePens[i]);
+        RectFill(rp, x1, y1, x2, y1);
+        RectFill(rp, x1, y2, x2, y2);
+        RectFill(rp, x1, y1, x1, y2);
+        RectFill(rp, x2, y1, x2, y2);
+    }
+}
+
+static BOOL ShowLevelInfoScreen(void) {
+    struct Screen *scr;
+    struct RastPort *rp;
+    struct TextFont *font = NULL;
+    WaitResult waitResult;
+
+    scr = Gfx_GetScreen();
+    if (!scr || !scr->RastPort.BitMap) {
+        return FALSE;
+    }
+
+    rp = &scr->RastPort;
+
+    /* Hide the redraw completely.  The briefing deliberately uses the same
+     * palette as Performance, so it can fade in without another palette asset. */
+    Gfx_FadeOutCurrentScreenToBlack(PerformancePaletteRGB4, 32);
+
+    SetRast(rp, LEVEL_INFO_BACKGROUND_PEN);
+
+    SetAPen(rp, LEVEL_INFO_PANEL_PEN);
+    RectFill(rp, LEVEL_INFO_FRAME_X1 + 7, LEVEL_INFO_FRAME_Y1 + 7,
+             LEVEL_INFO_FRAME_X2 - 7, LEVEL_INFO_FRAME_Y2 - 7);
+    DrawLevelInfoFrame(rp);
+
+    font = OpenFont(&gSummaryFontAttr);
+
+    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
+                                   LEVEL_INFO_SHADOW_PEN, "TEN SHOT CHALLENGE");
+    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
+                                   LEVEL_INFO_SHADOW_PEN, "10 TARGETS");
+    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
+                                   LEVEL_INFO_SHADOW_PEN, "50 TO 300 METERS");
+    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
+                                   LEVEL_INFO_SHADOW_PEN, "TARGETS ARE UNTIMED");
+    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
+                                   LEVEL_INFO_SHADOW_PEN, "TEN ROUNDS");
+    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
+                                   LEVEL_INFO_SHADOW_PEN, "TWO 5-ROUND MAGAZINES");
+
+    /* Match Summary's prompt treatment: yellow text, dark one-pixel shadow,
+     * centered at the same vertical position. */
+    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_PROMPT_Y, LEVEL_INFO_PROMPT_PEN,
+                                   LEVEL_INFO_SHADOW_PEN, "PULL TRIGGER TO CONTINUE");
+
+    WaitBlit();
+    Gfx_FadeInCurrentScreenFromBlack(PerformancePaletteRGB4, 32);
+
+    waitResult = WaitForAdvanceOnly();
+
+    if (font) {
+        CloseFont(font);
+    }
+
+    return (waitResult == WAIT_ADVANCE) ? TRUE : FALSE;
+}
+
 static BOOL InitSummaryBackBuffer(struct BitMap *bm, struct RastPort *rp, UWORD width, UWORD height,
                                   UWORD depth) {
     UWORD p;
@@ -3106,6 +3205,12 @@ show_title:
                         goto exit_ok;
                     }
                 }
+            }
+
+            /* Generated level briefing: no bitmap asset, just the Performance
+             * palette, Topaz text and vector-drawn frame. */
+            if (!ShowLevelInfoScreen()) {
+                goto exit_ok;
             }
 
             /* Enter RANGE */
