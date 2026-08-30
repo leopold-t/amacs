@@ -53,7 +53,6 @@ extern BOOL Input_Down(void);
 #define TITLE_FILE "gfx/Title.raw"
 #define TRAINING_INFO_FILE "gfx/TrainingInfo.raw"
 #define FUNDAMENTALS_FILE "gfx/Fundamentals.raw"
-#define PERFORMANCE_FILE "gfx/Performance.raw"
 #define PERFORMANCE_FTYPE_RAW "gfx/PerformanceFType.raw"
 #define PERFORMANCE_FTYPE_MASK "gfx/PerformanceFType.mask"
 #define PERFORMANCE_FTYPE_W 114
@@ -167,6 +166,29 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define TARGET_RANGES_HEADER_Y 24
 #define TARGET_RANGES_PROMPT_Y 214
 #define TARGET_RANGES_LABEL_OFFSET_Y 3
+
+/* Generated Performance screen.  The former 320x256 Performance.raw is no
+ * longer required: the blue field, scale, labels and prompt are rendered
+ * from the existing Performance palette.  The target overlays remain BOBs. */
+#define PERFORMANCE_BACKGROUND_PEN 4   /* RGB4 0x10D, blue */
+#define PERFORMANCE_TEXT_PEN 31        /* RGB4 0xDDD */
+#define PERFORMANCE_SHADOW_PEN 0       /* RGB4 0x000 */
+#define PERFORMANCE_SCALE_FRAME_PEN 31 /* RGB4 0xDDD */
+#define PERFORMANCE_SCALE_EXCELLENT_PEN 17 /* RGB4 0x1A0, closest to #03b205 */
+#define PERFORMANCE_SCALE_GOOD_PEN 23      /* RGB4 0x0F0, closest to #0afe03 */
+#define PERFORMANCE_SCALE_AVERAGE_PEN 25   /* RGB4 0xEC2, closest to #e3cf17 */
+#define PERFORMANCE_SCALE_BELOW_AVG_PEN 16 /* RGB4 0xD61, closest to #dd691a */
+#define PERFORMANCE_SCALE_POOR_PEN 8       /* RGB4 0xC00, closest to #d10002 */
+#define PERFORMANCE_TITLE_LINE1_Y 36
+#define PERFORMANCE_TITLE_LINE2_Y 49
+#define PERFORMANCE_SCALE_X1 141
+#define PERFORMANCE_SCALE_X2 160
+#define PERFORMANCE_SCALE_Y1 76
+#define PERFORMANCE_SCALE_CELL_H 24
+#define PERFORMANCE_SCALE_LABEL_X 171
+#define PERFORMANCE_SCALE_LABEL_Y 82
+#define PERFORMANCE_SCALE_LABEL_STEP_Y 24
+#define PERFORMANCE_PROMPT_Y 214
 
 typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
 
@@ -2796,6 +2818,88 @@ static void DrawTargetRangesDistanceLabel(struct RastPort *rp, struct TextFont *
                              TARGET_RANGES_SHADOW_PEN, text, len);
 }
 
+static BOOL ShowGeneratedPerformanceScreen(const UWORD *fromPal, UWORD fromColors) {
+    static const char *labels[5] = {
+        "Excellent", "Good", "Average", "Below Average", "Poor"
+    };
+    static const UWORD fillPens[5] = {
+        PERFORMANCE_SCALE_EXCELLENT_PEN,
+        PERFORMANCE_SCALE_GOOD_PEN,
+        PERFORMANCE_SCALE_AVERAGE_PEN,
+        PERFORMANCE_SCALE_BELOW_AVG_PEN,
+        PERFORMANCE_SCALE_POOR_PEN
+    };
+    struct Screen *screen = Gfx_GetScreen();
+    struct RastPort *rp;
+    struct TextFont *font = NULL;
+    UWORD black[32] = {0};
+    UWORD i;
+
+    if (!screen || !screen->RastPort.BitMap || !fromPal) {
+        return FALSE;
+    }
+
+    rp = &screen->RastPort;
+
+    /* Compose the complete static Performance page while the display is black,
+     * matching the generated Target Ranges transition. */
+    Gfx_FadeOutCurrentScreenToBlack(fromPal, fromColors);
+    LoadRGB4(&screen->ViewPort, black, 32);
+    SettleDisplay(2);
+
+    SetRast(rp, PERFORMANCE_BACKGROUND_PEN);
+    font = OpenFont(&gSummaryFontAttr);
+
+    DrawCenteredTextWithShadowMain(rp, font, PERFORMANCE_TITLE_LINE1_Y,
+                                   PERFORMANCE_TEXT_PEN, PERFORMANCE_SHADOW_PEN,
+                                   "Performance is measured");
+    DrawCenteredTextWithShadowMain(rp, font, PERFORMANCE_TITLE_LINE2_Y,
+                                   PERFORMANCE_TEXT_PEN, PERFORMANCE_SHADOW_PEN,
+                                   "on this scale:");
+
+    /* The scale uses one shared 1 px frame: 18x23 px color fields separated
+     * by single light horizontal rules, matching the original artwork. */
+    SetAPen(rp, PERFORMANCE_SCALE_FRAME_PEN);
+    RectFill(rp, PERFORMANCE_SCALE_X1, PERFORMANCE_SCALE_Y1,
+             PERFORMANCE_SCALE_X1,
+             PERFORMANCE_SCALE_Y1 + 5 * PERFORMANCE_SCALE_CELL_H);
+    RectFill(rp, PERFORMANCE_SCALE_X2, PERFORMANCE_SCALE_Y1,
+             PERFORMANCE_SCALE_X2,
+             PERFORMANCE_SCALE_Y1 + 5 * PERFORMANCE_SCALE_CELL_H);
+
+    for (i = 0; i <= 5; i++) {
+        WORD lineY = (WORD)(PERFORMANCE_SCALE_Y1 + i * PERFORMANCE_SCALE_CELL_H);
+        RectFill(rp, PERFORMANCE_SCALE_X1, lineY, PERFORMANCE_SCALE_X2, lineY);
+    }
+
+    for (i = 0; i < 5; i++) {
+        WORD y1 = (WORD)(PERFORMANCE_SCALE_Y1 + i * PERFORMANCE_SCALE_CELL_H);
+        WORD y2 = (WORD)(y1 + PERFORMANCE_SCALE_CELL_H);
+
+        SetAPen(rp, fillPens[i]);
+        RectFill(rp, PERFORMANCE_SCALE_X1 + 1, y1 + 1,
+                 PERFORMANCE_SCALE_X2 - 1, y2 - 1);
+
+        DrawTextWithShadowExMain(rp, font, PERFORMANCE_SCALE_LABEL_X,
+                                 (WORD)(PERFORMANCE_SCALE_LABEL_Y + i * PERFORMANCE_SCALE_LABEL_STEP_Y),
+                                 PERFORMANCE_TEXT_PEN, PERFORMANCE_SHADOW_PEN,
+                                 labels[i], (UWORD)strlen(labels[i]));
+    }
+
+    DrawCenteredTextWithShadowMain(rp, font, PERFORMANCE_PROMPT_Y,
+                                   PERFORMANCE_TEXT_PEN, PERFORMANCE_SHADOW_PEN,
+                                   "PULL TRIGGER TO CONTINUE");
+
+    if (font) {
+        CloseFont(font);
+    }
+
+    WaitBlit();
+    SettleDisplay(1);
+    Gfx_FadeInCurrentScreenFromBlack(PerformancePaletteRGB4, 32);
+    return TRUE;
+}
+
 static BOOL ShowGeneratedTargetRangesScreen(const UWORD *fromPal, UWORD fromColors) {
     static const char *distanceLabels[6] = {"50M", "100M", "150M", "200M", "250M", "300M"};
     struct Screen *screen = Gfx_GetScreen();
@@ -3132,7 +3236,7 @@ show_title:
                     nextLoPal[i] = performancePalette[i];
                 }
 
-                if (!Gfx_CrossFadeToImage(PERFORMANCE_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                if (!ShowGeneratedPerformanceScreen(currentLoPal, 32)) {
                     goto fail;
                 }
 
