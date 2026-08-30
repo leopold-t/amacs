@@ -53,7 +53,6 @@ extern BOOL Input_Down(void);
 #define TITLE_FILE "gfx/Title.raw"
 #define TRAINING_INFO_FILE "gfx/TrainingInfo.raw"
 #define FUNDAMENTALS_FILE "gfx/Fundamentals.raw"
-#define TARGET_RANGES_FILE "gfx/TargetRanges.raw"
 #define PERFORMANCE_FILE "gfx/Performance.raw"
 #define PERFORMANCE_FTYPE_RAW "gfx/PerformanceFType.raw"
 #define PERFORMANCE_FTYPE_MASK "gfx/PerformanceFType.mask"
@@ -159,6 +158,15 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define INFO_SECONDS 6
 #define TARGETRANGES_DELAY_TICKS 25
 #define TARGETRANGES_RISE_TICKS 15
+
+/* Generated Target Ranges screen.  The original 320x256 RAW is no longer
+ * needed: the green field and all static labels are rendered with ROM Topaz. */
+#define TARGET_RANGES_BACKGROUND_PEN 3  /* RGB4 0x020 */
+#define TARGET_RANGES_TEXT_PEN 8        /* RGB4 0xDDD */
+#define TARGET_RANGES_SHADOW_PEN 0      /* RGB4 0x000 */
+#define TARGET_RANGES_HEADER_Y 24
+#define TARGET_RANGES_PROMPT_Y 214
+#define TARGET_RANGES_LABEL_OFFSET_Y 3
 
 typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
 
@@ -636,6 +644,7 @@ static void HiScore_LoadOnce(void);
 static BOOL HiScore_Save(void);
 
 static const struct TextAttr gSummaryFontAttr = {"topaz.font", 8, FS_NORMAL, FPF_ROMFONT};
+static const struct TextAttr gTargetRangesHeaderFontAttr = {"topaz.font", 9, FS_NORMAL, FPF_ROMFONT};
 
 #define HISCORE_ENTRY_COUNT 10
 #define HISCORE_NAME_LEN 20
@@ -2763,6 +2772,92 @@ static void ShutdownTargetRangesBobs(void) {
     gTargetRangesBobsLoaded = FALSE;
 }
 
+static void DrawTargetRangesDistanceLabel(struct RastPort *rp, struct TextFont *font,
+                                          const TargetRangesBob *tb, const char *text) {
+    UWORD len;
+    WORD width;
+    WORD x;
+    WORD y;
+
+    if (!rp || !tb || !text) {
+        return;
+    }
+
+    len = (UWORD)strlen(text);
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    width = TextLength(rp, (STRPTR)text, len);
+    x = (WORD)(tb->x + ((WORD)tb->bob.width - width) / 2);
+    y = (WORD)(tb->bottomY + TARGET_RANGES_LABEL_OFFSET_Y);
+
+    DrawTextWithShadowExMain(rp, font, x, y, TARGET_RANGES_TEXT_PEN,
+                             TARGET_RANGES_SHADOW_PEN, text, len);
+}
+
+static BOOL ShowGeneratedTargetRangesScreen(const UWORD *fromPal, UWORD fromColors) {
+    static const char *distanceLabels[6] = {"50M", "100M", "150M", "200M", "250M", "300M"};
+    struct Screen *screen = Gfx_GetScreen();
+    struct RastPort *rp;
+    struct TextFont *font8 = NULL;
+    struct TextFont *font9 = NULL;
+    UWORD black[32] = {0};
+    UWORD i;
+
+    if (!screen || !screen->RastPort.BitMap || !fromPal) {
+        return FALSE;
+    }
+
+    rp = &screen->RastPort;
+
+    /* Match Gfx_CrossFadeToImage(), but compose this screen procedurally while black. */
+    Gfx_FadeOutCurrentScreenToBlack(fromPal, fromColors);
+    LoadRGB4(&screen->ViewPort, black, 32);
+    SettleDisplay(2);
+
+    SetRast(rp, TARGET_RANGES_BACKGROUND_PEN);
+
+    font8 = OpenFont(&gSummaryFontAttr);
+    font9 = OpenFont(&gTargetRangesHeaderFontAttr);
+
+    if (font9) {
+        SetFont(rp, font9);
+        SetSoftStyle(rp, FSF_BOLD, FSF_BOLD);
+        DrawCenteredTextWithShadowMain(rp, font9, TARGET_RANGES_HEADER_Y,
+                                       TARGET_RANGES_TEXT_PEN, TARGET_RANGES_SHADOW_PEN,
+                                       "TARGET RANGES");
+        SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+    } else {
+        /* Defensive fallback: Topaz 8 is already used elsewhere in AMACS. */
+        SetSoftStyle(rp, FSF_BOLD, FSF_BOLD);
+        DrawCenteredTextWithShadowMain(rp, font8, TARGET_RANGES_HEADER_Y,
+                                       TARGET_RANGES_TEXT_PEN, TARGET_RANGES_SHADOW_PEN,
+                                       "TARGET RANGES");
+        SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+    }
+
+    for (i = 0; i < 6; i++) {
+        DrawTargetRangesDistanceLabel(rp, font8, &gTargetRangesBobs[i], distanceLabels[i]);
+    }
+
+    DrawCenteredTextWithShadowMain(rp, font8, TARGET_RANGES_PROMPT_Y,
+                                   TARGET_RANGES_TEXT_PEN, TARGET_RANGES_SHADOW_PEN,
+                                   "PULL TRIGGER TO CONTINUE");
+
+    if (font9) {
+        CloseFont(font9);
+    }
+    if (font8) {
+        CloseFont(font8);
+    }
+
+    WaitBlit();
+    SettleDisplay(1);
+    Gfx_FadeInCurrentScreenFromBlack(TargetRangesPaletteRGB4, 32);
+    return TRUE;
+}
+
 static WaitResult WaitForTargetRangesAdvance(void) {
     UWORD delayTicks = 0;
     UWORD revealTicks = 0;
@@ -3014,7 +3109,7 @@ show_title:
                     goto fail;
                 }
 
-                if (!Gfx_CrossFadeToImage(TARGET_RANGES_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                if (!ShowGeneratedTargetRangesScreen(currentLoPal, 32)) {
                     ShutdownTargetRangesBobs();
                     goto fail;
                 }

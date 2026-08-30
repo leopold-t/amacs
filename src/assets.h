@@ -26,7 +26,6 @@ extern const UWORD RangePaletteRGB4[32];
 #define TITLE_FILE "gfx/Title.raw"
 #define TRAINING_INFO_FILE "gfx/TrainingInfo.raw"
 #define FUNDAMENTALS_FILE "gfx/Fundamentals.raw"
-#define TARGET_RANGES_FILE "gfx/TargetRanges.raw"
 #define PERFORMANCE_FILE "gfx/Performance.raw"
 #define RANGE_FILE "gfx/OahuRange.raw"
 
