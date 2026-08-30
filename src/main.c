@@ -52,7 +52,6 @@ extern BOOL Input_Down(void);
 #define LOGO_FILE "gfx/Logo.raw"
 #define TITLE_FILE "gfx/Title.raw"
 #define TRAINING_INFO_FILE "gfx/TrainingInfo.raw"
-#define FUNDAMENTALS_FILE "gfx/Fundamentals.raw"
 #define PERFORMANCE_FTYPE_RAW "gfx/PerformanceFType.raw"
 #define PERFORMANCE_FTYPE_MASK "gfx/PerformanceFType.mask"
 #define PERFORMANCE_FTYPE_W 114
@@ -157,6 +156,21 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define INFO_SECONDS 6
 #define TARGETRANGES_DELAY_TICKS 25
 #define TARGETRANGES_RISE_TICKS 15
+
+/* Generated Fundamentals screen.  The former 320x256 Fundamentals.raw is no
+ * longer required: the blue/black/blue background and all text are rendered
+ * from the existing Fundamentals palette with ROM Topaz 8. */
+#define FUNDAMENTALS_TEXT_PEN 20       /* RGB4 0xDDE, closest palette entry to #dddddd */
+#define FUNDAMENTALS_SHADOW_PEN 0      /* RGB4 0x000 */
+#define FUNDAMENTALS_TOP_BLUE_PEN 13   /* RGB4 0x00D, closest to #0100ce */
+#define FUNDAMENTALS_HEADER_LINE1_X 92
+#define FUNDAMENTALS_HEADER_LINE2_X 88
+#define FUNDAMENTALS_HEADER_LINE1_Y 24
+#define FUNDAMENTALS_HEADER_LINE2_Y 37
+#define FUNDAMENTALS_LIST_X 70
+#define FUNDAMENTALS_LIST_LINE1_Y 95
+#define FUNDAMENTALS_LIST_STEP_Y 13
+#define FUNDAMENTALS_PROMPT_Y 214
 
 /* Generated Target Ranges screen.  The original 320x256 RAW is no longer
  * needed: the green field and all static labels are rendered with ROM Topaz. */
@@ -2818,6 +2832,119 @@ static void DrawTargetRangesDistanceLabel(struct RastPort *rp, struct TextFont *
                              TARGET_RANGES_SHADOW_PEN, text, len);
 }
 
+static void DrawFundamentalsTextNoShadow(struct RastPort *rp, struct TextFont *font,
+                                         WORD x, WORD y, const char *text) {
+    UWORD len;
+
+    if (!rp || !text) {
+        return;
+    }
+
+    len = (UWORD)strlen(text);
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    SetDrMd(rp, JAM1);
+    SetAPen(rp, FUNDAMENTALS_TEXT_PEN);
+    Move(rp, x, y + rp->TxBaseline);
+    Text(rp, (STRPTR)text, len);
+}
+
+static void DrawFundamentalsGradient(struct RastPort *rp) {
+    /* Palette entries already provide the blue ramp used by the old bitmap.
+     * The middle of the screen stays black, matching the original artwork. */
+    static const UWORD topPens[] = {13, 10, 15, 5, 12, 2, 3, 7, 9, 0};
+    static const UWORD bottomPens[] = {0, 9, 7, 3, 2, 12, 5, 15, 10, 13};
+    const WORD topEndY = 79;
+    const WORD blackEndY = 164;
+    const WORD bottomStartY = 165;
+    UWORD i;
+
+    if (!rp) {
+        return;
+    }
+
+    for (i = 0; i < (UWORD)(sizeof(topPens) / sizeof(topPens[0])); i++) {
+        WORD y1 = (WORD)((i * (topEndY + 1)) / 10);
+        WORD y2 = (WORD)((((i + 1) * (topEndY + 1)) / 10) - 1);
+        SetAPen(rp, topPens[i]);
+        RectFill(rp, 0, y1, LO_WIDTH - 1, y2);
+    }
+
+    SetAPen(rp, FUNDAMENTALS_SHADOW_PEN);
+    RectFill(rp, 0, 80, LO_WIDTH - 1, blackEndY);
+
+    for (i = 0; i < (UWORD)(sizeof(bottomPens) / sizeof(bottomPens[0])); i++) {
+        WORD span = (WORD)(LO_HEIGHT - bottomStartY);
+        WORD y1 = (WORD)(bottomStartY + (i * span) / 10);
+        WORD y2 = (WORD)(bottomStartY + (((i + 1) * span) / 10) - 1);
+        if (i == 9) {
+            y2 = LO_HEIGHT - 1;
+        }
+        SetAPen(rp, bottomPens[i]);
+        RectFill(rp, 0, y1, LO_WIDTH - 1, y2);
+    }
+}
+
+static BOOL ShowGeneratedFundamentalsScreen(const UWORD *fromPal, UWORD fromColors) {
+    static const char *listLines[4] = {
+        "* Steady Position",
+        "* Aiming",
+        "* Breath Control",
+        "* Trigger Squeeze"
+    };
+    struct Screen *screen = Gfx_GetScreen();
+    struct RastPort *rp;
+    struct TextFont *font = NULL;
+    UWORD black[32] = {0};
+    UWORD i;
+
+    if (!screen || !screen->RastPort.BitMap || !fromPal) {
+        return FALSE;
+    }
+
+    rp = &screen->RastPort;
+
+    Gfx_FadeOutCurrentScreenToBlack(fromPal, fromColors);
+    LoadRGB4(&screen->ViewPort, black, 32);
+    SettleDisplay(2);
+
+    DrawFundamentalsGradient(rp);
+    font = OpenFont(&gSummaryFontAttr);
+
+    /* Header and prompt sit on blue, so retain the familiar 1 px black shadow. */
+    DrawTextWithShadowExMain(rp, font, FUNDAMENTALS_HEADER_LINE1_X,
+                             FUNDAMENTALS_HEADER_LINE1_Y,
+                             FUNDAMENTALS_TEXT_PEN, FUNDAMENTALS_SHADOW_PEN,
+                             "4 FUNDAMENTALS OF", 17);
+    DrawTextWithShadowExMain(rp, font, FUNDAMENTALS_HEADER_LINE2_X,
+                             FUNDAMENTALS_HEADER_LINE2_Y,
+                             FUNDAMENTALS_TEXT_PEN, FUNDAMENTALS_SHADOW_PEN,
+                             "RIFLE MARKSMANSHIP", 18);
+
+    /* The list is placed on the black center band, therefore no shadow is drawn. */
+    for (i = 0; i < 4; i++) {
+        DrawFundamentalsTextNoShadow(rp, font, FUNDAMENTALS_LIST_X,
+                                     (WORD)(FUNDAMENTALS_LIST_LINE1_Y +
+                                            i * FUNDAMENTALS_LIST_STEP_Y),
+                                     listLines[i]);
+    }
+
+    DrawCenteredTextWithShadowMain(rp, font, FUNDAMENTALS_PROMPT_Y,
+                                   FUNDAMENTALS_TEXT_PEN, FUNDAMENTALS_SHADOW_PEN,
+                                   "PULL TRIGGER TO CONTINUE");
+
+    if (font) {
+        CloseFont(font);
+    }
+
+    WaitBlit();
+    SettleDisplay(1);
+    Gfx_FadeInCurrentScreenFromBlack(FundamentalsPaletteRGB4, 32);
+    return TRUE;
+}
+
 static BOOL ShowGeneratedPerformanceScreen(const UWORD *fromPal, UWORD fromColors) {
     static const char *labels[5] = {
         "Excellent", "Good", "Average", "Below Average", "Poor"
@@ -3189,7 +3316,7 @@ show_title:
                     nextLoPal[i] = fundamentalsPalette[i];
                 }
 
-                if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, currentLoPal, 32, nextLoPal, 32)) {
+                if (!ShowGeneratedFundamentalsScreen(currentLoPal, 32)) {
                     goto fail;
                 }
 
@@ -3457,7 +3584,7 @@ show_title:
                 nextLoPal[i] = fundamentalsPalette[i];
             }
 
-            if (!Gfx_CrossFadeToImage(FUNDAMENTALS_FILE, currentLoPal, 32, nextLoPal, 32)) {
+            if (!ShowGeneratedFundamentalsScreen(currentLoPal, 32)) {
                 goto fail;
             }
         } else {
