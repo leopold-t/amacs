@@ -51,7 +51,7 @@ extern BOOL Input_Down(void);
 
 #define LOGO_FILE "gfx/Logo.raw"
 #define TITLE_FILE "gfx/Title.raw"
-#define TRAINING_INFO_FILE "gfx/TrainingInfo.raw"
+#define WOODLAND_FILE "gfx/Woodland.raw"
 #define PERFORMANCE_FTYPE_RAW "gfx/PerformanceFType.raw"
 #define PERFORMANCE_FTYPE_MASK "gfx/PerformanceFType.mask"
 #define PERFORMANCE_FTYPE_W 114
@@ -171,6 +171,21 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define FUNDAMENTALS_LIST_LINE1_Y 95
 #define FUNDAMENTALS_LIST_STEP_Y 13
 #define FUNDAMENTALS_PROMPT_Y 214
+
+/* Training Info overlay. Woodland.raw now contains only the Woodland
+ * camouflage + AMACS logo background. The darkened center panel, frame and
+ * copy are rendered at runtime with ROM Topaz 8. */
+#define TRAINING_INFO_PANEL_X1 32
+#define TRAINING_INFO_PANEL_Y1 60
+#define TRAINING_INFO_PANEL_X2 287
+#define TRAINING_INFO_PANEL_Y2 170
+#define TRAINING_INFO_PANEL_BORDER 7
+#define TRAINING_INFO_TEXT_PEN 28
+#define TRAINING_INFO_SHADOW_PEN 20
+#define TRAINING_INFO_DIM_LOGO_PEN 8
+#define TRAINING_INFO_LINE1_Y 98
+#define TRAINING_INFO_LINE2_Y 114
+#define TRAINING_INFO_PROMPT_Y 146
 
 /* Generated Target Ranges screen.  The original 320x256 RAW is no longer
  * needed: the green field and all static labels are rendered with ROM Topaz. */
@@ -2887,6 +2902,117 @@ static void DrawFundamentalsGradient(struct RastPort *rp) {
     }
 }
 
+static void DrawTrainingInfoDimmedPanel(struct RastPort *rp) {
+    WORD x;
+    WORD y;
+    UWORD currentPen = 0xFFFF;
+
+    if (!rp) {
+        return;
+    }
+
+    /* The reference artwork reduces the camouflage itself almost to black,
+     * while leaving the bright AMACS logo visible as a very dark brown ghost.
+     * The stripped background uses the low palette entries for camouflage and
+     * the upper entries for the antialiased logo, so remap only this rectangle. */
+    for (y = TRAINING_INFO_PANEL_Y1 + TRAINING_INFO_PANEL_BORDER;
+         y <= TRAINING_INFO_PANEL_Y2 - TRAINING_INFO_PANEL_BORDER; y++) {
+        for (x = TRAINING_INFO_PANEL_X1 + TRAINING_INFO_PANEL_BORDER;
+             x <= TRAINING_INFO_PANEL_X2 - TRAINING_INFO_PANEL_BORDER; x++) {
+            LONG sourcePen = ReadPixel(rp, x, y);
+            UWORD targetPen;
+
+            if (sourcePen < 0) {
+                continue;
+            }
+
+            targetPen = ((UWORD)sourcePen >= 17) ? TRAINING_INFO_DIM_LOGO_PEN : 0;
+
+            if (targetPen != currentPen) {
+                SetAPen(rp, targetPen);
+                currentPen = targetPen;
+            }
+            WritePixel(rp, x, y);
+        }
+    }
+}
+
+static void DrawTrainingInfoFrame(struct RastPort *rp) {
+    static const UWORD framePens[TRAINING_INFO_PANEL_BORDER] = {
+        21, 26, 23, 28, 23, 26, 21
+    };
+    UWORD i;
+
+    if (!rp) {
+        return;
+    }
+
+    for (i = 0; i < TRAINING_INFO_PANEL_BORDER; i++) {
+        WORD x1 = (WORD)(TRAINING_INFO_PANEL_X1 + i);
+        WORD y1 = (WORD)(TRAINING_INFO_PANEL_Y1 + i);
+        WORD x2 = (WORD)(TRAINING_INFO_PANEL_X2 - i);
+        WORD y2 = (WORD)(TRAINING_INFO_PANEL_Y2 - i);
+
+        SetAPen(rp, framePens[i]);
+        RectFill(rp, x1, y1, x2, y1);
+        RectFill(rp, x1, y2, x2, y2);
+        RectFill(rp, x1, y1, x1, y2);
+        RectFill(rp, x2, y1, x2, y2);
+    }
+}
+
+static BOOL ShowGeneratedTrainingInfoScreen(const UWORD *fromPal, UWORD fromColors) {
+    struct Screen *screen = Gfx_GetScreen();
+    struct RastPort *rp;
+    struct TextFont *font = NULL;
+    UWORD black[32] = {0};
+
+    if (!screen || !screen->RastPort.BitMap || !fromPal) {
+        return FALSE;
+    }
+
+    rp = &screen->RastPort;
+
+    /* Load only the stripped Woodland/logo bitmap while the display is black,
+     * then reconstruct the old Training Info overlay procedurally. */
+    Gfx_FadeOutCurrentScreenToBlack(fromPal, fromColors);
+    LoadRGB4(&screen->ViewPort, black, 32);
+    SettleDisplay(2);
+
+    if (!LoadRawImageToScreen(WOODLAND_FILE, screen)) {
+        return FALSE;
+    }
+
+    DrawTrainingInfoDimmedPanel(rp);
+    DrawTrainingInfoFrame(rp);
+
+    font = OpenFont(&gSummaryFontAttr);
+    if (font) {
+        SetFont(rp, font);
+        SetSoftStyle(rp, FSF_BOLD, FSF_BOLD);
+    }
+
+    DrawCenteredTextWithShadowMain(rp, font, TRAINING_INFO_LINE1_Y,
+                                   TRAINING_INFO_TEXT_PEN, TRAINING_INFO_SHADOW_PEN,
+                                   "BASIC RIFLE MARKSMANSHIP");
+    DrawCenteredTextWithShadowMain(rp, font, TRAINING_INFO_LINE2_Y,
+                                   TRAINING_INFO_TEXT_PEN, TRAINING_INFO_SHADOW_PEN,
+                                   "TRAINING");
+    DrawCenteredTextWithShadowMain(rp, font, TRAINING_INFO_PROMPT_Y,
+                                   TRAINING_INFO_TEXT_PEN, TRAINING_INFO_SHADOW_PEN,
+                                   "PULL TRIGGER TO CONTINUE");
+
+    if (font) {
+        SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+        CloseFont(font);
+    }
+
+    WaitBlit();
+    SettleDisplay(1);
+    Gfx_FadeInCurrentScreenFromBlack(TrainingInfoPaletteRGB4, 32);
+    return TRUE;
+}
+
 static BOOL ShowGeneratedFundamentalsScreen(const UWORD *fromPal, UWORD fromColors) {
     static const char *listLines[4] = {
         "* Steady Position",
@@ -3277,7 +3403,7 @@ show_title:
         Sound_PlaySpeechLoop();
     }
 
-    if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, titlePalette, 32, trainingInfoPalette, 32)) {
+    if (!ShowGeneratedTrainingInfoScreen(titlePalette, 32)) {
         Gfx_CloseScreenAndWindow();
         Gfx_CloseBlackScreen();
         LevelManager_Shutdown();
@@ -3594,7 +3720,7 @@ show_title:
                 nextLoPal[i] = trainingInfoPalette[i];
             }
 
-            if (!Gfx_CrossFadeToImage(TRAINING_INFO_FILE, currentLoPal, 32, nextLoPal, 32)) {
+            if (!ShowGeneratedTrainingInfoScreen(currentLoPal, 32)) {
                 goto fail;
             }
         }
