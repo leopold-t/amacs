@@ -51,6 +51,16 @@ extern BOOL Input_Down(void);
 
 #define LOGO_FILE "gfx/Logo.raw"
 #define TITLE_FILE "gfx/Title.raw"
+
+/* Title.raw contains only the illustrated title artwork.  The small white/black
+ * copy is rendered at runtime with ROM Topaz 8 so it can be changed without
+ * rebuilding the bitmap asset. */
+#define TITLE_TEXT_PEN 25       /* RGB4 0xDDD */
+#define TITLE_SHADOW_PEN 31     /* RGB4 0x000 */
+#define TITLE_WELCOME_Y 34
+#define TITLE_MARKSMANSHIP_Y 190
+#define TITLE_VERSION_Y 206
+#define TITLE_PROMPT_Y 222
 #define WOODLAND_FILE "gfx/Woodland.raw"
 #define PERFORMANCE_FTYPE_RAW "gfx/PerformanceFType.raw"
 #define PERFORMANCE_FTYPE_MASK "gfx/PerformanceFType.mask"
@@ -172,9 +182,9 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define FUNDAMENTALS_LIST_STEP_Y 13
 #define FUNDAMENTALS_PROMPT_Y 214
 
-/* Training Info overlay. Woodland.raw now contains only the Woodland
- * camouflage + AMACS logo background. The darkened center panel, frame and
- * copy are rendered at runtime with ROM Topaz 8. */
+/* Training Info overlay.  Woodland.raw is the reusable camouflage background.
+ * The darkened center panel, frame and copy are rendered at runtime with ROM
+ * Topaz 8. */
 #define TRAINING_INFO_PANEL_X1 32
 #define TRAINING_INFO_PANEL_Y1 60
 #define TRAINING_INFO_PANEL_X2 287
@@ -964,6 +974,56 @@ static void DrawCenteredTextWithShadowMain(struct RastPort *rp, struct TextFont 
     width = TextLength(rp, (STRPTR)text, len);
     x = (WORD)((LO_WIDTH - width) / 2);
     DrawTextWithShadowExMain(rp, font, x, y, pen, shadowPenValue, text, len);
+}
+
+static void DrawGeneratedTitleText(struct RastPort *rp) {
+    struct TextFont *font = NULL;
+
+    if (!rp) {
+        return;
+    }
+
+    font = OpenFont(&gSummaryFontAttr);
+    if (font) {
+        SetFont(rp, font);
+        SetSoftStyle(rp, FSF_BOLD, FSF_BOLD);
+    }
+
+    DrawCenteredTextWithShadowMain(rp, font, TITLE_WELCOME_Y,
+                                   TITLE_TEXT_PEN, TITLE_SHADOW_PEN,
+                                   "WELCOME TO");
+    DrawCenteredTextWithShadowMain(rp, font, TITLE_MARKSMANSHIP_Y,
+                                   TITLE_TEXT_PEN, TITLE_SHADOW_PEN,
+                                   "BASIC RIFLE MARKSMANSHIP");
+    DrawCenteredTextWithShadowMain(rp, font, TITLE_VERSION_Y,
+                                   TITLE_TEXT_PEN, TITLE_SHADOW_PEN,
+                                   "VERSION 0.556");
+    DrawCenteredTextWithShadowMain(rp, font, TITLE_PROMPT_Y,
+                                   TITLE_TEXT_PEN, TITLE_SHADOW_PEN,
+                                   "PULL TRIGGER TO CONTINUE");
+
+    if (font) {
+        SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+        CloseFont(font);
+    }
+}
+
+static BOOL ShowGeneratedTitleScreenFromBlack(void) {
+    struct Screen *screen = Gfx_GetScreen();
+
+    if (!screen || !screen->RastPort.BitMap) {
+        return FALSE;
+    }
+
+    if (!LoadRawImageToScreen(TITLE_FILE, screen)) {
+        return FALSE;
+    }
+
+    DrawGeneratedTitleText(&screen->RastPort);
+    WaitBlit();
+    SettleDisplay(1);
+    Gfx_FadeInCurrentScreenFromBlack(titlePalette, 32);
+    return TRUE;
 }
 
 static void DrawRightAlignedTextWithShadowMain(struct RastPort *rp, struct TextFont *font,
@@ -2545,6 +2605,7 @@ static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack, BOOL playFanfare)
         return FALSE;
     }
 
+    DrawGeneratedTitleText(rp);
     WaitBlit();
     return TRUE;
 }
@@ -3360,7 +3421,7 @@ int main(void) {
         return RETURN_FAIL;
     }
 
-    if (!Gfx_ShowImageFadeInFromBlack(TITLE_FILE, titlePalette, 32)) {
+    if (!ShowGeneratedTitleScreenFromBlack()) {
         Gfx_CloseScreenAndWindow();
         Gfx_CloseBlackScreen();
         LevelManager_Shutdown();
