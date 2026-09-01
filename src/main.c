@@ -197,6 +197,19 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define TRAINING_INFO_LINE2_Y 114
 #define TRAINING_INFO_PROMPT_Y 146
 
+/* Main menu.  It reuses Woodland.raw, the Training Info palette, dimming
+ * treatment, gradient frame and Topaz text. */
+#define MENU_TEXT_PEN TRAINING_INFO_TEXT_PEN
+#define MENU_SHADOW_PEN TRAINING_INFO_SHADOW_PEN
+#define MENU_LINE1_Y 105
+#define MENU_LINE2_Y 125
+#define MENU_TEXT_AREA_X (TRAINING_INFO_PANEL_X1 + TRAINING_INFO_PANEL_BORDER)
+#define MENU_TEXT_AREA_Y 94
+#define MENU_TEXT_AREA_W ((TRAINING_INFO_PANEL_X2 - TRAINING_INFO_PANEL_BORDER) - MENU_TEXT_AREA_X + 1)
+#define MENU_TEXT_AREA_H 42
+#define MENU_VISIBLE_TICKS 35
+#define MENU_HIDDEN_TICKS 15
+
 /* Generated Target Ranges screen.  The original 320x256 RAW is no longer
  * needed: the green field and all static labels are rendered with ROM Topaz. */
 #define TARGET_RANGES_BACKGROUND_PEN 3  /* RGB4 0x020 */
@@ -230,6 +243,7 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define PERFORMANCE_PROMPT_Y 214
 
 typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
+typedef enum { MENU_RESULT_QUIT = 0, MENU_RESULT_TEN_SHOT } MenuResult;
 
 #ifndef IEQUALIFIER_LCOMMAND
 #define IEQUALIFIER_LCOMMAND 0x0080
@@ -3074,6 +3088,163 @@ static BOOL ShowGeneratedTrainingInfoScreen(const UWORD *fromPal, UWORD fromColo
     return TRUE;
 }
 
+static void DrawMainMenuItems(struct RastPort *rp, struct TextFont *font,
+                              UWORD selected, BOOL selectedVisible,
+                              struct BitMap *background) {
+    const char *line1 = (selected == 0) ? "> TEN SHOT CHALLENGE" : "  TEN SHOT CHALLENGE";
+    const char *line2 = (selected == 1) ? "> ZEROING" : "  ZEROING";
+
+    if (!rp || !background || !rp->BitMap) {
+        return;
+    }
+
+    /* Restore the clean dimmed camouflage beneath both rows before redrawing.
+     * This makes the 0.7/0.3 s blink remove both glyphs and their shadow without
+     * flattening the camouflage or leaving text ghosts behind. */
+    BltBitMap(background, 0, 0, rp->BitMap, MENU_TEXT_AREA_X, MENU_TEXT_AREA_Y,
+              MENU_TEXT_AREA_W, MENU_TEXT_AREA_H, 0xC0, 0xFF, NULL);
+    WaitBlit();
+
+    if (selected != 0 || selectedVisible) {
+        DrawCenteredTextWithShadowMain(rp, font, MENU_LINE1_Y, MENU_TEXT_PEN,
+                                       MENU_SHADOW_PEN, line1);
+    }
+
+    if (selected != 1 || selectedVisible) {
+        DrawCenteredTextWithShadowMain(rp, font, MENU_LINE2_Y, MENU_TEXT_PEN,
+                                       MENU_SHADOW_PEN, line2);
+    }
+}
+
+static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
+    struct Screen *screen = Gfx_GetScreen();
+    struct RastPort *rp;
+    struct TextFont *font = NULL;
+    struct BitMap menuBackground;
+    struct RastPort menuBackgroundRP;
+    BOOL backgroundReady = FALSE;
+    BOOL selectedVisible = TRUE;
+    BOOL prevUp;
+    BOOL prevDown;
+    UWORD selected = 0;
+    WORD blinkTicks = MENU_VISIBLE_TICKS;
+    UWORD black[32] = {0};
+
+    if (!screen || !screen->RastPort.BitMap || !fromPal) {
+        return MENU_RESULT_QUIT;
+    }
+
+    rp = &screen->RastPort;
+
+    Gfx_FadeOutCurrentScreenToBlack(fromPal, fromColors);
+    LoadRGB4(&screen->ViewPort, black, 32);
+    SettleDisplay(2);
+
+    if (!LoadRawImageToScreen(WOODLAND_FILE, screen)) {
+        return MENU_RESULT_QUIT;
+    }
+
+    DrawTrainingInfoDimmedPanel(rp);
+    DrawTrainingInfoFrame(rp);
+
+    font = OpenFont(&gSummaryFontAttr);
+    if (font) {
+        SetFont(rp, font);
+        SetSoftStyle(rp, FSF_BOLD, FSF_BOLD);
+    }
+
+    memset(&menuBackground, 0, sizeof(menuBackground));
+    memset(&menuBackgroundRP, 0, sizeof(menuBackgroundRP));
+    if (InitSummaryBackBuffer(&menuBackground, &menuBackgroundRP, MENU_TEXT_AREA_W,
+                              MENU_TEXT_AREA_H, LO_DEPTH)) {
+        BltBitMap(rp->BitMap, MENU_TEXT_AREA_X, MENU_TEXT_AREA_Y, &menuBackground, 0, 0,
+                  MENU_TEXT_AREA_W, MENU_TEXT_AREA_H, 0xC0, 0xFF, NULL);
+        WaitBlit();
+        backgroundReady = TRUE;
+    }
+
+    if (!backgroundReady) {
+        if (font) {
+            SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+            CloseFont(font);
+        }
+        return MENU_RESULT_QUIT;
+    }
+
+    DrawMainMenuItems(rp, font, selected, TRUE, &menuBackground);
+    WaitBlit();
+    SettleDisplay(1);
+    Gfx_FadeInCurrentScreenFromBlack(TrainingInfoPaletteRGB4, 32);
+
+    /* Navigation is edge-triggered so holding the stick cannot race through
+     * the list.  Up on the first item wraps to the last; Down on the last
+     * wraps to the first. */
+    prevUp = Input_Up();
+    prevDown = Input_Down();
+    WaitForAdvanceRelease();
+
+    for (;;) {
+        BOOL adv = FALSE, esc = FALSE;
+        BOOL upNow;
+        BOOL downNow;
+
+        PollAdvanceAndEsc(&adv, &esc);
+        if (esc) {
+            if (font) {
+                SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+                CloseFont(font);
+            }
+            FreeSummaryBackBuffer(&menuBackground, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
+            return MENU_RESULT_QUIT;
+        }
+
+        upNow = Input_Up();
+        downNow = Input_Down();
+
+        if ((upNow && !prevUp) || (downNow && !prevDown)) {
+            if (upNow && !prevUp) {
+                selected = (selected == 0) ? 1 : 0;
+            } else {
+                selected = (selected == 1) ? 0 : 1;
+            }
+
+            /* The row that just became inactive is redrawn steadily.  The new
+             * active row starts a fresh visible phase of its 0.7/0.3 s blink. */
+            selectedVisible = TRUE;
+            blinkTicks = MENU_VISIBLE_TICKS;
+            DrawMainMenuItems(rp, font, selected, TRUE, &menuBackground);
+            WaitBlit();
+        }
+
+        prevUp = upNow;
+        prevDown = downNow;
+
+        if (adv) {
+            WaitForAdvanceRelease();
+            if (selected == 0) {
+                if (font) {
+                    SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+                    CloseFont(font);
+                }
+                FreeSummaryBackBuffer(&menuBackground, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
+                return MENU_RESULT_TEN_SHOT;
+            }
+            /* ZEROING is deliberately inactive for now. */
+        }
+
+        blinkTicks--;
+        if (blinkTicks <= 0) {
+            selectedVisible = selectedVisible ? FALSE : TRUE;
+            blinkTicks = selectedVisible ? MENU_VISIBLE_TICKS : MENU_HIDDEN_TICKS;
+            DrawMainMenuItems(rp, font, selected, selectedVisible, &menuBackground);
+            WaitBlit();
+        }
+
+        Sound_Update();
+        WaitTOF();
+    }
+}
+
 static BOOL ShowGeneratedFundamentalsScreen(const UWORD *fromPal, UWORD fromColors) {
     static const char *listLines[4] = {
         "* Steady Position",
@@ -3493,28 +3664,26 @@ show_title:
         }
 
         if (r == WAIT_ADVANCE) {
-            engaged = TRUE;
+            MenuResult menuResult = ShowMainMenuScreen(currentLoPal, 32);
+
+            if (menuResult == MENU_RESULT_QUIT) {
+                goto exit_ok;
+            }
+
+            /* The menu uses the same palette as Training Info regardless of
+             * which attract-screen page the player entered it from. */
+            for (int i = 0; i < 32; i++) {
+                currentLoPal[i] = trainingInfoPalette[i];
+            }
+
+            if (menuResult == MENU_RESULT_TEN_SHOT) {
+                engaged = TRUE;
+                /* Reuse the existing pre-range path beginning at Target Ranges. */
+                attr = ATTR_FUNDAMENTALS;
+            }
         }
 
         if (engaged) {
-            /* Engaged path: one fresh Fire/LMB advances one pre-range screen. */
-            if (attr == ATTR_TRAINING_INFO) {
-                for (int i = 0; i < 32; i++) {
-                    nextLoPal[i] = fundamentalsPalette[i];
-                }
-
-                if (!ShowGeneratedFundamentalsScreen(currentLoPal, 32)) {
-                    goto fail;
-                }
-
-                for (int i = 0; i < 32; i++) {
-                    currentLoPal[i] = nextLoPal[i];
-                }
-
-                attr = ATTR_FUNDAMENTALS;
-                continue;
-            }
-
             if (attr == ATTR_FUNDAMENTALS) {
                 for (int i = 0; i < 32; i++) {
                     nextLoPal[i] = targetRangesPalette[i];
