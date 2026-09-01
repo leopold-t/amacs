@@ -131,10 +131,12 @@ static const ZeroOffset gBZO300[] = {{50, +1},  {100, +2}, {150, +3},
 static const ZeroOffset gBZO250[] = {{50, +1}, {100, +1}, {150, +1}, {200, 0}, {250, 0}, {300, -3}};
 
 #define ZERO_OFFSET_COUNT(table) (sizeof(table) / sizeof((table)[0]))
-#define ACTIVE_BZO_METERS 300
+
+/* Runtime BZO setting shared by ZEROING and the firing-range hit logic. */
+static UWORD gActiveBzoMeters = 300;
 
 static const ZeroOffset *GetActiveZeroTable(UWORD *outCount) {
-    switch (ACTIVE_BZO_METERS) {
+    switch (gActiveBzoMeters) {
         case 250:
             *outCount = (UWORD)ZERO_OFFSET_COUNT(gBZO250);
             return gBZO250;
@@ -203,6 +205,16 @@ WORD TargetScoring_GetParallaxOffset(UWORD distance, WORD sightOffsetPx) {
     }
 
     return (WORD)((value - (PARALLAX_SCALE_DENOMINATOR / 2)) / PARALLAX_SCALE_DENOMINATOR);
+}
+
+void TargetScoring_SetZeroRange(UWORD meters) {
+    if (meters == 250 || meters == 300) {
+        gActiveBzoMeters = meters;
+    }
+}
+
+UWORD TargetScoring_GetZeroRange(void) {
+    return gActiveBzoMeters;
 }
 
 BYTE TargetScoring_GetZeroOffset(UWORD distance) {

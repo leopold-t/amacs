@@ -210,6 +210,24 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define MENU_VISIBLE_TICKS 35
 #define MENU_HIDDEN_TICKS 15
 
+/* Zeroing screen.  It reuses Woodland.raw and the Training Info palette, but
+ * uses a larger dimmed panel so the future sight picture and trajectory graph
+ * can be added without changing the overall layout. */
+#define ZEROING_PANEL_X1 18
+#define ZEROING_PANEL_Y1 62
+#define ZEROING_PANEL_X2 301
+#define ZEROING_PANEL_Y2 209
+#define ZEROING_PANEL_BORDER 7
+#define ZEROING_TEXT_PEN TRAINING_INFO_TEXT_PEN
+#define ZEROING_SHADOW_PEN TRAINING_INFO_SHADOW_PEN
+#define ZEROING_TITLE_Y 81
+#define ZEROING_LINE1_Y 100
+#define ZEROING_LINE2_Y 117
+#define ZEROING_TEXT_AREA_X 48
+#define ZEROING_TEXT_AREA_Y 91
+#define ZEROING_TEXT_AREA_W 224
+#define ZEROING_TEXT_AREA_H 36
+
 /* Generated Target Ranges screen.  The original 320x256 RAW is no longer
  * needed: the green field and all static labels are rendered with ROM Topaz. */
 #define TARGET_RANGES_BACKGROUND_PEN 3  /* RGB4 0x020 */
@@ -243,7 +261,11 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define PERFORMANCE_PROMPT_Y 214
 
 typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
-typedef enum { MENU_RESULT_QUIT = 0, MENU_RESULT_TEN_SHOT } MenuResult;
+typedef enum {
+    MENU_RESULT_QUIT = 0,
+    MENU_RESULT_TEN_SHOT,
+    MENU_RESULT_ZEROING
+} MenuResult;
 
 #ifndef IEQUALIFIER_LCOMMAND
 #define IEQUALIFIER_LCOMMAND 0x0080
@@ -2977,7 +2999,8 @@ static void DrawFundamentalsGradient(struct RastPort *rp) {
     }
 }
 
-static void DrawTrainingInfoDimmedPanel(struct RastPort *rp) {
+static void DrawDimmedWoodlandPanel(struct RastPort *rp, WORD x1, WORD y1,
+                                     WORD x2, WORD y2, UWORD border) {
     WORD x;
     WORD y;
     UWORD currentPen = 0xFFFF;
@@ -2986,14 +3009,10 @@ static void DrawTrainingInfoDimmedPanel(struct RastPort *rp) {
         return;
     }
 
-    /* The reference artwork reduces the camouflage itself almost to black,
-     * while leaving the bright AMACS logo visible as a very dark brown ghost.
-     * The stripped background uses the low palette entries for camouflage and
-     * the upper entries for the antialiased logo, so remap only this rectangle. */
-    for (y = TRAINING_INFO_PANEL_Y1 + TRAINING_INFO_PANEL_BORDER;
-         y <= TRAINING_INFO_PANEL_Y2 - TRAINING_INFO_PANEL_BORDER; y++) {
-        for (x = TRAINING_INFO_PANEL_X1 + TRAINING_INFO_PANEL_BORDER;
-             x <= TRAINING_INFO_PANEL_X2 - TRAINING_INFO_PANEL_BORDER; x++) {
+    /* Preserve the same dimming rule used by Training Info: camouflage becomes
+     * black, while upper-palette AMACS pixels remain as a dark brown ghost. */
+    for (y = (WORD)(y1 + border); y <= (WORD)(y2 - border); y++) {
+        for (x = (WORD)(x1 + border); x <= (WORD)(x2 - border); x++) {
             LONG sourcePen = ReadPixel(rp, x, y);
             UWORD targetPen;
 
@@ -3012,7 +3031,8 @@ static void DrawTrainingInfoDimmedPanel(struct RastPort *rp) {
     }
 }
 
-static void DrawTrainingInfoFrame(struct RastPort *rp) {
+static void DrawGradientPanelFrame(struct RastPort *rp, WORD x1, WORD y1,
+                                   WORD x2, WORD y2, UWORD border) {
     static const UWORD framePens[TRAINING_INFO_PANEL_BORDER] = {
         21, 26, 23, 28, 23, 26, 21
     };
@@ -3022,18 +3042,37 @@ static void DrawTrainingInfoFrame(struct RastPort *rp) {
         return;
     }
 
-    for (i = 0; i < TRAINING_INFO_PANEL_BORDER; i++) {
-        WORD x1 = (WORD)(TRAINING_INFO_PANEL_X1 + i);
-        WORD y1 = (WORD)(TRAINING_INFO_PANEL_Y1 + i);
-        WORD x2 = (WORD)(TRAINING_INFO_PANEL_X2 - i);
-        WORD y2 = (WORD)(TRAINING_INFO_PANEL_Y2 - i);
+    /* Current UI frames are seven pixels wide. */
+    if (border > TRAINING_INFO_PANEL_BORDER) {
+        border = TRAINING_INFO_PANEL_BORDER;
+    }
+
+    for (i = 0; i < border; i++) {
+        WORD fx1 = (WORD)(x1 + i);
+        WORD fy1 = (WORD)(y1 + i);
+        WORD fx2 = (WORD)(x2 - i);
+        WORD fy2 = (WORD)(y2 - i);
 
         SetAPen(rp, framePens[i]);
-        RectFill(rp, x1, y1, x2, y1);
-        RectFill(rp, x1, y2, x2, y2);
-        RectFill(rp, x1, y1, x1, y2);
-        RectFill(rp, x2, y1, x2, y2);
+        RectFill(rp, fx1, fy1, fx2, fy1);
+        RectFill(rp, fx1, fy2, fx2, fy2);
+        RectFill(rp, fx1, fy1, fx1, fy2);
+        RectFill(rp, fx2, fy1, fx2, fy2);
     }
+}
+
+static void DrawTrainingInfoDimmedPanel(struct RastPort *rp) {
+    DrawDimmedWoodlandPanel(rp,
+                            TRAINING_INFO_PANEL_X1, TRAINING_INFO_PANEL_Y1,
+                            TRAINING_INFO_PANEL_X2, TRAINING_INFO_PANEL_Y2,
+                            TRAINING_INFO_PANEL_BORDER);
+}
+
+static void DrawTrainingInfoFrame(struct RastPort *rp) {
+    DrawGradientPanelFrame(rp,
+                           TRAINING_INFO_PANEL_X1, TRAINING_INFO_PANEL_Y1,
+                           TRAINING_INFO_PANEL_X2, TRAINING_INFO_PANEL_Y2,
+                           TRAINING_INFO_PANEL_BORDER);
 }
 
 static BOOL ShowGeneratedTrainingInfoScreen(const UWORD *fromPal, UWORD fromColors) {
@@ -3086,6 +3125,156 @@ static BOOL ShowGeneratedTrainingInfoScreen(const UWORD *fromPal, UWORD fromColo
     SettleDisplay(1);
     Gfx_FadeInCurrentScreenFromBlack(TrainingInfoPaletteRGB4, 32);
     return TRUE;
+}
+
+static void DrawZeroingOptions(struct RastPort *rp, struct TextFont *font,
+                               struct BitMap *background) {
+    UWORD zeroRange = TargetScoring_GetZeroRange();
+    const char *line300 =
+        (zeroRange == 300) ? "> 300 M ZERO (M16A2)" : "  300 M ZERO (M16A2)";
+    const char *line250 =
+        (zeroRange == 250) ? "> 250 M ZERO (M16A1)" : "  250 M ZERO (M16A1)";
+
+    if (!rp || !background || !rp->BitMap) {
+        return;
+    }
+
+    /* Restore the original dimmed Woodland before redrawing both rows.
+     * This removes the old cursor and its shadow completely, without
+     * replacing the camouflage with a flat black rectangle. */
+    BltBitMap(background, 0, 0, rp->BitMap, ZEROING_TEXT_AREA_X, ZEROING_TEXT_AREA_Y,
+              ZEROING_TEXT_AREA_W, ZEROING_TEXT_AREA_H, 0xC0, 0xFF, NULL);
+    WaitBlit();
+
+    DrawCenteredTextWithShadowMain(rp, font, ZEROING_LINE1_Y,
+                                   ZEROING_TEXT_PEN, ZEROING_SHADOW_PEN, line300);
+    DrawCenteredTextWithShadowMain(rp, font, ZEROING_LINE2_Y,
+                                   ZEROING_TEXT_PEN, ZEROING_SHADOW_PEN, line250);
+}
+
+static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
+    struct Screen *screen = Gfx_GetScreen();
+    struct RastPort *rp;
+    struct TextFont *font = NULL;
+    struct BitMap zeroingBackground;
+    struct RastPort zeroingBackgroundRP;
+    BOOL backgroundReady = FALSE;
+    BOOL prevUp;
+    BOOL prevDown;
+    UWORD black[32] = {0};
+
+    if (!screen || !screen->RastPort.BitMap || !fromPal) {
+        return FALSE;
+    }
+
+    rp = &screen->RastPort;
+
+    Gfx_FadeOutCurrentScreenToBlack(fromPal, fromColors);
+    LoadRGB4(&screen->ViewPort, black, 32);
+    SettleDisplay(2);
+
+    if (!LoadRawImageToScreen(WOODLAND_FILE, screen)) {
+        return FALSE;
+    }
+
+    DrawDimmedWoodlandPanel(rp,
+                            ZEROING_PANEL_X1, ZEROING_PANEL_Y1,
+                            ZEROING_PANEL_X2, ZEROING_PANEL_Y2,
+                            ZEROING_PANEL_BORDER);
+    DrawGradientPanelFrame(rp,
+                           ZEROING_PANEL_X1, ZEROING_PANEL_Y1,
+                           ZEROING_PANEL_X2, ZEROING_PANEL_Y2,
+                           ZEROING_PANEL_BORDER);
+
+    font = OpenFont(&gSummaryFontAttr);
+    if (font) {
+        SetFont(rp, font);
+        SetSoftStyle(rp, FSF_BOLD, FSF_BOLD);
+    }
+
+    DrawCenteredTextWithShadowMain(rp, font, ZEROING_TITLE_Y,
+                                   ZEROING_TEXT_PEN, ZEROING_SHADOW_PEN,
+                                   "ZEROING");
+
+    memset(&zeroingBackground, 0, sizeof(zeroingBackground));
+    memset(&zeroingBackgroundRP, 0, sizeof(zeroingBackgroundRP));
+    if (InitSummaryBackBuffer(&zeroingBackground, &zeroingBackgroundRP,
+                              ZEROING_TEXT_AREA_W, ZEROING_TEXT_AREA_H, LO_DEPTH)) {
+        BltBitMap(rp->BitMap, ZEROING_TEXT_AREA_X, ZEROING_TEXT_AREA_Y,
+                  &zeroingBackground, 0, 0,
+                  ZEROING_TEXT_AREA_W, ZEROING_TEXT_AREA_H, 0xC0, 0xFF, NULL);
+        WaitBlit();
+        backgroundReady = TRUE;
+    }
+
+    if (!backgroundReady) {
+        if (font) {
+            SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+            CloseFont(font);
+        }
+        return FALSE;
+    }
+
+    DrawZeroingOptions(rp, font, &zeroingBackground);
+
+    WaitBlit();
+    SettleDisplay(1);
+    Gfx_FadeInCurrentScreenFromBlack(TrainingInfoPaletteRGB4, 32);
+
+    /* Keep joystick navigation edge-triggered.  The global zero is changed
+     * immediately, so Fire only leaves this screen and returns to the menu. */
+    prevUp = Input_Up();
+    prevDown = Input_Down();
+    WaitForAdvanceRelease();
+
+    for (;;) {
+        BOOL adv = FALSE, esc = FALSE;
+        BOOL upNow;
+        BOOL downNow;
+
+        PollAdvanceAndEsc(&adv, &esc);
+        if (esc) {
+            if (font) {
+                SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+                CloseFont(font);
+            }
+            FreeSummaryBackBuffer(&zeroingBackground, ZEROING_TEXT_AREA_W,
+                                  ZEROING_TEXT_AREA_H);
+            return FALSE;
+        }
+
+        upNow = Input_Up();
+        downNow = Input_Down();
+
+        if ((upNow && !prevUp) || (downNow && !prevDown)) {
+            UWORD zeroRange = TargetScoring_GetZeroRange();
+
+            /* There are only two choices, so Up and Down both wrap naturally.
+             * Update the scoring module directly: this is the same setting
+             * later used by TargetScoring_GetZeroOffset() on the range. */
+            TargetScoring_SetZeroRange((zeroRange == 300) ? 250 : 300);
+
+            DrawZeroingOptions(rp, font, &zeroingBackground);
+            WaitBlit();
+        }
+
+        prevUp = upNow;
+        prevDown = downNow;
+
+        if (adv) {
+            WaitForAdvanceRelease();
+            if (font) {
+                SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+                CloseFont(font);
+            }
+            FreeSummaryBackBuffer(&zeroingBackground, ZEROING_TEXT_AREA_W,
+                                  ZEROING_TEXT_AREA_H);
+            return TRUE;
+        }
+
+        Sound_Update();
+        WaitTOF();
+    }
 }
 
 static void DrawMainMenuItems(struct RastPort *rp, struct TextFont *font,
@@ -3229,7 +3418,13 @@ static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
                 FreeSummaryBackBuffer(&menuBackground, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
                 return MENU_RESULT_TEN_SHOT;
             }
-            /* ZEROING is deliberately inactive for now. */
+
+            if (font) {
+                SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+                CloseFont(font);
+            }
+            FreeSummaryBackBuffer(&menuBackground, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
+            return MENU_RESULT_ZEROING;
         }
 
         blinkTicks--;
@@ -3664,16 +3859,33 @@ show_title:
         }
 
         if (r == WAIT_ADVANCE) {
-            MenuResult menuResult = ShowMainMenuScreen(currentLoPal, 32);
+            MenuResult menuResult;
 
-            if (menuResult == MENU_RESULT_QUIT) {
-                goto exit_ok;
-            }
+            /* ZEROING returns to the main menu.  Keep both screens in the
+             * shared Training Info/Woodland palette, so no extra assets or
+             * palette conversions are needed. */
+            for (;;) {
+                menuResult = ShowMainMenuScreen(currentLoPal, 32);
 
-            /* The menu uses the same palette as Training Info regardless of
-             * which attract-screen page the player entered it from. */
-            for (int i = 0; i < 32; i++) {
-                currentLoPal[i] = trainingInfoPalette[i];
+                if (menuResult == MENU_RESULT_QUIT) {
+                    goto exit_ok;
+                }
+
+                for (int i = 0; i < 32; i++) {
+                    currentLoPal[i] = trainingInfoPalette[i];
+                }
+
+                if (menuResult != MENU_RESULT_ZEROING) {
+                    break;
+                }
+
+                if (!ShowZeroingScreen(currentLoPal, 32)) {
+                    goto exit_ok;
+                }
+
+                for (int i = 0; i < 32; i++) {
+                    currentLoPal[i] = trainingInfoPalette[i];
+                }
             }
 
             if (menuResult == MENU_RESULT_TEN_SHOT) {
