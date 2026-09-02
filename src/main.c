@@ -238,6 +238,10 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define FRONT_SIGHT_ZERO_X 34
 #define FRONT_SIGHT_ZERO_Y 137
 #define ZEROING_TARGET_PEN 22
+#define ZEROING_TARGET_AREA_X 72
+#define ZEROING_TARGET_AREA_Y 139
+#define ZEROING_TARGET_AREA_W 7
+#define ZEROING_TARGET_AREA_H 8
 
 /* Generated Target Ranges screen.  The original 320x256 RAW is no longer
  * needed: the green field and all static labels are rendered with ROM Topaz. */
@@ -888,7 +892,7 @@ static const char *GetSummaryShotLocationText(UWORD performance, UWORD hits) {
     }
 
     if (scaledPerformance <= (ULONG)hits * 5UL * 40UL) {
-        return "BELOW AVERAGE";
+        return "BELOW AVG";
     }
 
     if (scaledPerformance <= (ULONG)hits * 5UL * 60UL) {
@@ -3171,21 +3175,20 @@ static void DrawZeroingTargetFragment(struct RastPort *rp) {
     }
 }
 
-static void DrawZeroingSightPicture(struct RastPort *rp, const AmacsBob *frontSight,
-                                    struct BitMap *background) {
-    if (!rp || !rp->BitMap || !frontSight || !background) {
+static void DrawZeroingTargetPreview(struct RastPort *rp,
+                                     struct BitMap *background) {
+    if (!rp || !rp->BitMap || !background) {
         return;
     }
 
-    /* Restore the dimmed Woodland under the complete sight picture first.
-     * This removes the old 250/300 target fragment before the new one is drawn. */
+    /* Restore only the target fragment area from a snapshot taken after
+     * the front-sight BOB was drawn.  The sight itself stays static. */
     BltBitMap(background, 0, 0, rp->BitMap,
-              FRONT_SIGHT_ZERO_X, FRONT_SIGHT_ZERO_Y,
-              FRONT_SIGHT_ZERO_W, FRONT_SIGHT_ZERO_H,
+              ZEROING_TARGET_AREA_X, ZEROING_TARGET_AREA_Y,
+              ZEROING_TARGET_AREA_W, ZEROING_TARGET_AREA_H,
               0xC0, 0xFF, NULL);
     WaitBlit();
 
-    Bob_DrawMaskedToRastPort(frontSight, rp, FRONT_SIGHT_ZERO_X, FRONT_SIGHT_ZERO_Y);
     DrawZeroingTargetFragment(rp);
     WaitBlit();
 }
@@ -3221,11 +3224,11 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
     struct TextFont *font = NULL;
     struct BitMap zeroingBackground;
     struct RastPort zeroingBackgroundRP;
-    struct BitMap zeroingSightBackground;
-    struct RastPort zeroingSightBackgroundRP;
+    struct BitMap zeroingTargetBackground;
+    struct RastPort zeroingTargetBackgroundRP;
     AmacsBob frontSightZeroBob;
     BOOL backgroundReady = FALSE;
-    BOOL sightBackgroundReady = FALSE;
+    BOOL targetBackgroundReady = FALSE;
     BOOL frontSightLoaded = FALSE;
     BOOL prevUp;
     BOOL prevDown;
@@ -3266,8 +3269,8 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
 
     memset(&zeroingBackground, 0, sizeof(zeroingBackground));
     memset(&zeroingBackgroundRP, 0, sizeof(zeroingBackgroundRP));
-    memset(&zeroingSightBackground, 0, sizeof(zeroingSightBackground));
-    memset(&zeroingSightBackgroundRP, 0, sizeof(zeroingSightBackgroundRP));
+    memset(&zeroingTargetBackground, 0, sizeof(zeroingTargetBackground));
+    memset(&zeroingTargetBackgroundRP, 0, sizeof(zeroingTargetBackgroundRP));
     memset(&frontSightZeroBob, 0, sizeof(frontSightZeroBob));
     if (InitSummaryBackBuffer(&zeroingBackground, &zeroingBackgroundRP,
                               ZEROING_TEXT_AREA_W, ZEROING_TEXT_AREA_H, LO_DEPTH)) {
@@ -3286,29 +3289,12 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
         return FALSE;
     }
 
-    /* Save the untouched dimmed Woodland beneath the sight BOB.  This lets
-     * BZO changes redraw the 250/300 target fragment without leaving pixels
-     * from the previous shape behind. */
-    if (InitSummaryBackBuffer(&zeroingSightBackground, &zeroingSightBackgroundRP,
-                              FRONT_SIGHT_ZERO_W, FRONT_SIGHT_ZERO_H, LO_DEPTH)) {
-        BltBitMap(rp->BitMap, FRONT_SIGHT_ZERO_X, FRONT_SIGHT_ZERO_Y,
-                  &zeroingSightBackground, 0, 0,
-                  FRONT_SIGHT_ZERO_W, FRONT_SIGHT_ZERO_H, 0xC0, 0xFF, NULL);
-        WaitBlit();
-        sightBackgroundReady = TRUE;
-    }
-
-    if (!sightBackgroundReady ||
-        !Bob_LoadRawAndMask(&frontSightZeroBob,
+    if (!Bob_LoadRawAndMask(&frontSightZeroBob,
                             FRONT_SIGHT_ZERO_RAW, FRONT_SIGHT_ZERO_MASK,
                             FRONT_SIGHT_ZERO_W, FRONT_SIGHT_ZERO_H, LO_DEPTH)) {
         if (font) {
             SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
             CloseFont(font);
-        }
-        if (sightBackgroundReady) {
-            FreeSummaryBackBuffer(&zeroingSightBackground,
-                                  FRONT_SIGHT_ZERO_W, FRONT_SIGHT_ZERO_H);
         }
         FreeSummaryBackBuffer(&zeroingBackground, ZEROING_TEXT_AREA_W,
                               ZEROING_TEXT_AREA_H);
@@ -3316,8 +3302,39 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
     }
     frontSightLoaded = TRUE;
 
+    /* Draw the front sight exactly once. */
+    Bob_DrawMaskedToRastPort(&frontSightZeroBob, rp,
+                             FRONT_SIGHT_ZERO_X, FRONT_SIGHT_ZERO_Y);
+    WaitBlit();
+
+    /* Save only the small target area, after the sight is already present.
+     * Switching BZO can now restore/redraw the target without touching the BOB. */
+    if (InitSummaryBackBuffer(&zeroingTargetBackground,
+                              &zeroingTargetBackgroundRP,
+                              ZEROING_TARGET_AREA_W, ZEROING_TARGET_AREA_H,
+                              LO_DEPTH)) {
+        BltBitMap(rp->BitMap,
+                  ZEROING_TARGET_AREA_X, ZEROING_TARGET_AREA_Y,
+                  &zeroingTargetBackground, 0, 0,
+                  ZEROING_TARGET_AREA_W, ZEROING_TARGET_AREA_H,
+                  0xC0, 0xFF, NULL);
+        WaitBlit();
+        targetBackgroundReady = TRUE;
+    }
+
+    if (!targetBackgroundReady) {
+        Bob_Free(&frontSightZeroBob);
+        if (font) {
+            SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+            CloseFont(font);
+        }
+        FreeSummaryBackBuffer(&zeroingBackground, ZEROING_TEXT_AREA_W,
+                              ZEROING_TEXT_AREA_H);
+        return FALSE;
+    }
+
     DrawZeroingOptions(rp, font, &zeroingBackground);
-    DrawZeroingSightPicture(rp, &frontSightZeroBob, &zeroingSightBackground);
+    DrawZeroingTargetPreview(rp, &zeroingTargetBackground);
 
     WaitBlit();
     SettleDisplay(1);
@@ -3343,9 +3360,9 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
             if (frontSightLoaded) {
                 Bob_Free(&frontSightZeroBob);
             }
-            if (sightBackgroundReady) {
-                FreeSummaryBackBuffer(&zeroingSightBackground,
-                                      FRONT_SIGHT_ZERO_W, FRONT_SIGHT_ZERO_H);
+            if (targetBackgroundReady) {
+                FreeSummaryBackBuffer(&zeroingTargetBackground,
+                                      ZEROING_TARGET_AREA_W, ZEROING_TARGET_AREA_H);
             }
             FreeSummaryBackBuffer(&zeroingBackground, ZEROING_TEXT_AREA_W,
                                   ZEROING_TEXT_AREA_H);
@@ -3364,7 +3381,7 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
             TargetScoring_SetZeroRange((zeroRange == 300) ? 250 : 300);
 
             DrawZeroingOptions(rp, font, &zeroingBackground);
-            DrawZeroingSightPicture(rp, &frontSightZeroBob, &zeroingSightBackground);
+            DrawZeroingTargetPreview(rp, &zeroingTargetBackground);
             WaitBlit();
         }
 
@@ -3380,9 +3397,9 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
             if (frontSightLoaded) {
                 Bob_Free(&frontSightZeroBob);
             }
-            if (sightBackgroundReady) {
-                FreeSummaryBackBuffer(&zeroingSightBackground,
-                                      FRONT_SIGHT_ZERO_W, FRONT_SIGHT_ZERO_H);
+            if (targetBackgroundReady) {
+                FreeSummaryBackBuffer(&zeroingTargetBackground,
+                                      ZEROING_TARGET_AREA_W, ZEROING_TARGET_AREA_H);
             }
             FreeSummaryBackBuffer(&zeroingBackground, ZEROING_TEXT_AREA_W,
                                   ZEROING_TEXT_AREA_H);
