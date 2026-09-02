@@ -243,6 +243,22 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define ZEROING_TARGET_AREA_W 7
 #define ZEROING_TARGET_AREA_H 8
 
+/* ZEROING trajectory graph. */
+#define ZEROING_GRAPH_AXIS_X 127
+#define ZEROING_GRAPH_AXIS_Y 165
+#define ZEROING_GRAPH_AXIS_W 151
+#define ZEROING_GRAPH_STEP_X 25
+#define ZEROING_GRAPH_SCALE_Y 5
+#define ZEROING_GRAPH_BLUE_PEN 11       /* RGB4 0x00D */
+#define ZEROING_GRAPH_TRAJECTORY_PEN 12 /* RGB4 0xE91, warm gold/orange */
+#define ZEROING_GRAPH_AXIS_PEN ZEROING_TEXT_PEN
+#define ZEROING_GRAPH_LABEL_PEN ZEROING_TEXT_PEN
+#define ZEROING_GRAPH_AREA_X 120
+#define ZEROING_GRAPH_AREA_Y 143
+#define ZEROING_GRAPH_AREA_W 181
+#define ZEROING_GRAPH_AREA_H 43
+#define ZEROING_GRAPH_LABEL_Y 177
+
 /* Generated Target Ranges screen.  The original 320x256 RAW is no longer
  * needed: the green field and all static labels are rendered with ROM Topaz. */
 #define TARGET_RANGES_BACKGROUND_PEN 3  /* RGB4 0x020 */
@@ -3193,6 +3209,92 @@ static void DrawZeroingTargetPreview(struct RastPort *rp,
     WaitBlit();
 }
 
+static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
+    static const BYTE offsets250[6] = {1, 1, 1, 0, 0, -3};
+    static const BYTE offsets300[6] = {1, 2, 3, 4, 1, 0};
+    const BYTE *offsets;
+    UWORD zeroRange;
+    WORD prevX;
+    WORD prevY;
+    WORD endLabelX;
+    const char *endLabel;
+    WORD width;
+    UWORD i;
+
+    if (!rp) {
+        return;
+    }
+
+    zeroRange = TargetScoring_GetZeroRange();
+    offsets = (zeroRange == 250) ? offsets250 : offsets300;
+
+    /* Light-grey zero-reference axis, matching the Zeroing copy. */
+    SetAPen(rp, ZEROING_GRAPH_AXIS_PEN);
+    Move(rp, ZEROING_GRAPH_AXIS_X, ZEROING_GRAPH_AXIS_Y);
+    Draw(rp, ZEROING_GRAPH_AXIS_X + ZEROING_GRAPH_AXIS_W - 1,
+         ZEROING_GRAPH_AXIS_Y);
+
+    /* Start the trajectory at 0 m.  Each ballistic offset is scaled by 5 px
+     * so the curve has a little more vertical shape without crowding the panel. */
+    prevX = ZEROING_GRAPH_AXIS_X;
+    prevY = ZEROING_GRAPH_AXIS_Y;
+
+    for (i = 0; i < 6; ++i) {
+        WORD x = (WORD)(ZEROING_GRAPH_AXIS_X + ((i + 1) * ZEROING_GRAPH_STEP_X));
+        WORD y = (WORD)(ZEROING_GRAPH_AXIS_Y - (offsets[i] * ZEROING_GRAPH_SCALE_Y));
+
+        /* Blue range marker.  Keep a visible point even when the offset is 0. */
+        SetAPen(rp, ZEROING_GRAPH_BLUE_PEN);
+        if (offsets[i] != 0) {
+            Move(rp, x, ZEROING_GRAPH_AXIS_Y);
+            Draw(rp, x, y);
+        }
+        WritePixel(rp, x, y);
+
+        /* Warm gold/orange trajectory line. */
+        SetAPen(rp, ZEROING_GRAPH_TRAJECTORY_PEN);
+        Move(rp, prevX, prevY);
+        Draw(rp, x, y);
+
+        prevX = x;
+        prevY = y;
+    }
+
+    /* Minimal Topaz labels: origin plus the selected BZO distance only.
+     * For 250 m the label sits under the 250 m point, keeping clear of the
+     * descending 300 m tail. */
+    SetAPen(rp, ZEROING_GRAPH_LABEL_PEN);
+    Move(rp, ZEROING_GRAPH_AXIS_X - 5, ZEROING_GRAPH_LABEL_Y);
+    Text(rp, (STRPTR)"0", 1);
+
+    if (zeroRange == 250) {
+        endLabel = "250";
+        endLabelX = (WORD)(ZEROING_GRAPH_AXIS_X + 5 * ZEROING_GRAPH_STEP_X - 10);
+    } else {
+        endLabel = "300";
+        endLabelX = (WORD)(ZEROING_GRAPH_AXIS_X + 6 * ZEROING_GRAPH_STEP_X);
+    }
+    width = TextLength(rp, (STRPTR)endLabel, 3);
+    Move(rp, (WORD)(endLabelX - width / 2), ZEROING_GRAPH_LABEL_Y);
+    Text(rp, (STRPTR)endLabel, 3);
+}
+
+static void DrawZeroingTrajectoryPreview(struct RastPort *rp,
+                                         struct BitMap *background) {
+    if (!rp || !rp->BitMap || !background) {
+        return;
+    }
+
+    BltBitMap(background, 0, 0, rp->BitMap,
+              ZEROING_GRAPH_AREA_X, ZEROING_GRAPH_AREA_Y,
+              ZEROING_GRAPH_AREA_W, ZEROING_GRAPH_AREA_H,
+              0xC0, 0xFF, NULL);
+    WaitBlit();
+
+    DrawZeroingTrajectoryGraph(rp);
+    WaitBlit();
+}
+
 static void DrawZeroingOptions(struct RastPort *rp, struct TextFont *font,
                                struct BitMap *background) {
     UWORD zeroRange = TargetScoring_GetZeroRange();
@@ -3226,9 +3328,12 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
     struct RastPort zeroingBackgroundRP;
     struct BitMap zeroingTargetBackground;
     struct RastPort zeroingTargetBackgroundRP;
+    struct BitMap zeroingGraphBackground;
+    struct RastPort zeroingGraphBackgroundRP;
     AmacsBob frontSightZeroBob;
     BOOL backgroundReady = FALSE;
     BOOL targetBackgroundReady = FALSE;
+    BOOL graphBackgroundReady = FALSE;
     BOOL frontSightLoaded = FALSE;
     BOOL prevUp;
     BOOL prevDown;
@@ -3271,6 +3376,8 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
     memset(&zeroingBackgroundRP, 0, sizeof(zeroingBackgroundRP));
     memset(&zeroingTargetBackground, 0, sizeof(zeroingTargetBackground));
     memset(&zeroingTargetBackgroundRP, 0, sizeof(zeroingTargetBackgroundRP));
+    memset(&zeroingGraphBackground, 0, sizeof(zeroingGraphBackground));
+    memset(&zeroingGraphBackgroundRP, 0, sizeof(zeroingGraphBackgroundRP));
     memset(&frontSightZeroBob, 0, sizeof(frontSightZeroBob));
     if (InitSummaryBackBuffer(&zeroingBackground, &zeroingBackgroundRP,
                               ZEROING_TEXT_AREA_W, ZEROING_TEXT_AREA_H, LO_DEPTH)) {
@@ -3333,8 +3440,37 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
         return FALSE;
     }
 
+    /* Snapshot the untouched graph area.  Only this small rectangle is
+     * restored when BZO changes; the rest of the Zeroing screen stays static. */
+    if (InitSummaryBackBuffer(&zeroingGraphBackground,
+                              &zeroingGraphBackgroundRP,
+                              ZEROING_GRAPH_AREA_W, ZEROING_GRAPH_AREA_H,
+                              LO_DEPTH)) {
+        BltBitMap(rp->BitMap,
+                  ZEROING_GRAPH_AREA_X, ZEROING_GRAPH_AREA_Y,
+                  &zeroingGraphBackground, 0, 0,
+                  ZEROING_GRAPH_AREA_W, ZEROING_GRAPH_AREA_H,
+                  0xC0, 0xFF, NULL);
+        WaitBlit();
+        graphBackgroundReady = TRUE;
+    }
+
+    if (!graphBackgroundReady) {
+        Bob_Free(&frontSightZeroBob);
+        FreeSummaryBackBuffer(&zeroingTargetBackground,
+                              ZEROING_TARGET_AREA_W, ZEROING_TARGET_AREA_H);
+        if (font) {
+            SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+            CloseFont(font);
+        }
+        FreeSummaryBackBuffer(&zeroingBackground, ZEROING_TEXT_AREA_W,
+                              ZEROING_TEXT_AREA_H);
+        return FALSE;
+    }
+
     DrawZeroingOptions(rp, font, &zeroingBackground);
     DrawZeroingTargetPreview(rp, &zeroingTargetBackground);
+    DrawZeroingTrajectoryPreview(rp, &zeroingGraphBackground);
 
     WaitBlit();
     SettleDisplay(1);
@@ -3364,6 +3500,10 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
                 FreeSummaryBackBuffer(&zeroingTargetBackground,
                                       ZEROING_TARGET_AREA_W, ZEROING_TARGET_AREA_H);
             }
+            if (graphBackgroundReady) {
+                FreeSummaryBackBuffer(&zeroingGraphBackground,
+                                      ZEROING_GRAPH_AREA_W, ZEROING_GRAPH_AREA_H);
+            }
             FreeSummaryBackBuffer(&zeroingBackground, ZEROING_TEXT_AREA_W,
                                   ZEROING_TEXT_AREA_H);
             return FALSE;
@@ -3382,6 +3522,7 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
 
             DrawZeroingOptions(rp, font, &zeroingBackground);
             DrawZeroingTargetPreview(rp, &zeroingTargetBackground);
+            DrawZeroingTrajectoryPreview(rp, &zeroingGraphBackground);
             WaitBlit();
         }
 
@@ -3400,6 +3541,10 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
             if (targetBackgroundReady) {
                 FreeSummaryBackBuffer(&zeroingTargetBackground,
                                       ZEROING_TARGET_AREA_W, ZEROING_TARGET_AREA_H);
+            }
+            if (graphBackgroundReady) {
+                FreeSummaryBackBuffer(&zeroingGraphBackground,
+                                      ZEROING_GRAPH_AREA_W, ZEROING_GRAPH_AREA_H);
             }
             FreeSummaryBackBuffer(&zeroingBackground, ZEROING_TEXT_AREA_W,
                                   ZEROING_TEXT_AREA_H);
