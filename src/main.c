@@ -221,8 +221,8 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define ZEROING_TEXT_PEN TRAINING_INFO_TEXT_PEN
 #define ZEROING_SHADOW_PEN TRAINING_INFO_SHADOW_PEN
 #define ZEROING_TITLE_Y 81
-#define ZEROING_LINE1_Y 100
-#define ZEROING_LINE2_Y 117
+#define ZEROING_LINE1_Y 98
+#define ZEROING_LINE2_Y 115
 #define ZEROING_TEXT_AREA_X 48
 #define ZEROING_TEXT_AREA_Y 91
 #define ZEROING_TEXT_AREA_W 224
@@ -235,29 +235,31 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define FRONT_SIGHT_ZERO_MASK "gfx/FrontSightZero.mask"
 #define FRONT_SIGHT_ZERO_W 84
 #define FRONT_SIGHT_ZERO_H 57
-#define FRONT_SIGHT_ZERO_X 34
+#define FRONT_SIGHT_ZERO_X 30
 #define FRONT_SIGHT_ZERO_Y 137
 #define ZEROING_TARGET_PEN 22
-#define ZEROING_TARGET_AREA_X 72
+#define ZEROING_TARGET_AREA_X 68
 #define ZEROING_TARGET_AREA_Y 139
 #define ZEROING_TARGET_AREA_W 7
 #define ZEROING_TARGET_AREA_H 8
 
-/* ZEROING trajectory graph. */
-#define ZEROING_GRAPH_AXIS_X 127
-#define ZEROING_GRAPH_AXIS_Y 165
-#define ZEROING_GRAPH_AXIS_W 151
-#define ZEROING_GRAPH_STEP_X 25
-#define ZEROING_GRAPH_SCALE_Y 5
+/* ZEROING trajectory graph.  The horizontal axis is the line of sight (0").
+ * Trajectory samples are stored directly as screen-pixel offsets converted
+ * from the ballistic tables at 4 px per inch. */
+#define ZEROING_GRAPH_AXIS_X 134
+#define ZEROING_GRAPH_AXIS_Y 168
+#define ZEROING_GRAPH_AXIS_X2 284
+#define ZEROING_GRAPH_AXIS_Y1 131
+#define ZEROING_GRAPH_AXIS_Y2 195
 #define ZEROING_GRAPH_BLUE_PEN 11       /* RGB4 0x00D */
 #define ZEROING_GRAPH_TRAJECTORY_PEN 12 /* RGB4 0xE91, warm gold/orange */
 #define ZEROING_GRAPH_AXIS_PEN ZEROING_TEXT_PEN
 #define ZEROING_GRAPH_LABEL_PEN ZEROING_TEXT_PEN
-#define ZEROING_GRAPH_AREA_X 120
-#define ZEROING_GRAPH_AREA_Y 143
-#define ZEROING_GRAPH_AREA_W 181
-#define ZEROING_GRAPH_AREA_H 43
-#define ZEROING_GRAPH_LABEL_Y 177
+#define ZEROING_GRAPH_AREA_X 106
+#define ZEROING_GRAPH_AREA_Y 128
+#define ZEROING_GRAPH_AREA_W 185
+#define ZEROING_GRAPH_AREA_H 70
+#define ZEROING_GRAPH_X_LABEL_Y 172
 
 /* Generated Target Ranges screen.  The original 320x256 RAW is no longer
  * needed: the green field and all static labels are rendered with ROM Topaz. */
@@ -3170,24 +3172,24 @@ static void DrawZeroingTargetFragment(struct RastPort *rp) {
 
     if (zeroRange == 250) {
         /*
-         * 250 m target fragment, anchored by its bottom-left pixel at (72,146):
+         * 250 m target fragment, anchored by its bottom-left pixel at (68,146):
          *
-         *   3x3  : x=74..76, y=139..141
-         *   5x1  : x=73..77, y=142
-         *   7x4  : x=72..78, y=143..146
+         *   3x3  : x=70..72, y=139..141
+         *   5x1  : x=69..73, y=142
+         *   7x4  : x=68..74, y=143..146
          */
-        RectFill(rp, 74, 139, 76, 141);
-        RectFill(rp, 73, 142, 77, 142);
-        RectFill(rp, 72, 143, 78, 146);
+        RectFill(rp, 70, 139, 72, 141);
+        RectFill(rp, 69, 142, 73, 142);
+        RectFill(rp, 68, 143, 74, 146);
     } else {
         /*
-         * 300 m target fragment, anchored by its bottom-left pixel at (73,146):
+         * 300 m target fragment, anchored by its bottom-left pixel at (69,146):
          *
-         *   3x2  : x=74..76, y=142..143
-         *   5x3  : x=73..77, y=144..146
+         *   3x2  : x=70..72, y=142..143
+         *   5x3  : x=69..73, y=144..146
          */
-        RectFill(rp, 74, 142, 76, 143);
-        RectFill(rp, 73, 144, 77, 146);
+        RectFill(rp, 70, 142, 72, 143);
+        RectFill(rp, 69, 144, 73, 146);
     }
 }
 
@@ -3209,74 +3211,185 @@ static void DrawZeroingTargetPreview(struct RastPort *rp,
     WaitBlit();
 }
 
+static UBYTE ZeroingTinyGlyphRow(char c, UWORD row) {
+    static const UBYTE digits[10][5] = {
+        {7, 5, 5, 5, 7}, /* 0 */
+        {2, 6, 2, 2, 7}, /* 1 */
+        {7, 1, 7, 4, 7}, /* 2 */
+        {7, 1, 7, 1, 7}, /* 3 */
+        {5, 5, 7, 1, 1}, /* 4 */
+        {7, 4, 7, 1, 7}, /* 5 */
+        {7, 4, 7, 5, 7}, /* 6 */
+        {7, 1, 1, 1, 1}, /* 7 */
+        {7, 5, 7, 5, 7}, /* 8 */
+        {7, 5, 7, 1, 7}  /* 9 */
+    };
+
+    if (row >= 5) {
+        return 0;
+    }
+    if (c >= '0' && c <= '9') {
+        return digits[(UWORD)(c - '0')][row];
+    }
+
+    switch (c) {
+        case '+': {
+            static const UBYTE glyph[5] = {0, 2, 7, 2, 0};
+            return glyph[row];
+        }
+        case '-': {
+            static const UBYTE glyph[5] = {0, 0, 7, 0, 0};
+            return glyph[row];
+        }
+        case '.': {
+            static const UBYTE glyph[5] = {0, 0, 0, 0, 2};
+            return glyph[row];
+        }
+        case '"': {
+            static const UBYTE glyph[5] = {5, 5, 0, 0, 0};
+            return glyph[row];
+        }
+        default:
+            return 0;
+    }
+}
+
+static WORD ZeroingTinyTextWidth(const char *text) {
+    WORD count = 0;
+
+    if (!text) {
+        return 0;
+    }
+    while (*text++) {
+        ++count;
+    }
+    return (count > 0) ? (WORD)(count * 4 - 1) : 0;
+}
+
+static void DrawZeroingTinyText(struct RastPort *rp, WORD x, WORD y,
+                                const char *text, UBYTE pen) {
+    WORD cursorX = x;
+
+    if (!rp || !text) {
+        return;
+    }
+
+    SetAPen(rp, pen);
+    while (*text) {
+        UWORD row;
+        for (row = 0; row < 5; ++row) {
+            UBYTE bits = ZeroingTinyGlyphRow(*text, row);
+            UWORD col;
+            for (col = 0; col < 3; ++col) {
+                if (bits & (1U << (2 - col))) {
+                    WritePixel(rp, (WORD)(cursorX + col), (WORD)(y + row));
+                }
+            }
+        }
+        cursorX += 4;
+        ++text;
+    }
+}
+
+static WORD ZeroingGraphDistanceX(UWORD sampleIndex) {
+    /* Seven samples (0..300 m) share exactly 150 pixels.  This gives a
+     * regular 25-pixel step: sample 0 = x134, sample 6 = x284. */
+    return (WORD)(ZEROING_GRAPH_AXIS_X +
+                  ((sampleIndex * (ZEROING_GRAPH_AXIS_X2 - ZEROING_GRAPH_AXIS_X)) / 6));
+}
+
 static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
-    static const BYTE offsets250[6] = {1, 1, 1, 0, 0, -3};
-    static const BYTE offsets300[6] = {1, 2, 3, 4, 1, 0};
-    const BYTE *offsets;
+    static const BYTE trajectory250[7] = {
+        -10,  /*   0 m: -2.5\"  */
+        +11,  /*  50 m: +2.8\"  */
+        +13,  /* 100 m: +3.2\"  */
+        +10,  /* 150 m: +2.5\"  */
+         +3,  /* 200 m: +0.8\"  */
+          0,  /* 250 m:  0.0\"  */
+        -26   /* 300 m: -6.5\"  */
+    };
+    static const BYTE trajectory300[7] = {
+        -10,  /*   0 m: -2.5\"  */
+        +14,  /*  50 m: +3.5\"  */
+        +24,  /* 100 m: +6.0\"  */
+        +30,  /* 150 m: +7.5\"  */
+        +35,  /* 200 m: +8.75\" */
+        +14,  /* 250 m: +3.5\"  */
+          0   /* 300 m:  0.0\"  */
+    };
+    static const char *distanceLabels[7] = {
+        "0", "50", "100", "150", "200", "250", "300"
+    };
+    const BYTE *trajectory;
     UWORD zeroRange;
-    WORD prevX;
-    WORD prevY;
-    WORD endLabelX;
-    const char *endLabel;
-    WORD width;
     UWORD i;
+    WORD prevX = 0;
+    WORD prevY = 0;
 
     if (!rp) {
         return;
     }
 
     zeroRange = TargetScoring_GetZeroRange();
-    offsets = (zeroRange == 250) ? offsets250 : offsets300;
+    trajectory = (zeroRange == 250) ? trajectory250 : trajectory300;
 
-    /* Light-grey zero-reference axis, matching the Zeroing copy. */
+    /* Axes.  OX is the zero/line-of-sight reference. */
     SetAPen(rp, ZEROING_GRAPH_AXIS_PEN);
     Move(rp, ZEROING_GRAPH_AXIS_X, ZEROING_GRAPH_AXIS_Y);
-    Draw(rp, ZEROING_GRAPH_AXIS_X + ZEROING_GRAPH_AXIS_W - 1,
-         ZEROING_GRAPH_AXIS_Y);
+    Draw(rp, ZEROING_GRAPH_AXIS_X2, ZEROING_GRAPH_AXIS_Y);
+    Move(rp, ZEROING_GRAPH_AXIS_X, ZEROING_GRAPH_AXIS_Y1);
+    Draw(rp, ZEROING_GRAPH_AXIS_X, ZEROING_GRAPH_AXIS_Y2);
 
-    /* Start the trajectory at 0 m.  Each ballistic offset is scaled by 5 px
-     * so the curve has a little more vertical shape without crowding the panel. */
-    prevX = ZEROING_GRAPH_AXIS_X;
-    prevY = ZEROING_GRAPH_AXIS_Y;
+    /* Ballistic samples: blue bars show signed displacement from OX and the
+     * warm trajectory joins the actual sample points, including 0 m. */
+    for (i = 0; i < 7; ++i) {
+        WORD x = ZeroingGraphDistanceX(i);
+        WORD y = (WORD)(ZEROING_GRAPH_AXIS_Y - trajectory[i]);
 
-    for (i = 0; i < 6; ++i) {
-        WORD x = (WORD)(ZEROING_GRAPH_AXIS_X + ((i + 1) * ZEROING_GRAPH_STEP_X));
-        WORD y = (WORD)(ZEROING_GRAPH_AXIS_Y - (offsets[i] * ZEROING_GRAPH_SCALE_Y));
-
-        /* Blue range marker.  Keep a visible point even when the offset is 0. */
         SetAPen(rp, ZEROING_GRAPH_BLUE_PEN);
-        if (offsets[i] != 0) {
+        if (i != 0 && trajectory[i] != 0) {
             Move(rp, x, ZEROING_GRAPH_AXIS_Y);
             Draw(rp, x, y);
         }
         WritePixel(rp, x, y);
 
-        /* Warm gold/orange trajectory line. */
-        SetAPen(rp, ZEROING_GRAPH_TRAJECTORY_PEN);
-        Move(rp, prevX, prevY);
-        Draw(rp, x, y);
+        if (i > 0) {
+            SetAPen(rp, ZEROING_GRAPH_TRAJECTORY_PEN);
+            Move(rp, prevX, prevY);
+            Draw(rp, x, y);
+        }
 
         prevX = x;
         prevY = y;
     }
 
-    /* Minimal Topaz labels: origin plus the selected BZO distance only.
-     * For 250 m the label sits under the 250 m point, keeping clear of the
-     * descending 300 m tail. */
-    SetAPen(rp, ZEROING_GRAPH_LABEL_PEN);
-    Move(rp, ZEROING_GRAPH_AXIS_X - 5, ZEROING_GRAPH_LABEL_Y);
-    Text(rp, (STRPTR)"0", 1);
-
-    if (zeroRange == 250) {
-        endLabel = "250";
-        endLabelX = (WORD)(ZEROING_GRAPH_AXIS_X + 5 * ZEROING_GRAPH_STEP_X - 10);
-    } else {
-        endLabel = "300";
-        endLabelX = (WORD)(ZEROING_GRAPH_AXIS_X + 6 * ZEROING_GRAPH_STEP_X);
+    /* 3x5 distance labels, centred on their range samples. */
+    for (i = 0; i < 7; ++i) {
+        WORD x = ZeroingGraphDistanceX(i);
+        WORD width = ZeroingTinyTextWidth(distanceLabels[i]);
+        DrawZeroingTinyText(rp,
+                            (WORD)(x - width / 2 - ((i == 0) ? 6 : 0)),
+                            ZEROING_GRAPH_X_LABEL_Y,
+                            distanceLabels[i], ZEROING_GRAPH_LABEL_PEN);
     }
-    width = TextLength(rp, (STRPTR)endLabel, 3);
-    Move(rp, (WORD)(endLabelX - width / 2), ZEROING_GRAPH_LABEL_Y);
-    Text(rp, (STRPTR)endLabel, 3);
+
+    /* Common vertical scale limits.  9\" = 36 px above OX and -6.5\" =
+     * 26 px below it at the chosen 4 px/inch graph scale. */
+    {
+        const char *topLabel = "9\"";
+        const char *bottomLabel = "-6.5\"";
+        WORD topWidth = ZeroingTinyTextWidth(topLabel);
+        WORD bottomWidth = ZeroingTinyTextWidth(bottomLabel);
+
+        DrawZeroingTinyText(rp,
+                            (WORD)(ZEROING_GRAPH_AXIS_X - 4 - topWidth),
+                            (WORD)(ZEROING_GRAPH_AXIS_Y - 36 - 2),
+                            topLabel, ZEROING_GRAPH_LABEL_PEN);
+        DrawZeroingTinyText(rp,
+                            (WORD)(ZEROING_GRAPH_AXIS_X - 4 - bottomWidth),
+                            (WORD)(ZEROING_GRAPH_AXIS_Y + 26 - 2),
+                            bottomLabel, ZEROING_GRAPH_LABEL_PEN);
+    }
 }
 
 static void DrawZeroingTrajectoryPreview(struct RastPort *rp,
