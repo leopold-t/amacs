@@ -3298,6 +3298,70 @@ static WORD ZeroingGraphDistanceX(UWORD sampleIndex) {
                   ((sampleIndex * (ZEROING_GRAPH_AXIS_X2 - ZEROING_GRAPH_AXIS_X)) / 6));
 }
 
+static LONG ZeroingGraphTangent(const BYTE *trajectory, UWORD sampleIndex) {
+    LONG left;
+    LONG right;
+
+    if (sampleIndex == 0) {
+        return (LONG)trajectory[1] - (LONG)trajectory[0];
+    }
+    if (sampleIndex >= 6) {
+        return (LONG)trajectory[6] - (LONG)trajectory[5];
+    }
+
+    left = (LONG)trajectory[sampleIndex] - (LONG)trajectory[sampleIndex - 1];
+    right = (LONG)trajectory[sampleIndex + 1] - (LONG)trajectory[sampleIndex];
+
+    /* Monotone cubic tangent for equally spaced samples.  Extrema and flat
+     * sections use a horizontal tangent.  Otherwise use the harmonic mean
+     * of the neighbouring secants instead of their arithmetic mean.  This
+     * prevents a steep following segment (notably 250->300 m for BZO 250)
+     * from pulling the preceding 200->250 m curve into a visible kink. */
+    if ((left > 0 && right < 0) || (left < 0 && right > 0) ||
+        left == 0 || right == 0) {
+        return 0;
+    }
+
+    return (2L * left * right) / (left + right);
+}
+
+static WORD ZeroingGraphInterpolatedY(const BYTE *trajectory,
+                                      UWORD segment, WORD step) {
+    const LONG n = 25;
+    LONG t = (LONG)step;
+    LONG t2 = t * t;
+    LONG t3 = t2 * t;
+    LONG n2 = n * n;
+    LONG n3 = n2 * n;
+    LONG y0 = trajectory[segment];
+    LONG y1 = trajectory[segment + 1];
+    LONG m0 = ZeroingGraphTangent(trajectory, segment);
+    LONG m1 = ZeroingGraphTangent(trajectory, segment + 1);
+    LONG value;
+    LONG minValue;
+    LONG maxValue;
+
+    value = ((2 * t3 - 3 * t2 * n + n3) * y0 +
+             (t3 - 2 * t2 * n + t * n2) * m0 +
+             (-2 * t3 + 3 * t2 * n) * y1 +
+             (t3 - t2 * n) * m1);
+
+    if (value >= 0) {
+        value = (value + n3 / 2) / n3;
+    } else {
+        value = (value - n3 / 2) / n3;
+    }
+
+    /* Do not let interpolation overshoot the two ballistic samples that
+     * delimit the segment. */
+    minValue = (y0 < y1) ? y0 : y1;
+    maxValue = (y0 > y1) ? y0 : y1;
+    if (value < minValue) value = minValue;
+    if (value > maxValue) value = maxValue;
+
+    return (WORD)(ZEROING_GRAPH_AXIS_Y - value);
+}
+
 static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
     static const BYTE trajectory250[7] = {
         -10,  /*   0 m: -2.5\"  */
@@ -3323,9 +3387,6 @@ static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
     const BYTE *trajectory;
     UWORD zeroRange;
     UWORD i;
-    WORD prevX = 0;
-    WORD prevY = 0;
-
     if (!rp) {
         return;
     }
@@ -3340,8 +3401,7 @@ static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
     Move(rp, ZEROING_GRAPH_AXIS_X, ZEROING_GRAPH_AXIS_Y1);
     Draw(rp, ZEROING_GRAPH_AXIS_X, ZEROING_GRAPH_AXIS_Y2);
 
-    /* Ballistic samples: blue bars show signed displacement from OX and the
-     * warm trajectory joins the actual sample points, including 0 m. */
+    /* Ballistic samples: blue bars show signed displacement from OX. */
     for (i = 0; i < 7; ++i) {
         WORD x = ZeroingGraphDistanceX(i);
         WORD y = (WORD)(ZEROING_GRAPH_AXIS_Y - trajectory[i]);
@@ -3352,15 +3412,32 @@ static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
             Draw(rp, x, y);
         }
         WritePixel(rp, x, y);
+    }
 
-        if (i > 0) {
-            SetAPen(rp, ZEROING_GRAPH_TRAJECTORY_PEN);
-            Move(rp, prevX, prevY);
-            Draw(rp, x, y);
+    /* Draw a cubic Hermite curve through every ballistic sample.  Each
+     * 25-pixel interval is evaluated at every X coordinate, so the plotted
+     * path is smoother than six straight segments while the original values
+     * at 0, 50, ... 300 m remain exact. */
+    SetAPen(rp, ZEROING_GRAPH_TRAJECTORY_PEN);
+    {
+        WORD prevX = ZeroingGraphDistanceX(0);
+        WORD prevY = (WORD)(ZEROING_GRAPH_AXIS_Y - trajectory[0]);
+        UWORD segment;
+
+        for (segment = 0; segment < 6; ++segment) {
+            WORD step;
+            WORD baseX = ZeroingGraphDistanceX(segment);
+
+            for (step = 1; step <= 25; ++step) {
+                WORD x = (WORD)(baseX + step);
+                WORD y = ZeroingGraphInterpolatedY(trajectory, segment, step);
+
+                Move(rp, prevX, prevY);
+                Draw(rp, x, y);
+                prevX = x;
+                prevY = y;
+            }
         }
-
-        prevX = x;
-        prevY = y;
     }
 
     /* 3x5 distance labels, centred on their range samples. */
@@ -3376,7 +3453,7 @@ static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
     /* Common vertical scale limits.  9\" = 36 px above OX and -6.5\" =
      * 26 px below it at the chosen 4 px/inch graph scale. */
     {
-        const char *topLabel = "9\"";
+        const char *topLabel = "+9\"";
         const char *bottomLabel = "-6.5\"";
         WORD topWidth = ZeroingTinyTextWidth(topLabel);
         WORD bottomWidth = ZeroingTinyTextWidth(bottomLabel);
@@ -3409,6 +3486,7 @@ static void DrawZeroingTrajectoryPreview(struct RastPort *rp,
 }
 
 static void DrawZeroingOptions(struct RastPort *rp, struct TextFont *font,
+                               BOOL selectedVisible,
                                struct BitMap *background) {
     UWORD zeroRange = TargetScoring_GetZeroRange();
     const char *line300 =
@@ -3422,15 +3500,21 @@ static void DrawZeroingOptions(struct RastPort *rp, struct TextFont *font,
 
     /* Restore the original dimmed Woodland before redrawing both rows.
      * This removes the old cursor and its shadow completely, without
-     * replacing the camouflage with a flat black rectangle. */
+     * replacing the camouflage with a flat black rectangle.  As in the main
+     * menu, only the active row is omitted during the hidden blink phase. */
     BltBitMap(background, 0, 0, rp->BitMap, ZEROING_TEXT_AREA_X, ZEROING_TEXT_AREA_Y,
               ZEROING_TEXT_AREA_W, ZEROING_TEXT_AREA_H, 0xC0, 0xFF, NULL);
     WaitBlit();
 
-    DrawCenteredTextWithShadowMain(rp, font, ZEROING_LINE1_Y,
-                                   ZEROING_TEXT_PEN, ZEROING_SHADOW_PEN, line300);
-    DrawCenteredTextWithShadowMain(rp, font, ZEROING_LINE2_Y,
-                                   ZEROING_TEXT_PEN, ZEROING_SHADOW_PEN, line250);
+    if (zeroRange != 300 || selectedVisible) {
+        DrawCenteredTextWithShadowMain(rp, font, ZEROING_LINE1_Y,
+                                       ZEROING_TEXT_PEN, ZEROING_SHADOW_PEN, line300);
+    }
+
+    if (zeroRange != 250 || selectedVisible) {
+        DrawCenteredTextWithShadowMain(rp, font, ZEROING_LINE2_Y,
+                                       ZEROING_TEXT_PEN, ZEROING_SHADOW_PEN, line250);
+    }
 }
 
 static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
@@ -3448,8 +3532,10 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
     BOOL targetBackgroundReady = FALSE;
     BOOL graphBackgroundReady = FALSE;
     BOOL frontSightLoaded = FALSE;
+    BOOL selectedVisible = TRUE;
     BOOL prevUp;
     BOOL prevDown;
+    WORD blinkTicks = MENU_VISIBLE_TICKS;
     UWORD black[32] = {0};
 
     if (!screen || !screen->RastPort.BitMap || !fromPal) {
@@ -3581,7 +3667,7 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
         return FALSE;
     }
 
-    DrawZeroingOptions(rp, font, &zeroingBackground);
+    DrawZeroingOptions(rp, font, TRUE, &zeroingBackground);
     DrawZeroingTargetPreview(rp, &zeroingTargetBackground);
     DrawZeroingTrajectoryPreview(rp, &zeroingGraphBackground);
 
@@ -3633,7 +3719,11 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
              * later used by TargetScoring_GetZeroOffset() on the range. */
             TargetScoring_SetZeroRange((zeroRange == 300) ? 250 : 300);
 
-            DrawZeroingOptions(rp, font, &zeroingBackground);
+            /* Match the main menu: the newly selected row begins a fresh
+             * visible 0.7 s phase, while the inactive row remains steady. */
+            selectedVisible = TRUE;
+            blinkTicks = MENU_VISIBLE_TICKS;
+            DrawZeroingOptions(rp, font, selectedVisible, &zeroingBackground);
             DrawZeroingTargetPreview(rp, &zeroingTargetBackground);
             DrawZeroingTrajectoryPreview(rp, &zeroingGraphBackground);
             WaitBlit();
@@ -3662,6 +3752,14 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
             FreeSummaryBackBuffer(&zeroingBackground, ZEROING_TEXT_AREA_W,
                                   ZEROING_TEXT_AREA_H);
             return TRUE;
+        }
+
+        blinkTicks--;
+        if (blinkTicks <= 0) {
+            selectedVisible = selectedVisible ? FALSE : TRUE;
+            blinkTicks = selectedVisible ? MENU_VISIBLE_TICKS : MENU_HIDDEN_TICKS;
+            DrawZeroingOptions(rp, font, selectedVisible, &zeroingBackground);
+            WaitBlit();
         }
 
         Sound_Update();
