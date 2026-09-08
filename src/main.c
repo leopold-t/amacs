@@ -244,10 +244,11 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define ZEROING_TARGET_AREA_H 8
 
 /* ZEROING trajectory graph.  The horizontal axis is the line of sight (0").
- * Trajectory samples are stored directly as screen-pixel offsets converted
- * from the ballistic tables at 4 px per inch. */
+ * The graph uses physical trajectory displacement, independently of the
+ * perspective-corrected gameplay BZO offsets.  Ballistic inch values are
+ * pre-scaled at 5 px per inch for plotting. */
 #define ZEROING_GRAPH_AXIS_X 134
-#define ZEROING_GRAPH_AXIS_Y 168
+#define ZEROING_GRAPH_AXIS_Y 158
 #define ZEROING_GRAPH_AXIS_X2 284
 #define ZEROING_GRAPH_AXIS_Y1 131
 #define ZEROING_GRAPH_AXIS_Y2 195
@@ -259,7 +260,7 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define ZEROING_GRAPH_AREA_Y 128
 #define ZEROING_GRAPH_AREA_W 185
 #define ZEROING_GRAPH_AREA_H 70
-#define ZEROING_GRAPH_X_LABEL_Y 172
+#define ZEROING_GRAPH_X_LABEL_Y 162
 
 /* Generated Target Ranges screen.  The original 320x256 RAW is no longer
  * needed: the green field and all static labels are rendered with ROM Topaz. */
@@ -3363,23 +3364,27 @@ static WORD ZeroingGraphInterpolatedY(const BYTE *trajectory,
 }
 
 static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
+    /* Physical trajectory samples for the ZEROING preview.  These values
+     * are deliberately separate from the gameplay BZO pixel corrections:
+     * each entry is an absolute ballistic displacement converted from inches
+     * at 5 px per inch.  Samples cover 0, 50, ... 300 m. */
     static const BYTE trajectory250[7] = {
-        -10,  /*   0 m: -2.5\"  */
-        +11,  /*  50 m: +2.8\"  */
-        +13,  /* 100 m: +3.2\"  */
-        +10,  /* 150 m: +2.5\"  */
-         +3,  /* 200 m: +0.8\"  */
-          0,  /* 250 m:  0.0\"  */
-        -26   /* 300 m: -6.5\"  */
+        -13,  /*   0 m: -2.6" */
+         +5,  /*  50 m: +1.0" */
+        +16,  /* 100 m: +3.2" */
+        +24,  /* 150 m: +4.8" */
+        +19,  /* 200 m: +3.8" */
+          0,  /* 250 m:  0.0" */
+        -35   /* 300 m: -7.0" */
     };
     static const BYTE trajectory300[7] = {
-        -10,  /*   0 m: -2.5\"  */
-        +14,  /*  50 m: +3.5\"  */
-        +24,  /* 100 m: +6.0\"  */
-        +30,  /* 150 m: +7.5\"  */
-        +35,  /* 200 m: +8.75\" */
-        +14,  /* 250 m: +3.5\"  */
-          0   /* 300 m:  0.0\"  */
+        -13,  /*   0 m: -2.6" */
+         +8,  /*  50 m: +1.6" */
+        +22,  /* 100 m: +4.4" */
+        +29,  /* 150 m: +5.8" */
+        +28,  /* 200 m: +5.6" */
+        +19,  /* 250 m: +3.8" */
+          0   /* 300 m:  0.0" */
     };
     static const char *distanceLabels[7] = {
         "0", "50", "100", "150", "200", "250", "300"
@@ -3440,31 +3445,39 @@ static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
         }
     }
 
-    /* 3x5 distance labels, centred on their range samples. */
-    for (i = 0; i < 7; ++i) {
+    /* 3x5 distance labels, centred on their range samples.  The 0 m
+     * label is intentionally omitted: the OY zero at the OX intersection
+     * is shared by both the inches and distance scales. */
+    for (i = 1; i < 7; ++i) {
         WORD x = ZeroingGraphDistanceX(i);
         WORD width = ZeroingTinyTextWidth(distanceLabels[i]);
         DrawZeroingTinyText(rp,
-                            (WORD)(x - width / 2 - ((i == 0) ? 6 : 0)),
+                            (WORD)(x - width / 2),
                             ZEROING_GRAPH_X_LABEL_Y,
                             distanceLabels[i], ZEROING_GRAPH_LABEL_PEN);
     }
 
-    /* Common vertical scale limits.  9\" = 36 px above OX and -6.5\" =
-     * 26 px below it at the chosen 4 px/inch graph scale. */
+    /* OY remains an inches scale.  Keep the labels aligned exactly as on
+     * the earlier graph: the right edge of each label is 4 px from OY. */
     {
-        const char *topLabel = "+9\"";
-        const char *bottomLabel = "-6.5\"";
+        const char *topLabel = "+6.0\"";
+        const char *zeroLabel = "0";
+        const char *bottomLabel = "-7.0\"";
         WORD topWidth = ZeroingTinyTextWidth(topLabel);
+        WORD zeroWidth = ZeroingTinyTextWidth(zeroLabel);
         WORD bottomWidth = ZeroingTinyTextWidth(bottomLabel);
 
         DrawZeroingTinyText(rp,
                             (WORD)(ZEROING_GRAPH_AXIS_X - 4 - topWidth),
-                            (WORD)(ZEROING_GRAPH_AXIS_Y - 36 - 2),
+                            (WORD)(ZEROING_GRAPH_AXIS_Y1 - 1),
                             topLabel, ZEROING_GRAPH_LABEL_PEN);
         DrawZeroingTinyText(rp,
+                            (WORD)(ZEROING_GRAPH_AXIS_X - 4 - zeroWidth),
+                            (WORD)(ZEROING_GRAPH_AXIS_Y - 2),
+                            zeroLabel, ZEROING_GRAPH_LABEL_PEN);
+        DrawZeroingTinyText(rp,
                             (WORD)(ZEROING_GRAPH_AXIS_X - 4 - bottomWidth),
-                            (WORD)(ZEROING_GRAPH_AXIS_Y + 26 - 2),
+                            (WORD)(ZEROING_GRAPH_AXIS_Y2 - 2),
                             bottomLabel, ZEROING_GRAPH_LABEL_PEN);
     }
 }

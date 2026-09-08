@@ -123,12 +123,13 @@ typedef struct {
     BYTE offsetY;
 } ZeroOffset;
 
-/* BZO 300 m (Default, M16A2) */
-static const ZeroOffset gBZO300[] = {{50, +1},  {100, +2}, {150, +3},
-                                     {200, +4}, {250, +1}, {300, 0}};
+/* BZO 300 m (M16A2, True 200 Meter Zero) */
+static const ZeroOffset gBZO300[] = {{50, +2},  {100, +3}, {150, +3},
+                                     {200, +2}, {250, +1}, {300, 0}};
 
-/* BZO 250 m (To be optional, M16A1) */
-static const ZeroOffset gBZO250[] = {{50, +1}, {100, +1}, {150, +1}, {200, 0}, {250, 0}, {300, -3}};
+/* BZO 250 m (M16A1, FM 23-9 + interpolated values) */
+static const ZeroOffset gBZO250[] = {{50, +1},  {100, +2}, {150, +2},
+                                     {200, +1}, {250, 0},  {300, -2}};
 
 #define ZERO_OFFSET_COUNT(table) (sizeof(table) / sizeof((table)[0]))
 
