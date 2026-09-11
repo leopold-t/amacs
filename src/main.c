@@ -248,10 +248,10 @@ static const UWORD SummaryPaletteRGB4[32] = {
  * perspective-corrected gameplay BZO offsets.  Ballistic inch values are
  * pre-scaled at 5 px per inch for plotting. */
 #define ZEROING_GRAPH_AXIS_X 134
-#define ZEROING_GRAPH_AXIS_Y 158
+#define ZEROING_GRAPH_AXIS_Y 161
 #define ZEROING_GRAPH_AXIS_X2 284
-#define ZEROING_GRAPH_AXIS_Y1 131
-#define ZEROING_GRAPH_AXIS_Y2 195
+#define ZEROING_GRAPH_AXIS_Y1 132
+#define ZEROING_GRAPH_AXIS_Y2 193
 #define ZEROING_GRAPH_BLUE_PEN 11       /* RGB4 0x00D */
 #define ZEROING_GRAPH_TRAJECTORY_PEN 12 /* RGB4 0xE91, warm gold/orange */
 #define ZEROING_GRAPH_AXIS_PEN ZEROING_TEXT_PEN
@@ -260,7 +260,7 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define ZEROING_GRAPH_AREA_Y 128
 #define ZEROING_GRAPH_AREA_W 185
 #define ZEROING_GRAPH_AREA_H 70
-#define ZEROING_GRAPH_X_LABEL_Y 162
+#define ZEROING_GRAPH_X_LABEL_Y 165
 
 /* Generated Target Ranges screen.  The original 320x256 RAW is no longer
  * needed: the green field and all static labels are rendered with ROM Topaz. */
@@ -3371,11 +3371,11 @@ static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
     static const BYTE trajectory250[7] = {
         -13,  /*   0 m: -2.6" */
          +5,  /*  50 m: +1.0" */
-        +16,  /* 100 m: +3.2" */
-        +24,  /* 150 m: +4.8" */
-        +19,  /* 200 m: +3.8" */
+        +13,  /* 100 m: +2.6" */
+        +18,  /* 150 m: +3.6" */
+        +13,  /* 200 m: +2.6" */
           0,  /* 250 m:  0.0" */
-        -35   /* 300 m: -7.0" */
+        -25   /* 300 m: -5.0" */
     };
     static const BYTE trajectory300[7] = {
         -13,  /*   0 m: -2.6" */
@@ -3462,7 +3462,7 @@ static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
     {
         const char *topLabel = "+6.0\"";
         const char *zeroLabel = "0";
-        const char *bottomLabel = "-7.0\"";
+        const char *bottomLabel = "-5.0\"";
         WORD topWidth = ZeroingTinyTextWidth(topLabel);
         WORD zeroWidth = ZeroingTinyTextWidth(zeroLabel);
         WORD bottomWidth = ZeroingTinyTextWidth(bottomLabel);
@@ -3477,7 +3477,7 @@ static void DrawZeroingTrajectoryGraph(struct RastPort *rp) {
                             zeroLabel, ZEROING_GRAPH_LABEL_PEN);
         DrawZeroingTinyText(rp,
                             (WORD)(ZEROING_GRAPH_AXIS_X - 4 - bottomWidth),
-                            (WORD)(ZEROING_GRAPH_AXIS_Y2 - 2),
+                            (WORD)(ZEROING_GRAPH_AXIS_Y2 - 6),
                             bottomLabel, ZEROING_GRAPH_LABEL_PEN);
     }
 }
