@@ -53,7 +53,16 @@ AMACS includes excerpts from the following public domain recordings performed by
 These recordings are public domain works of the United States federal government and are available through Wikimedia Commons.
 
 ### Current Version
-AMACS v0.556
+AMACS v0.601
+
+### What's New in v0.601
+- Added a new Main Menu screen.
+- Added a Zeroing screen with selectable 250 m and 300 m battlesight zero (BZO) settings and trajectory visualisation.
+- The BZO values were corrected using **AD-A160 410, Basic Rifle Marksmanship Shooter's Book** and **FM 23-9, Rifle Marksmanship** as references.
+- Added a level briefing screen before entering the firing range.
+- Optimised game resources to reduce the amount of required assets.
+- Expanded and refined visual and audio effects.
+
 Development is ongoing, with future plans including additional game modes, expanded range content and an experimental Multiscan/VGA showcase version.
 
 ## Project Information

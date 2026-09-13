@@ -1067,7 +1067,7 @@ static void DrawGeneratedTitleText(struct RastPort *rp) {
                                    "BASIC RIFLE MARKSMANSHIP");
     DrawCenteredTextWithShadowMain(rp, font, TITLE_VERSION_Y,
                                    TITLE_TEXT_PEN, TITLE_SHADOW_PEN,
-                                   "VERSION 0.556");
+                                   "VERSION 0.601");
     DrawCenteredTextWithShadowMain(rp, font, TITLE_PROMPT_Y,
                                    TITLE_TEXT_PEN, TITLE_SHADOW_PEN,
                                    "PULL TRIGGER TO CONTINUE");
