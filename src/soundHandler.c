@@ -674,7 +674,7 @@ BOOL Sound_InitNarratorPrepareToFire(void) {
 
     gLastError = SOUND_OK;
 
-    if (!LoadSample(NARRATOR_PREPARE_TO_FIRE_FILE, &gNarratorPrepareToFire)) {
+    if (!LoadSample(SPEECH_PREPARE_TO_FIRE_FILE, &gNarratorPrepareToFire)) {
         /* Optional narrator cue: remember the attempt to avoid floppy I/O on Fire. */
         gNarratorPrepareToFireInited = TRUE;
         gLastError = SOUND_OK;

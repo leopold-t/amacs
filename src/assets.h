@@ -23,26 +23,28 @@ extern const UWORD RangePaletteRGB4[32];
 
 /* RAW graphics files */
 #define LOGO_FILE "gfx/Logo.raw"
+#define RANGE_FILE "gfx/OahuRange.raw"
 #define TITLE_FILE "gfx/Title.raw"
 #define WOODLAND_FILE "gfx/Woodland.raw"
-#define RANGE_FILE "gfx/OahuRange.raw"
 
-/* RAW sound files */
+/* Basic sound files */
+#define BIRD_CALL_FILE "audio/Bird_Call.raw"
+#define DRUMS_LOOP_FILE "audio/Yankee_Doodle_Drums.raw"
 #define SHOT_FILE "audio/Shot.raw"
 #define TARGET_HIT_FILE "audio/TargetHit.raw"
-#define TITLE_MUSIC_FILE "audio/Adjutants_Call_Title.raw"
-#define DRUMS_LOOP_FILE "audio/Yankee_Doodle_Drums.raw"
-#define HISCORE_FANFARE_FILE "audio/Four_Ruffles_Fanfare.raw"
-#define NARRATOR_PREPARE_TO_FIRE_FILE "audio/Speech_PrepareToFire.raw"
-#define SPEECH_HIT_FILE "audio/Speech_Hit.raw"
-#define SPEECH_MISS_FILE "audio/Speech_Miss.raw"
-#define SPEECH_RELOAD_FILE "audio/Speech_Reload.raw"
-#define RELOAD_MAG_OUT_FILE "audio/Reload_Mag_Out.raw"
 #define RELOAD_MAG_IN_FILE "audio/Reload_Mag_In.raw"
-#define BIRD_CALL_FILE "audio/Bird_Call.raw"
-#define SPEECH_EXCELLENT_FILE "audio/Speech_Excellent.raw"
-#define SPEECH_SUPERB_FILE "audio/Speech_Superb.raw"
-#define SPEECH_WELL_DONE_FILE "audio/Speech_WellDone.raw"
-#define SPEECH_UNACCEPTABLE_FILE "audio/Speech_Unacceptable.raw"
+#define RELOAD_MAG_OUT_FILE "audio/Reload_Mag_Out.raw"
+
+/* Enhanced audio files for systems with 1 MB or more Chip RAM */
+#define TITLE_MUSIC_FILE "audio/enhanced/Adjutants_Call_Title.raw"
+#define HISCORE_FANFARE_FILE "audio/enhanced/Four_Ruffles_Fanfare.raw"
+#define SPEECH_EXCELLENT_FILE "audio/enhanced/Speech_Excellent.raw"
+#define SPEECH_HIT_FILE "audio/enhanced/Speech_Hit.raw"
+#define SPEECH_MISS_FILE "audio/enhanced/Speech_Miss.raw"
+#define SPEECH_PREPARE_TO_FIRE_FILE "audio/enhanced/Speech_PrepareToFire.raw"
+#define SPEECH_RELOAD_FILE "audio/enhanced/Speech_Reload.raw"
+#define SPEECH_SUPERB_FILE "audio/enhanced/Speech_Superb.raw"
+#define SPEECH_UNACCEPTABLE_FILE "audio/enhanced/Speech_Unacceptable.raw"
+#define SPEECH_WELL_DONE_FILE "audio/enhanced/Speech_WellDone.raw"
 
 #endif
