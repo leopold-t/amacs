@@ -50,6 +50,33 @@ typedef struct AudioVoice {
 #define AUDIO_CH_2_LEFT_AMBIENT 4
 #define AUDIO_CH_3_RIGHT_SPEECH 8
 
+/* Enhanced audio is reserved for systems with at least 1 MB of physical
+ * Chip RAM.  MEMF_TOTAL is important here: MEMF_CHIP alone would only tell
+ * us how much Chip RAM happens to be free at the time of the check. */
+#define ENHANCED_AUDIO_MIN_CHIP (1024UL * 1024UL)
+#define ENHANCED_AUDIO_PATH_PREFIX "audio/enhanced/"
+
+static BOOL gEnhancedAudioChecked = FALSE;
+static BOOL gEnhancedAudioEnabled = FALSE;
+
+BOOL Sound_IsEnhancedAudioEnabled(void) {
+    if (!gEnhancedAudioChecked) {
+        ULONG totalChip = AvailMem(MEMF_CHIP | MEMF_TOTAL);
+
+        gEnhancedAudioEnabled = (totalChip >= ENHANCED_AUDIO_MIN_CHIP);
+        gEnhancedAudioChecked = TRUE;
+    }
+
+    return gEnhancedAudioEnabled;
+}
+
+static BOOL IsEnhancedAudioPath(const char *path) {
+    const char *prefix = ENHANCED_AUDIO_PATH_PREFIX;
+    size_t prefixLen = strlen(prefix);
+
+    return path && strncmp(path, prefix, prefixLen) == 0;
+}
+
 static AudioVoice gShotVoice = {NULL, NULL, FALSE, {AUDIO_CH_0_RIGHT_SHOT}};
 static AudioVoice gHitVoice = {NULL, NULL, FALSE, {AUDIO_CH_1_LEFT_HIT}};
 static AudioVoice gTitleVoice = {NULL, NULL, FALSE, {AUDIO_CH_2_LEFT_AMBIENT}};
@@ -197,6 +224,16 @@ static BOOL LoadSample(const char *path, Sample *sample) {
 
     if (!sample) {
         gLastError = SOUND_ERR_READFILE;
+        return FALSE;
+    }
+
+    /* Files below audio/enhanced are optional by definition.  On a 512 KB
+     * Chip machine do not even touch the filesystem or attempt a CHIP
+     * allocation for them. */
+    if (IsEnhancedAudioPath(path) && !Sound_IsEnhancedAudioEnabled()) {
+        sample->data = NULL;
+        sample->length = 0;
+        gLastError = SOUND_ERR_OPENFILE;
         return FALSE;
     }
 

@@ -15,6 +15,7 @@ typedef enum SoundError {
 } SoundError;
 
 BOOL Sound_Init(void);
+BOOL Sound_IsEnhancedAudioEnabled(void);
 void Sound_Shutdown(void);
 void Sound_Update(void);
 void Sound_PlayShot(void);
