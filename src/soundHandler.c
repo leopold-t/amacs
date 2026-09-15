@@ -1712,7 +1712,25 @@ void Sound_PlayHit(UWORD delayTicks, UBYTE volume) {
 }
 
 void Sound_FullShutdown(void) {
-    /* Stop and close regular voices */
+    /*
+     * Release every optional/persistent sample before the final generic
+     * sound shutdown.  Several of these samples deliberately survive a
+     * normal Sound_Shutdown() because they are reused between screens or
+     * gameplay sessions.  They must not survive application exit.
+     */
+    Sound_ShutdownTitleMusic();
+    Sound_ShutdownSpeechLoop();
+    Sound_ShutdownHiScoreFanfare();
+    Sound_ShutdownNarratorPrepareToFire();
+    Sound_ShutdownSpeechHit();
+    Sound_ShutdownSpeechMiss();
+    Sound_ShutdownSpeechReload();
+    Sound_ShutdownSpeechExcellent();
+    Sound_ShutdownSpeechSuperb();
+    Sound_ShutdownSpeechWellDone();
+    Sound_ShutdownSpeechUnacceptable();
+
+    /* Stop and close regular voices and release basic gameplay samples. */
     Sound_Shutdown();
 
     /* Narrator cleanup */
