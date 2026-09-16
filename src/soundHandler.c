@@ -2,6 +2,7 @@
 #include "assets.h"
 
 #include <devices/audio.h>
+#include <dos/dosextens.h>
 #include <exec/io.h>
 #include <exec/memory.h>
 #include <exec/types.h>
@@ -55,15 +56,46 @@ typedef struct AudioVoice {
  * us how much Chip RAM happens to be free at the time of the check. */
 #define ENHANCED_AUDIO_MIN_CHIP (1024UL * 1024UL)
 #define ENHANCED_AUDIO_PATH_PREFIX "audio/enhanced/"
+#define ENHANCED_AUDIO_DIR "audio/enhanced"
 
 static BOOL gEnhancedAudioChecked = FALSE;
 static BOOL gEnhancedAudioEnabled = FALSE;
+
+/* The distribution uses audio/enhanced in one of two states: either the
+ * drawer contains the complete Enhanced Audio set, or it is empty.  A
+ * missing drawer is treated exactly like an empty one. */
+static BOOL HasEnhancedAudioContent(void) {
+    BPTR lock;
+    struct FileInfoBlock fib;
+    BOOL hasContent = FALSE;
+
+    lock = Lock((STRPTR)ENHANCED_AUDIO_DIR, ACCESS_READ);
+    if (!lock) {
+        return FALSE;
+    }
+
+    if (Examine(lock, &fib) && fib.fib_DirEntryType > 0) {
+        /* ExNext() skips the drawer itself.  One entry is enough because a
+         * non-empty enhanced drawer is defined to contain the full set. */
+        if (ExNext(lock, &fib)) {
+            hasContent = TRUE;
+        }
+    }
+
+    UnLock(lock);
+    return hasContent;
+}
 
 BOOL Sound_IsEnhancedAudioEnabled(void) {
     if (!gEnhancedAudioChecked) {
         ULONG totalChip = AvailMem(MEMF_CHIP | MEMF_TOTAL);
 
-        gEnhancedAudioEnabled = (totalChip >= ENHANCED_AUDIO_MIN_CHIP);
+        /* Low-Chip systems must not touch Enhanced Audio at all.  On larger
+         * systems it is enabled only when audio/enhanced exists and is not
+         * empty. */
+        gEnhancedAudioEnabled =
+            (totalChip >= ENHANCED_AUDIO_MIN_CHIP) &&
+            HasEnhancedAudioContent();
         gEnhancedAudioChecked = TRUE;
     }
 

@@ -3736,6 +3736,12 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
              * visible 0.7 s phase, while the inactive row remains steady. */
             selectedVisible = TRUE;
             blinkTicks = MENU_VISIBLE_TICKS;
+
+            /* Start dynamic redraw at the top of a fresh video frame.  Without
+             * this synchronization the restore/redraw sequence can overlap the
+             * display beam and briefly expose part of the neighbouring row on
+             * real hardware (and, less visibly, under emulation). */
+            WaitTOF();
             DrawZeroingOptions(rp, font, selectedVisible, &zeroingBackground);
             DrawZeroingTargetPreview(rp, &zeroingTargetBackground);
             DrawZeroingTrajectoryPreview(rp, &zeroingGraphBackground);
@@ -3771,6 +3777,10 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
         if (blinkTicks <= 0) {
             selectedVisible = selectedVisible ? FALSE : TRUE;
             blinkTicks = selectedVisible ? MENU_VISIBLE_TICKS : MENU_HIDDEN_TICKS;
+
+            /* Synchronize the background restore and text redraw with the
+             * beginning of the video frame to avoid visible partial redraws. */
+            WaitTOF();
             DrawZeroingOptions(rp, font, selectedVisible, &zeroingBackground);
             WaitBlit();
         }
@@ -3904,6 +3914,11 @@ static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
              * active row starts a fresh visible phase of its 0.7/0.3 s blink. */
             selectedVisible = TRUE;
             blinkTicks = MENU_VISIBLE_TICKS;
+
+            /* Start dynamic redraw at the top of a fresh video frame.  This
+             * keeps the restore/redraw sequence ahead of the display beam and
+             * prevents a neighbouring menu row from flashing briefly. */
+            WaitTOF();
             DrawMainMenuItems(rp, font, selected, TRUE, &menuBackground);
             WaitBlit();
         }
@@ -3934,6 +3949,10 @@ static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
         if (blinkTicks <= 0) {
             selectedVisible = selectedVisible ? FALSE : TRUE;
             blinkTicks = selectedVisible ? MENU_VISIBLE_TICKS : MENU_HIDDEN_TICKS;
+
+            /* Synchronize the blink redraw with the beginning of the video
+             * frame so the user never sees the intermediate restored state. */
+            WaitTOF();
             DrawMainMenuItems(rp, font, selected, selectedVisible, &menuBackground);
             WaitBlit();
         }
