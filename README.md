@@ -27,6 +27,15 @@ The game uses sampled sound effects and narration generated with ElevenLabs. Mus
 - 1 MB RAM minimum
 
 AMACS adapts its audio configuration to the available physical Chip RAM. Systems with 1 MB or more of Chip RAM can use Enhanced Audio when the required samples are present in `audio/enhanced/`. On 512 KB Chip RAM systems, Enhanced Audio is automatically disabled to preserve memory and stability.
+A faster CPU and additional Fast RAM are recommended for improved performance. Hard disk installation is also recommended, as it provides enough storage for the complete audio content.
+
+## Installation
+### HDD Installation
+Extract the downloaded archive and copy its contents to any location on your Amiga hard disk.
+Make sure that `lowlevel.library` is present in the system `LIBS:` directory. Once installed, AMACS can be launched directly from its program directory.
+
+### Floppy Disk Edition
+The floppy disk must be writable in order to save the high-score table. AMACS stores high scores in the `Scores.dat` file on the game disk. Due to the limited capacity of a standard Amiga floppy disk, the music in the floppy edition is limited to the in-menu drum excerpt from **"Yankee Doodle"**.
 
 ## Controls
 ### Global
@@ -41,9 +50,6 @@ AMACS adapts its audio configuration to the available physical Chip RAM. Systems
 - **Joystick Forward then Back** / **W then S** – Reload the weapon.
 - **Joystick Fire** / **Left Mouse Button** – Pull the trigger to fire.
 - **P** – Pause the simulation.
-
-## Floppy Disk Edition
-The floppy disk must be writable in order to save the high-score table. AMACS stores high scores in the `Scores.dat` file on the game disk. Due to the limited capacity of a standard Amiga floppy disk, the music in the floppy edition is limited to the in-menu drum excerpt from **"Yankee Doodle"**.
 
 ## Acknowledgments
 The floppy disk edition of AMACS uses **GoWB**, a utility written by **Oliver Wagner**, to automatically load Workbench before launching the game. This ensures that the required Workbench environment and system libraries are available while keeping the startup process simple and transparent for the user.
