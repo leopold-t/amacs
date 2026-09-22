@@ -26,21 +26,24 @@ The game uses sampled sound effects and narration generated with ElevenLabs. Mus
 - Motorola 68000 CPU or higher
 - 1 MB RAM minimum
 
+AMACS adapts its audio configuration to the available physical Chip RAM. Systems with 1 MB or more of Chip RAM can use Enhanced Audio when the required samples are present in `audio/enhanced/`. On 512 KB Chip RAM systems, Enhanced Audio is automatically disabled to preserve memory and stability.
+
 ## Controls
 ### Global
 - **Amiga + Q** – Quit to Workbench.
 
 ### Menu Navigation
-- **Joystick Fire** / **Left Mouse Button** – Pull the trigger to continue.
+- **Joystick** / **WASD** – Navigate menu options.
+- **Joystick Fire** / **Left Mouse Button** – Pull the trigger to select or continue.
 
 ### Firing Range
-- **Joystick** – Aim using the iron sights.
-- **Joystick Forward then Back** – Reload the weapon.
+- **Joystick** / **WASD** – Aim using the iron sights.
+- **Joystick Forward then Back** / **W then S** – Reload the weapon.
 - **Joystick Fire** / **Left Mouse Button** – Pull the trigger to fire.
 - **P** – Pause the simulation.
 
 ## Floppy Disk Edition
-The floppy disk must be writable in order to save the high-score table. AMACS stores high scores in the `Scores.dat` file on the game disk. Due to the limited capacity of a standard Amiga floppy disk, the floppy edition includes only a single music track: **"Yankee Doodle"**.
+The floppy disk must be writable in order to save the high-score table. AMACS stores high scores in the `Scores.dat` file on the game disk. Due to the limited capacity of a standard Amiga floppy disk, the music in the floppy edition is limited to the in-menu drum excerpt from **"Yankee Doodle"**.
 
 ## Acknowledgments
 The floppy disk edition of AMACS uses **GoWB**, a utility written by **Oliver Wagner**, to automatically load Workbench before launching the game. This ensures that the required Workbench environment and system libraries are available while keeping the startup process simple and transparent for the user.
@@ -62,6 +65,29 @@ AMACS v0.601
 - Added a level briefing screen before entering the firing range.
 - Optimised game resources to reduce the amount of required assets.
 - Expanded and refined visual and audio effects.
+- Added automatic LowMem/Enhanced Audio selection based on physical Chip RAM.
+- Fixed a major Chip RAM leak when exiting the program.
+- Improved redraw synchronisation for blinking menu items.
+- Added WASD keyboard controls alongside joystick input for menu navigation, aiming and reloading.
+
+## FAQ
+**Q: Why doesn't AMACS support a light gun?**  
+**A:** There is no readily available light gun that can simply be connected to an Amiga. Supporting one would require uncommon hardware or a custom adapter, while classic light guns such as the NES Zapper also depend on CRT displays and generally do not work with modern LCDs. AMACS therefore focuses on standard, widely available controllers.
+
+**Q: Is a joystick or joypad required?**  
+**A:** No. AMACS can also be controlled with the keyboard using WASD, with the left mouse button as the trigger. A joystick is fully supported and recommended, however, as its grip is the closest of these control methods to the M16 pistol grip.
+
+**Q: Why are some sounds missing on an Amiga with 512 KB of Chip RAM?**  
+**A:** AMACS automatically disables Enhanced Audio on 512 KB Chip RAM systems to preserve enough memory for stable operation. The basic audio set is used instead.
+
+**Q: Why do I hear the narrator — the Drill Sergeant — on one Amiga but not another?**  
+**A:** Enhanced Audio requires at least 1 MB of physical Chip RAM and the required samples in `audio/enhanced/`. With only 512 KB of Chip RAM, or when those samples are unavailable, AMACS uses the standard audio set.
+
+**Q: Why does AMACS return to Workbench when there is not enough free memory instead of disabling more features?**  
+**A:** AMACS selects its feature set from the detected hardware configuration. If memory allocation still fails during startup, it is treated as an initialization error rather than triggering additional dynamic feature degradation.
+
+**Q: Why are the iron sights so large?**  
+**A:** As a rule of thumb, the M16 front sight post matches the width of a standard target at about 150 m. In the SNES version of MACS, which inspired AMACS, that target is 9 pixels wide at this distance. This relationship was used as a reference when scaling the iron sights in AMACS.
 
 Development is ongoing, with future plans including additional game modes, expanded range content and an experimental Multiscan/VGA showcase version.
 
