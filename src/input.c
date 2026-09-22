@@ -39,7 +39,11 @@ static BOOL mouseFireDown = FALSE;
 #endif
 
 #define RAWKEY_Q 0x10
+#define RAWKEY_W 0x11
 #define RAWKEY_P 0x19
+#define RAWKEY_A 0x20
+#define RAWKEY_S 0x21
+#define RAWKEY_D 0x22
 
 static BOOL IsAmigaQualifier(UWORD qualifier) {
     return (qualifier & (IEQUALIFIER_LCOMMAND | IEQUALIFIER_RCOMMAND)) ? TRUE : FALSE;
@@ -77,22 +81,22 @@ BOOL IsJoystickFirePressed(void) {
 
 BOOL Input_Left(void) {
     ULONG p = ReadJoyPort2();
-    return (p & JPF_JOY_LEFT) ? TRUE : FALSE;
+    return ((p & JPF_JOY_LEFT) || keyDown[RAWKEY_A]) ? TRUE : FALSE;
 }
 
 BOOL Input_Right(void) {
     ULONG p = ReadJoyPort2();
-    return (p & JPF_JOY_RIGHT) ? TRUE : FALSE;
+    return ((p & JPF_JOY_RIGHT) || keyDown[RAWKEY_D]) ? TRUE : FALSE;
 }
 
 BOOL Input_Up(void) {
     ULONG p = ReadJoyPort2();
-    return (p & JPF_JOY_UP) ? TRUE : FALSE;
+    return ((p & JPF_JOY_UP) || keyDown[RAWKEY_W]) ? TRUE : FALSE;
 }
 
 BOOL Input_Down(void) {
     ULONG p = ReadJoyPort2();
-    return (p & JPF_JOY_DOWN) ? TRUE : FALSE;
+    return ((p & JPF_JOY_DOWN) || keyDown[RAWKEY_S]) ? TRUE : FALSE;
 }
 
 void Input_PollWindow(struct Window *win) {

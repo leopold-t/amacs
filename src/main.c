@@ -1842,6 +1842,16 @@ static BOOL ShowNewHiScoreEntryScreen(UWORD score) {
     Gfx_FadeInCurrentScreenFromBlack(titlePalette, 32);
     visible = TRUE;
 
+    /* VANILLAKEY is needed only while entering a player name.  Everywhere
+     * else the window stays RAWKEY-only so held W/A/S/D generate reliable
+     * make/break events for the shared input layer. */
+    {
+        struct Window *inputWin = Gfx_GetWindow();
+        if (inputWin) {
+            ModifyIDCMP(inputWin, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS | IDCMP_VANILLAKEY);
+        }
+    }
+
     DrainWindowMessages();
 
     for (;;) {
@@ -1856,6 +1866,13 @@ static BOOL ShowNewHiScoreEntryScreen(UWORD score) {
             if (font) {
                 CloseFont(font);
             }
+            {
+                struct Window *inputWin = Gfx_GetWindow();
+                if (inputWin) {
+                    ModifyIDCMP(inputWin, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS);
+                }
+            }
+            Input_ResetState();
 
             return FALSE;
         }
@@ -1904,6 +1921,14 @@ static BOOL ShowNewHiScoreEntryScreen(UWORD score) {
     if (font) {
         CloseFont(font);
     }
+
+    {
+        struct Window *inputWin = Gfx_GetWindow();
+        if (inputWin) {
+            ModifyIDCMP(inputWin, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS);
+        }
+    }
+    Input_ResetState();
 
     (void)visible;
     return TRUE;
@@ -2712,48 +2737,28 @@ static void DrainWindowMessages(void) {
  * This function consumes IDCMP once per call and returns both flags.
  */
 static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc) {
-    struct Window *win = Gfx_GetWindow();
-    struct IntuiMessage *msg;
-
     *outAdvance = FALSE;
     *outEsc = FALSE;
 
-    if (win && win->UserPort) {
-        while ((msg = (struct IntuiMessage *)GetMsg(win->UserPort))) {
+    /* Use the shared input layer here as well as on the firing range.  This
+     * keeps keyboard state (W/S menu navigation) in sync while preserving
+     * joystick Fire and LMB as equivalent advance controls. */
+    Input_PollWindow(Gfx_GetWindow());
 
-            if (msg->Class == IDCMP_RAWKEY && IsQuitShortcutRaw((UBYTE)msg->Code, msg->Qualifier)) {
-                *outEsc = TRUE; /* Amiga+Q */
-            }
-
-            if (msg->Class == IDCMP_VANILLAKEY &&
-                IsQuitShortcutVanilla((UBYTE)(msg->Code & 0xFF), msg->Qualifier)) {
-                *outEsc = TRUE; /* Amiga+Q */
-            }
-
-            if (msg->Class == IDCMP_MOUSEBUTTONS) {
-                if (msg->Code == SELECTDOWN) {
-                    gAdvanceMouseDown = TRUE;
-                    *outAdvance = TRUE; /* LMB */
-                } else if (msg->Code == SELECTUP) {
-                    gAdvanceMouseDown = FALSE;
-                }
-            }
-
-            ReplyMsg((struct Message *)msg);
-        }
+    if (Input_QuitPressed()) {
+        *outEsc = TRUE;
     }
 
-    /* Joystick fire (port handling is inside input.c) */
-    if (IsJoystickFirePressed()) {
+    if (Input_FirePressed() || Input_IsFireDown()) {
         *outAdvance = TRUE;
     }
 }
 
 static void WaitForAdvanceRelease(void) {
     for (;;) {
-        DrainWindowMessages();
+        Input_PollWindow(Gfx_GetWindow());
 
-        if (!IsJoystickFirePressed() && !gAdvanceMouseDown) {
+        if (!Input_IsFireDown()) {
             break;
         }
 
@@ -2761,7 +2766,8 @@ static void WaitForAdvanceRelease(void) {
         WaitTOF();
     }
 
-    DrainWindowMessages();
+    /* Discard any stale Fire edge left by the press we have just released. */
+    (void)Input_FirePressed();
 }
 
 /*
