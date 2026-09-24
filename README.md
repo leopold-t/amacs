@@ -77,6 +77,9 @@ AMACS v0.601
 - Added WASD keyboard controls alongside joystick input for menu navigation, aiming and reloading.
 
 ## FAQ
+**Q: Why doesn't the AMACS distribution include the required lowlevel.library?**  
+**A:** lowlevel.library is part of AmigaOS and is copyrighted software. It cannot be redistributed as part of AMACS. The library must be present in LIBS: either in the user's AmigaOS installation or on the AMACS floppy disk.
+
 **Q: Why doesn't AMACS support a light gun?**  
 **A:** There is no readily available light gun that can simply be connected to an Amiga. Supporting one would require uncommon hardware or a custom adapter, while classic light guns such as the NES Zapper also depend on CRT displays and generally do not work with modern LCDs. AMACS therefore focuses on standard, widely available controllers.
 
