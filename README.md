@@ -98,6 +98,9 @@ AMACS v0.601
 **Q: Why are the iron sights so large?**  
 **A:** As a rule of thumb, the M16 front sight post matches the width of a standard target at about 150 m. In the SNES version of MACS, which inspired AMACS, that target is 9 pixels wide at this distance. This relationship was used as a reference when scaling the iron sights in AMACS.
 
+**Q: Why can't I fire faster in AMACS?**
+**A:** AMACS limits the maximum rate of fire to approximately 60 rounds per minute. This allows the firing sequence, including weapon recoil animation and sound effects, to complete properly between shots. In practice, this limit is already above the effective semiautomatic rate expected from an M16 rifleman: U.S. military manuals indicate a maximum effective rate of about 45 rounds per minute.
+
 Development is ongoing, with future plans including additional game modes, expanded range content and an experimental Multiscan/VGA showcase version.
 
 ## Project Information
