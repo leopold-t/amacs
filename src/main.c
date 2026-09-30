@@ -767,6 +767,8 @@ static const SummaryPoint gSummaryMap300ToScoringEType[T300_H][T300_W] = {
 static void DrainWindowMessages(void);
 static void PollAdvanceAndEsc(BOOL *outAdvance, BOOL *outEsc);
 static WaitResult WaitForAdvanceNoTimeout(void);
+static WaitResult WaitForAdvanceNoTimeoutQuitConfirm(void);
+static WaitResult WaitForAdvanceOnlyQuitConfirm(void);
 static void WaitForAdvanceRelease(void);
 static BOOL ShowNewHiScoreEntryScreen(UWORD score);
 static BOOL HiScore_InsertIfQualified(UWORD score, const char *name);
@@ -1863,18 +1865,28 @@ static BOOL ShowNewHiScoreEntryScreen(UWORD score) {
         PollHiScoreNameInput(&c, &backspace, &enter, &esc);
 
         if (esc) {
-            if (font) {
-                CloseFont(font);
-            }
-            {
-                struct Window *inputWin = Gfx_GetWindow();
-                if (inputWin) {
-                    ModifyIDCMP(inputWin, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS);
-                }
+            struct Window *inputWin = Gfx_GetWindow();
+
+            /* Name entry normally enables VANILLAKEY.  Temporarily return to
+             * RAWKEY-only input so the shared requester can handle Y/N and
+             * A/D consistently with the rest of AMACS. */
+            if (inputWin) {
+                ModifyIDCMP(inputWin, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS);
             }
             Input_ResetState();
 
-            return FALSE;
+            if (Gfx_ShowQuitRequester(FALSE)) {
+                if (font) {
+                    CloseFont(font);
+                }
+                Input_ResetState();
+                return FALSE;
+            }
+
+            if (inputWin) {
+                ModifyIDCMP(inputWin, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS | IDCMP_VANILLAKEY);
+            }
+            Input_ResetState();
         }
 
         if (enter) {
@@ -2113,7 +2125,34 @@ static WaitResult WaitForAdvanceOnly(void) {
         PollAdvanceAndEsc(&adv, &esc);
 
         if (esc) {
-            return WAIT_ESC;
+            if (Gfx_ShowQuitRequester(FALSE)) {
+                return WAIT_ESC;
+            }
+            WaitForAdvanceRelease();
+        }
+
+        if (adv) {
+            WaitForAdvanceRelease();
+            return WAIT_ADVANCE;
+        }
+
+        Sound_Update();
+        WaitTOF();
+    }
+}
+
+static WaitResult WaitForAdvanceOnlyQuitConfirm(void) {
+    WaitForAdvanceRelease();
+
+    for (;;) {
+        BOOL adv = FALSE, esc = FALSE;
+        PollAdvanceAndEsc(&adv, &esc);
+
+        if (esc) {
+            if (Gfx_ShowQuitRequester(FALSE)) {
+                return WAIT_ESC;
+            }
+            WaitForAdvanceRelease();
         }
 
         if (adv) {
@@ -2576,7 +2615,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             rankSpeechPlayed = TRUE;
         }
 
-        waitResult = WaitForAdvanceOnly();
+        waitResult = WaitForAdvanceOnlyQuitConfirm();
 
         if (waitResult == WAIT_ESC) {
             if (font)
@@ -2689,7 +2728,7 @@ static BOOL ShowTitleScorePlaceholderScreen(BOOL alreadyBlack, BOOL playFanfare)
     /* Require a fresh press on the placeholder screen. */
     WaitForAdvanceRelease();
 
-    waitResult = WaitForAdvanceNoTimeout();
+    waitResult = WaitForAdvanceNoTimeoutQuitConfirm();
     Sound_StopHiScoreFanfare(FALSE);
 
     if (waitResult == WAIT_ESC) {
@@ -2787,7 +2826,10 @@ static WaitResult WaitForAdvanceOrTimeout(int seconds) {
         PollAdvanceAndEsc(&adv, &esc);
 
         if (esc) {
-            return WAIT_ESC;
+            if (Gfx_ShowQuitRequester(FALSE)) {
+                return WAIT_ESC;
+            }
+            WaitForAdvanceRelease();
         }
 
         if (adv) {
@@ -2811,7 +2853,35 @@ static WaitResult WaitForAdvanceNoTimeout(void) {
         PollAdvanceAndEsc(&adv, &esc);
 
         if (esc) {
-            return WAIT_ESC;
+            if (Gfx_ShowQuitRequester(FALSE)) {
+                return WAIT_ESC;
+            }
+            WaitForAdvanceRelease();
+        }
+
+        if (adv) {
+            WaitForAdvanceRelease();
+            return WAIT_ADVANCE;
+        }
+
+        Sound_Update();
+        WaitTOF();
+    }
+}
+
+static WaitResult WaitForAdvanceNoTimeoutQuitConfirm(void) {
+    DrainWindowMessages();
+
+    for (;;) {
+        BOOL adv = FALSE, esc = FALSE;
+
+        PollAdvanceAndEsc(&adv, &esc);
+
+        if (esc) {
+            if (Gfx_ShowQuitRequester(FALSE)) {
+                return WAIT_ESC;
+            }
+            WaitForAdvanceRelease();
         }
 
         if (adv) {
@@ -3707,6 +3777,10 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
 
         PollAdvanceAndEsc(&adv, &esc);
         if (esc) {
+            if (!Gfx_ShowQuitRequester(FALSE)) {
+                WaitForAdvanceRelease();
+                continue;
+            }
             if (font) {
                 SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
                 CloseFont(font);
@@ -3898,12 +3972,15 @@ static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
 
         PollAdvanceAndEsc(&adv, &esc);
         if (esc) {
-            if (font) {
-                SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
-                CloseFont(font);
+            if (Gfx_ShowQuitRequester(FALSE)) {
+                if (font) {
+                    SetSoftStyle(rp, FS_NORMAL, FSF_BOLD);
+                    CloseFont(font);
+                }
+                FreeSummaryBackBuffer(&menuBackground, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
+                return MENU_RESULT_QUIT;
             }
-            FreeSummaryBackBuffer(&menuBackground, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
-            return MENU_RESULT_QUIT;
+            WaitForAdvanceRelease();
         }
 
         upNow = Input_Up();
@@ -4216,7 +4293,10 @@ static WaitResult WaitForTargetRangesAdvance(void) {
         PollAdvanceAndEsc(&adv, &esc);
 
         if (esc) {
-            return WAIT_ESC;
+            if (Gfx_ShowQuitRequester(FALSE)) {
+                return WAIT_ESC;
+            }
+            WaitForAdvanceRelease();
         }
 
         if (inputEnabled && adv) {

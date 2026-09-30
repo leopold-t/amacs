@@ -4,8 +4,11 @@
 #include <proto/exec.h>
 #include <proto/graphics.h>
 #include <proto/intuition.h>
+#include <graphics/text.h>
+#include <string.h>
 
 #include "imageHandler.h"
+#include "input.h"
 
 /* Module-owned handles */
 static struct Screen *blackScreen = NULL;
@@ -279,6 +282,258 @@ void Gfx_SwapBuffers(void) {
     } else {
         dbufPrimed = TRUE;
     }
+}
+
+
+
+/* ---------------- Modal quit requester ---------------- */
+#define QUIT_REQ_W 232
+#define QUIT_REQ_H 80
+#define RAWKEY_Y 0x15
+#define RAWKEY_N 0x36
+#define RAWKEY_ESC 0x45
+
+static void FindRequesterPens(struct Screen *scr, UWORD *outBg, UWORD *outText) {
+    UWORD i;
+    ULONG bestDark = 0xFFFFFFFFUL;
+    LONG bestText = -2147483647L;
+    UWORD bg = 0;
+    UWORD requesterTextPen = 1;
+    UWORD colors = 1;
+
+    if (!scr || !scr->ViewPort.ColorMap) {
+        *outBg = bg;
+        *outText = requesterTextPen;
+        return;
+    }
+
+    colors = (UWORD)(1U << scr->RastPort.BitMap->Depth);
+    if (colors > 32) colors = 32;
+
+    for (i = 0; i < colors; i++) {
+        UWORD rgb = GetRGB4(scr->ViewPort.ColorMap, i);
+        LONG r = (LONG)((rgb >> 8) & 0x0F);
+        LONG g = (LONG)((rgb >> 4) & 0x0F);
+        LONG b = (LONG)(rgb & 0x0F);
+        ULONG lum = (ULONG)(30 * r + 59 * g + 11 * b);
+        LONG chroma = r > g ? r - g : g - r;
+        LONG d = r > b ? r - b : b - r;
+        LONG textScore;
+
+        if (d > chroma) chroma = d;
+        d = g > b ? g - b : b - g;
+        if (d > chroma) chroma = d;
+
+        if (lum < bestDark) {
+            bestDark = lum;
+            bg = i;
+        }
+
+        /* Prefer a bright, reasonably neutral existing palette entry. */
+        textScore = (LONG)(lum * 4UL) - (chroma * 75L);
+        if (textScore > bestText) {
+            bestText = textScore;
+            requesterTextPen = i;
+        }
+    }
+
+    *outBg = bg;
+    *outText = requesterTextPen;
+}
+
+static void DrawQuitRequester(struct RastPort *rp, struct TextFont *font, WORD reqX, WORD reqY,
+                              UWORD bgPen, UWORD requesterTextPen, BOOL yesSelected) {
+    static const char title[] = "QUIT TO WORKBENCH?";
+    static const char yes[] = "YES";
+    static const char no[] = "NO";
+    WORD titleX;
+    WORD yesX = (WORD)(reqX + 68);
+    WORD noX = (WORD)(reqX + 150);
+    WORD baseY = (WORD)(reqY + 49);
+    WORD underlineY = (WORD)(reqY + 52);
+
+    if (!rp) return;
+    if (font) SetFont(rp, font);
+
+    SetAPen(rp, bgPen);
+    RectFill(rp, reqX, reqY, reqX + QUIT_REQ_W - 1,
+             reqY + QUIT_REQ_H - 1);
+
+    SetAPen(rp, requesterTextPen);
+    Move(rp, reqX, reqY);
+    Draw(rp, reqX + QUIT_REQ_W - 1, reqY);
+    Draw(rp, reqX + QUIT_REQ_W - 1, reqY + QUIT_REQ_H - 1);
+    Draw(rp, reqX, reqY + QUIT_REQ_H - 1);
+    Draw(rp, reqX, reqY);
+
+    titleX = (WORD)(reqX + (QUIT_REQ_W - TextLength(rp, (STRPTR)title, sizeof(title) - 1)) / 2);
+    Move(rp, titleX, reqY + 25);
+    Text(rp, (STRPTR)title, sizeof(title) - 1);
+    Move(rp, yesX, baseY);
+    Text(rp, (STRPTR)yes, sizeof(yes) - 1);
+    Move(rp, noX, baseY);
+    Text(rp, (STRPTR)no, sizeof(no) - 1);
+
+    if (yesSelected) {
+        Move(rp, yesX, underlineY);
+        Draw(rp, (WORD)(yesX + TextLength(rp, (STRPTR)yes, sizeof(yes) - 1) - 1), underlineY);
+    } else {
+        Move(rp, noX, underlineY);
+        Draw(rp, (WORD)(noX + TextLength(rp, (STRPTR)no, sizeof(no) - 1) - 1), underlineY);
+    }
+}
+
+BOOL Gfx_ShowQuitRequester(BOOL useDBuf) {
+    struct Screen *scr = Gfx_GetScreen();
+    struct RastPort *rp;
+    struct TextAttr ta = {"topaz.font", 8, FS_NORMAL, FPF_ROMFONT};
+    struct TextFont *font = NULL;
+    struct TextFont *oldFont = NULL;
+    struct BitMap saved;
+    BOOL savedReady = FALSE;
+    BOOL yesSelected = FALSE;
+    BOOL prevLeft = FALSE;
+    BOOL prevRight = FALSE;
+    struct RastPort modalRP;
+    BOOL usingModalRP = FALSE;
+    UBYTE oldDrawMode = JAM1;
+    UBYTE oldFgPen = 1;
+    UBYTE oldBgPen = 0;
+    UWORD bgPen, requesterTextPen;
+    WORD reqX, reqY;
+    UWORD p;
+
+    if (!scr || !scr->RastPort.BitMap) return FALSE;
+
+    /* The requester is modal, so the range loop cannot render or swap while
+     * this function is active.  With double buffering enabled, draw directly
+     * into the buffer that is CURRENTLY DISPLAYED.  Do not disable/re-enable
+     * ScreenBuffer double buffering here: doing so from the middle of the
+     * range loop can wait for a SafeMessage that will never arrive. */
+    if (useDBuf && Gfx_IsDoubleBufferingEnabled() && screenBuffers[sbIndex] &&
+        screenBuffers[sbIndex]->sb_BitMap) {
+        modalRP = scr->RastPort;
+        modalRP.BitMap = screenBuffers[sbIndex]->sb_BitMap;
+        rp = &modalRP;
+        usingModalRP = TRUE;
+    } else {
+        rp = &scr->RastPort;
+    }
+
+    if (!rp || !rp->BitMap) return FALSE;
+
+    /* Center the requester on the active screen.  This keeps the same modal
+     * UI usable on both the 320px low-res pages and the 640px hi-res logo. */
+    reqX = (WORD)((scr->Width - QUIT_REQ_W) / 2);
+    reqY = (WORD)((scr->Height - QUIT_REQ_H) / 2);
+    if (reqX < 0) reqX = 0;
+    if (reqY < 0) reqY = 0;
+
+    oldFont = rp->Font;
+    oldDrawMode = rp->DrawMode;
+    oldFgPen = rp->FgPen;
+    oldBgPen = rp->BgPen;
+
+    memset(&saved, 0, sizeof(saved));
+    InitBitMap(&saved, rp->BitMap->Depth, QUIT_REQ_W, QUIT_REQ_H);
+    savedReady = TRUE;
+    for (p = 0; p < saved.Depth; p++) {
+        saved.Planes[p] = AllocRaster(QUIT_REQ_W, QUIT_REQ_H);
+        if (!saved.Planes[p]) {
+            savedReady = FALSE;
+            break;
+        }
+    }
+    if (savedReady) {
+        WaitBlit();
+        BltBitMap(rp->BitMap, reqX, reqY, &saved, 0, 0, QUIT_REQ_W,
+                  QUIT_REQ_H, 0xC0, 0xFF, NULL);
+        WaitBlit();
+    }
+
+    font = OpenFont(&ta);
+    FindRequesterPens(scr, &bgPen, &requesterTextPen);
+    Input_ResetState();
+
+    /* Some screens leave the RastPort in a drawing mode intended for their
+     * own effects.  Repeated requester drawing in such a mode can toggle text
+     * and border pixels.  The requester always uses normal JAM1 drawing. */
+    SetDrMd(rp, JAM1);
+    DrawQuitRequester(rp, font, reqX, reqY, bgPen, requesterTextPen, yesSelected);
+    WaitBlit();
+
+    for (;;) {
+        BOOL left, right;
+        BOOL selectionChanged = FALSE;
+
+        Input_PollWindow(Gfx_GetWindow());
+
+        if (Input_KeyPressed(RAWKEY_Y)) {
+            yesSelected = TRUE;
+            goto confirmed;
+        }
+        if (Input_KeyPressed(RAWKEY_N) || Input_KeyPressed(RAWKEY_ESC)) {
+            goto cancelled;
+        }
+
+        left = Input_Left();
+        right = Input_Right();
+        if (left && !prevLeft && !yesSelected) {
+            yesSelected = TRUE;
+            selectionChanged = TRUE;
+        }
+        if (right && !prevRight && yesSelected) {
+            yesSelected = FALSE;
+            selectionChanged = TRUE;
+        }
+        prevLeft = left;
+        prevRight = right;
+
+        if (selectionChanged) {
+            DrawQuitRequester(rp, font, reqX, reqY, bgPen, requesterTextPen, yesSelected);
+            WaitBlit();
+        }
+
+        if (Input_FirePressed()) {
+            if (yesSelected) goto confirmed;
+            goto cancelled;
+        }
+
+        WaitTOF();
+    }
+
+confirmed:
+    if (oldFont) SetFont(rp, oldFont);
+    SetDrMd(rp, oldDrawMode);
+    SetAPen(rp, oldFgPen);
+    SetBPen(rp, oldBgPen);
+    if (font) CloseFont(font);
+    Input_ResetState();
+    for (p = 0; p < saved.Depth; p++) {
+        if (saved.Planes[p]) FreeRaster(saved.Planes[p], QUIT_REQ_W, QUIT_REQ_H);
+    }
+    return TRUE;
+
+cancelled:
+    if (savedReady) {
+        WaitBlit();
+        BltBitMap(&saved, 0, 0, rp->BitMap, reqX, reqY, QUIT_REQ_W,
+                  QUIT_REQ_H, 0xC0, 0xFF, NULL);
+        WaitBlit();
+    }
+
+    if (oldFont) SetFont(rp, oldFont);
+    SetDrMd(rp, oldDrawMode);
+    SetAPen(rp, oldFgPen);
+    SetBPen(rp, oldBgPen);
+    if (font) CloseFont(font);
+    Input_ResetState();
+    for (p = 0; p < saved.Depth; p++) {
+        if (saved.Planes[p]) FreeRaster(saved.Planes[p], QUIT_REQ_W, QUIT_REQ_H);
+    }
+
+    (void)usingModalRP;
+    return FALSE;
 }
 
 /* ---------------- Public API ---------------- */

@@ -53,6 +53,10 @@ void Gfx_SwapBuffers(void);
 /* Returns TRUE if DBuf is currently active. */
 BOOL Gfx_IsDoubleBufferingEnabled(void);
 
+/* Modal confirmation used by Amiga+Q on gameplay/result screens.
+ * Returns TRUE for YES and FALSE for NO/cancel. */
+BOOL Gfx_ShowQuitRequester(BOOL useDBuf);
+
 extern void SettleDisplay(int frames);
 
 #endif /* GFX_H */

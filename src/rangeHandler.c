@@ -1486,7 +1486,42 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         }
 
         if (Input_QuitPressed()) {
-            break;
+            BOOL wasPaused = paused;
+
+            /* Amiga+Q is modal on the firing range.  Pause the simulation
+             * without showing the normal PAUSED label; cancelling restores
+             * exactly the pause state that was active before the requester.
+             */
+            if (!wasPaused) {
+                paused = TRUE;
+                Sound_SetPaused(TRUE);
+                TargetsHandler_SetPaused(TRUE);
+
+                if (reloadState != RELOAD_STATE_NONE) {
+                    DateStamp(&reloadPauseStamp);
+                    reloadPauseStampValid = TRUE;
+                }
+            }
+
+            if (Gfx_ShowQuitRequester(useDBuf)) {
+                break;
+            }
+
+            if (!wasPaused) {
+                if (reloadPauseStampValid) {
+                    if (reloadState != RELOAD_STATE_NONE && reloadSpeechStampValid) {
+                        AddTicksToDateStamp(&reloadSpeechStamp, ElapsedTicksSince(&reloadPauseStamp));
+                    }
+                    if (reloadState == RELOAD_STATE_FINISHING && reloadFinishStampValid) {
+                        AddTicksToDateStamp(&reloadFinishStamp, ElapsedTicksSince(&reloadPauseStamp));
+                    }
+                    reloadPauseStampValid = FALSE;
+                }
+
+                paused = FALSE;
+                Sound_SetPaused(FALSE);
+                TargetsHandler_SetPaused(FALSE);
+            }
         }
 
         if (!roundEnding && !showFinalScore && Input_KeyPressed(0x19)) {
