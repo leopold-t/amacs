@@ -1310,6 +1310,7 @@ static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL
 BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     RangeSessionState state;
     BOOL endScreenDrawn = FALSE;
+    BOOL sightPresented = FALSE;
     struct DateStamp reloadPauseStamp;
     BOOL reloadPauseStampValid = FALSE;
     InitRangeSessionState(&state, IS_NEW_GAME_SESSION);
@@ -1550,12 +1551,21 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         }
 
         if (!paused) {
-            if (!Input_IsFireDown()) {
+            /* Fire/LMB events may accumulate in Intuition while the sight
+             * bitmaps are being loaded from slow media.  Until the first
+             * complete sight picture has actually been presented, consume
+             * those events and require a release if Fire is still held.
+             */
+            if (!sightPresented) {
+                if (Input_FirePressed() || Input_IsFireDown()) {
+                    shotNeedsRelease = TRUE;
+                }
+            } else if (!Input_IsFireDown()) {
                 shotNeedsRelease = FALSE;
             }
 
-            if (!roundEnding && !showFinalScore && reloadState == RELOAD_STATE_NONE &&
-                Input_FirePressed()) {
+            if (sightPresented && !roundEnding && !showFinalScore &&
+                reloadState == RELOAD_STATE_NONE && Input_FirePressed()) {
                 if (ammoCount > 0 && !shotNeedsRelease &&
                     ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
                     WORD aimX;
@@ -1948,6 +1958,11 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 if (useDBuf) {
                     Gfx_SwapBuffers();
                 }
+
+                /* Input becomes live only after a complete sight picture has
+                 * been drawn (and, with double buffering, swapped on screen).
+                 */
+                sightPresented = TRUE;
             } else if (!endScreenDrawn) {
                 if (haveBg) {
                     WaitBlit();
