@@ -21,7 +21,8 @@ static struct Window *window = NULL;
 typedef enum {
     DISPLAY_STANDARD = 0,
     DISPLAY_NIGHT_VISION,
-    DISPLAY_RED_ROOM
+    DISPLAY_RED_ROOM,
+    DISPLAY_AMBER
 } DisplayMode;
 
 static DisplayMode displayMode = DISPLAY_STANDARD;
@@ -39,6 +40,25 @@ static UWORD PaletteLuminanceRGB4(UWORD rgb) {
 static UWORD NightVisionRGB4(UWORD rgb) {
     UWORD y = PaletteLuminanceRGB4(rgb);
     return (UWORD)(y << 4);
+}
+
+static UWORD AmberRGB4(UWORD rgb) {
+    UWORD y = PaletteLuminanceRGB4(rgb);
+    UWORD r, g, b;
+
+    /* Give the amber ramp more of the luminous midtone/highlight character
+     * of a classic amber CRT.  RGB4 tops out at 15, so boost luminance by
+     * 25 percent and clamp before mapping it to the warm yellow-gold ramp. */
+    y = (UWORD)((y * 5) / 4);
+    if (y > 15) {
+        y = 15;
+    }
+
+    r = y;
+    g = (UWORD)((y * 7) / 8);
+    b = (UWORD)(y / 4);
+
+    return (UWORD)((r << 8) | (g << 4) | b);
 }
 
 static UWORD RedRoomRGB4(UWORD rgb) {
@@ -87,6 +107,8 @@ static void LoadDisplayPalette(struct ViewPort *vp, const UWORD *pal, UWORD colo
     for (i = 0; i < colors; i++) {
         if (displayMode == DISPLAY_RED_ROOM) {
             transformed[i] = RedRoomRGB4(pal[i]);
+        } else if (displayMode == DISPLAY_AMBER) {
+            transformed[i] = AmberRGB4(pal[i]);
         } else {
             transformed[i] = NightVisionRGB4(pal[i]);
         }
@@ -1006,12 +1028,39 @@ void Gfx_ToggleRedRoom(void) {
     WaitTOF();
 }
 
+void Gfx_ToggleAmber(void) {
+    UWORD i;
+    UWORD transformed[32];
+
+    displayMode = (displayMode == DISPLAY_AMBER)
+        ? DISPLAY_STANDARD : DISPLAY_AMBER;
+
+    if (!screen || !logicalPaletteColors) {
+        return;
+    }
+
+    if (displayMode == DISPLAY_STANDARD) {
+        LoadRGB4(&screen->ViewPort, logicalPalette, logicalPaletteColors);
+    } else {
+        for (i = 0; i < logicalPaletteColors; i++) {
+            transformed[i] = AmberRGB4(logicalPalette[i]);
+        }
+        LoadRGB4(&screen->ViewPort, transformed, logicalPaletteColors);
+    }
+
+    WaitTOF();
+}
+
 BOOL Gfx_IsNightVisionEnabled(void) {
     return (displayMode == DISPLAY_NIGHT_VISION) ? TRUE : FALSE;
 }
 
 BOOL Gfx_IsRedRoomEnabled(void) {
     return (displayMode == DISPLAY_RED_ROOM) ? TRUE : FALSE;
+}
+
+BOOL Gfx_IsAmberEnabled(void) {
+    return (displayMode == DISPLAY_AMBER) ? TRUE : FALSE;
 }
 
 void Gfx_FadeOutCurrentScreenToBlack(const UWORD *currentPal, UWORD colors) {

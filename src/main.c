@@ -1795,6 +1795,8 @@ static BOOL PollHiScoreNameInput(char *outChar, BOOL *outBackspace, BOOL *outEnt
                     Gfx_ToggleNightVision();
                 } else if (code == 0x51) {
                     Gfx_ToggleRedRoom();
+                } else if (code == 0x52) {
+                    Gfx_ToggleAmber();
                 } else if (IsQuitShortcutRaw(code, msg->Qualifier)) {
                     *outEsc = TRUE;
                     changed = TRUE;
