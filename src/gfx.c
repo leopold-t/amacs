@@ -15,6 +15,62 @@ static struct Screen *blackScreen = NULL;
 static struct Screen *screen = NULL;
 static struct Window *window = NULL;
 
+/* Global display palette mode.  The logical/original palette of the
+ * currently visible screen is kept separately so F1 can always restore it
+ * exactly after the Night Vision transform. */
+static BOOL nightVisionEnabled = FALSE;
+static UWORD logicalPalette[32];
+static UWORD logicalPaletteColors = 0;
+
+static UWORD NightVisionRGB4(UWORD rgb) {
+    UWORD r = (rgb >> 8) & 0x0F;
+    UWORD g = (rgb >> 4) & 0x0F;
+    UWORD b = rgb & 0x0F;
+    UWORD y = (UWORD)((r * 30 + g * 59 + b * 11) / 100);
+
+    return (UWORD)(y << 4);
+}
+
+static void RememberLogicalPalette(const UWORD *pal, UWORD colors) {
+    UWORD i;
+
+    if (!pal || colors == 0) {
+        logicalPaletteColors = 0;
+        return;
+    }
+
+    if (colors > 32) {
+        colors = 32;
+    }
+
+    for (i = 0; i < colors; i++) {
+        logicalPalette[i] = pal[i];
+    }
+    logicalPaletteColors = colors;
+}
+
+static void LoadDisplayPalette(struct ViewPort *vp, const UWORD *pal, UWORD colors) {
+    UWORD transformed[32];
+    UWORD i;
+
+    if (!vp || !pal || colors == 0) {
+        return;
+    }
+
+    if (!nightVisionEnabled) {
+        LoadRGB4(vp, pal, colors);
+        return;
+    }
+
+    if (colors > 32) {
+        colors = 32;
+    }
+    for (i = 0; i < colors; i++) {
+        transformed[i] = NightVisionRGB4(pal[i]);
+    }
+    LoadRGB4(vp, transformed, colors);
+}
+
 /* Double buffering */
 static BOOL dbufEnabled = FALSE;
 static struct ScreenBuffer *screenBuffers[2] = {NULL, NULL};
@@ -105,7 +161,7 @@ static void FadeToPalette(struct ViewPort *vp, const UWORD *from, const UWORD *t
             tmp[i] = LerpRGB4(from[i], to[i], s, steps);
         }
 
-        LoadRGB4(vp, tmp, colors);
+        LoadDisplayPalette(vp, tmp, colors);
 
         for (int f = 0; f < framesPerStep; f++) {
             WaitTOF();
@@ -881,6 +937,32 @@ void Gfx_CloseScreenAndWindow(void) {
     }
 }
 
+void Gfx_ToggleNightVision(void) {
+    UWORD i;
+    UWORD transformed[32];
+
+    nightVisionEnabled = nightVisionEnabled ? FALSE : TRUE;
+
+    if (!screen || !logicalPaletteColors) {
+        return;
+    }
+
+    if (!nightVisionEnabled) {
+        LoadRGB4(&screen->ViewPort, logicalPalette, logicalPaletteColors);
+    } else {
+        for (i = 0; i < logicalPaletteColors; i++) {
+            transformed[i] = NightVisionRGB4(logicalPalette[i]);
+        }
+        LoadRGB4(&screen->ViewPort, transformed, logicalPaletteColors);
+    }
+
+    WaitTOF();
+}
+
+BOOL Gfx_IsNightVisionEnabled(void) {
+    return nightVisionEnabled;
+}
+
 void Gfx_FadeOutCurrentScreenToBlack(const UWORD *currentPal, UWORD colors) {
     if (!screen || !currentPal || colors == 0) {
         return;
@@ -900,6 +982,7 @@ void Gfx_FadeInCurrentScreenFromBlack(const UWORD *targetPal, UWORD colors) {
     RemakeDisplay();
     SettleDisplay(2);
     FadeInFromBlack(screen, targetPal, colors);
+    RememberLogicalPalette(targetPal, colors);
 }
 
 BOOL Gfx_ShowImageFadeInFromBlack(const char *file, const UWORD *targetPal, UWORD colors) {
@@ -924,6 +1007,7 @@ BOOL Gfx_ShowImageFadeInFromBlack(const char *file, const UWORD *targetPal, UWOR
     SettleDisplay(2);
 
     FadeInFromBlack(screen, targetPal, colors);
+    RememberLogicalPalette(targetPal, colors);
     return TRUE;
 }
 
@@ -953,6 +1037,7 @@ BOOL Gfx_CrossFadeToImage(const char *file, const UWORD *fromPal, UWORD fromColo
     SettleDisplay(2);
 
     FadeInFromBlack(screen, toPal, toColors);
+    RememberLogicalPalette(toPal, toColors);
     return TRUE;
 }
 

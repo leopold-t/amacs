@@ -1790,7 +1790,10 @@ static BOOL PollHiScoreNameInput(char *outChar, BOOL *outBackspace, BOOL *outEnt
             UBYTE code = (UBYTE)msg->Code;
 
             if ((code & 0x80) == 0) {
-                if (IsQuitShortcutRaw(code, msg->Qualifier)) {
+                if (code == 0x50) {
+                    /* F1 remains global while initials are entered. */
+                    Gfx_ToggleNightVision();
+                } else if (IsQuitShortcutRaw(code, msg->Qualifier)) {
                     *outEsc = TRUE;
                     changed = TRUE;
                 } else if (code == 0x44 || code == 0x43) {

@@ -38,6 +38,11 @@ void Gfx_FadeOutCurrentScreenToBlack(const UWORD *currentPal, UWORD colors);
 /* Fades the current screen in from black to the supplied palette. */
 void Gfx_FadeInCurrentScreenFromBlack(const UWORD *targetPal, UWORD colors);
 
+/* Global F1 display mode: toggle the current screen palette between its
+ * original colors and a luminance-preserving green Night Vision palette. */
+void Gfx_ToggleNightVision(void);
+BOOL Gfx_IsNightVisionEnabled(void);
+
 /* Enable double buffering on current screen (LoRes range). */
 BOOL Gfx_EnableDoubleBuffering(void);
 

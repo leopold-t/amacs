@@ -15,6 +15,7 @@
 struct Library *LowLevelBase = NULL;
 
 #include "input.h"
+#include "gfx.h"
 
 static ULONG ReadJoyPort2(void) {
     if (!LowLevelBase) {
@@ -38,6 +39,7 @@ static BOOL mouseFireDown = FALSE;
 #define IEQUALIFIER_RCOMMAND 0x0800
 #endif
 
+#define RAWKEY_F1 0x50
 #define RAWKEY_Q 0x10
 #define RAWKEY_W 0x11
 #define RAWKEY_P 0x19
@@ -125,6 +127,10 @@ void Input_PollWindow(struct Window *win) {
             } else {
                 if (code == RAWKEY_Q && IsAmigaQualifier(msg->Qualifier)) {
                     quitPressedEdge = TRUE;
+                }
+
+                if (code == RAWKEY_F1 && !keyDown[code]) {
+                    Gfx_ToggleNightVision();
                 }
 
                 if (!keyDown[code]) {
