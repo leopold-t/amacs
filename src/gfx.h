@@ -57,6 +57,10 @@ BOOL Gfx_IsDoubleBufferingEnabled(void);
  * Returns TRUE for YES and FALSE for NO/cancel. */
 BOOL Gfx_ShowQuitRequester(BOOL useDBuf);
 
+/* Modal confirmation used by Esc on the firing range.
+ * Returns TRUE for YES (discard score and leave range), FALSE for NO. */
+BOOL Gfx_ShowRangeExitRequester(BOOL useDBuf);
+
 extern void SettleDisplay(int frames);
 
 #endif /* GFX_H */

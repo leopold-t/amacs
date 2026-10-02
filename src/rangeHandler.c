@@ -1525,6 +1525,57 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             }
         }
 
+        if (!roundEnding && !showFinalScore && Input_KeyPressed(0x45)) {
+            BOOL wasPaused = paused;
+
+            /* Esc aborts only the active firing range.  Use exactly the same
+             * modal-pause rules as Amiga+Q, but keep the two requesters
+             * independent: Gfx_ShowRangeExitRequester() consumes Amiga+Q
+             * while it owns input. */
+            if (!wasPaused) {
+                paused = TRUE;
+                Sound_SetPaused(TRUE);
+                TargetsHandler_SetPaused(TRUE);
+
+                if (reloadState != RELOAD_STATE_NONE) {
+                    DateStamp(&reloadPauseStamp);
+                    reloadPauseStampValid = TRUE;
+                }
+            }
+
+            if (Gfx_ShowRangeExitRequester(useDBuf)) {
+                /* Discard every piece of session data before returning to the
+                 * title path.  Local recoil/cooldown/score state disappears
+                 * with this RangeSessionState; reset the persistent scoring
+                 * and target state explicitly as well. */
+                ResetHitCounter();
+                TargetScoring_Reset();
+                TargetsHandler_Reset();
+                if (outSummary) {
+                    memset(outSummary, 0, sizeof(*outSummary));
+                    outSummary->abortedToTitle = TRUE;
+                }
+                sessionComplete = TRUE;
+                break;
+            }
+
+            if (!wasPaused) {
+                if (reloadPauseStampValid) {
+                    if (reloadState != RELOAD_STATE_NONE && reloadSpeechStampValid) {
+                        AddTicksToDateStamp(&reloadSpeechStamp, ElapsedTicksSince(&reloadPauseStamp));
+                    }
+                    if (reloadState == RELOAD_STATE_FINISHING && reloadFinishStampValid) {
+                        AddTicksToDateStamp(&reloadFinishStamp, ElapsedTicksSince(&reloadPauseStamp));
+                    }
+                    reloadPauseStampValid = FALSE;
+                }
+
+                paused = FALSE;
+                Sound_SetPaused(FALSE);
+                TargetsHandler_SetPaused(FALSE);
+            }
+        }
+
         if (!roundEnding && !showFinalScore && Input_KeyPressed(0x19)) {
             BOOL wasPaused = paused;
             paused = (BOOL)!paused;

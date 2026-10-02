@@ -472,9 +472,14 @@ BOOL Gfx_ShowQuitRequester(BOOL useDBuf) {
             yesSelected = TRUE;
             goto confirmed;
         }
-        if (Input_KeyPressed(RAWKEY_N) || Input_KeyPressed(RAWKEY_ESC)) {
+        if (Input_KeyPressed(RAWKEY_N)) {
             goto cancelled;
         }
+
+        /* Esc belongs to the separate firing-range exit requester.  While
+         * QUIT TO WORKBENCH is modal it must not cancel or open another
+         * requester, so consume and ignore it here. */
+        (void)Input_KeyPressed(RAWKEY_ESC);
 
         left = Input_Left();
         right = Input_Right();
@@ -533,6 +538,204 @@ cancelled:
     }
 
     (void)usingModalRP;
+    return FALSE;
+}
+
+
+/* ---------------- Modal firing-range exit requester ---------------- */
+#define RANGE_EXIT_REQ_W 304
+#define RANGE_EXIT_REQ_H 96
+
+static void DrawRangeExitRequester(struct RastPort *rp, struct TextFont *font,
+                                   WORD reqX, WORD reqY, UWORD bgPen,
+                                   UWORD requesterTextPen, BOOL yesSelected) {
+    static const char line1[] = "ARE YOU SURE YOU WANT TO EXIT";
+    static const char line2[] = "THE FIRING RANGE?";
+    static const char line3[] = "YOUR SCORE WILL BE DISCARDED.";
+    static const char yes[] = "YES";
+    static const char no[] = "NO";
+    WORD x;
+    WORD yesX = (WORD)(reqX + 92);
+    WORD noX = (WORD)(reqX + 204);
+    WORD baseY = (WORD)(reqY + 79);
+    WORD underlineY = (WORD)(reqY + 82);
+
+    if (!rp) return;
+    if (font) SetFont(rp, font);
+
+    SetAPen(rp, bgPen);
+    RectFill(rp, reqX, reqY, reqX + RANGE_EXIT_REQ_W - 1,
+             reqY + RANGE_EXIT_REQ_H - 1);
+
+    SetAPen(rp, requesterTextPen);
+    Move(rp, reqX, reqY);
+    Draw(rp, reqX + RANGE_EXIT_REQ_W - 1, reqY);
+    Draw(rp, reqX + RANGE_EXIT_REQ_W - 1, reqY + RANGE_EXIT_REQ_H - 1);
+    Draw(rp, reqX, reqY + RANGE_EXIT_REQ_H - 1);
+    Draw(rp, reqX, reqY);
+
+    x = (WORD)(reqX + (RANGE_EXIT_REQ_W - TextLength(rp, (STRPTR)line1, sizeof(line1) - 1)) / 2);
+    Move(rp, x, reqY + 18);
+    Text(rp, (STRPTR)line1, sizeof(line1) - 1);
+    x = (WORD)(reqX + (RANGE_EXIT_REQ_W - TextLength(rp, (STRPTR)line2, sizeof(line2) - 1)) / 2);
+    Move(rp, x, reqY + 31);
+    Text(rp, (STRPTR)line2, sizeof(line2) - 1);
+    x = (WORD)(reqX + (RANGE_EXIT_REQ_W - TextLength(rp, (STRPTR)line3, sizeof(line3) - 1)) / 2);
+    Move(rp, x, reqY + 52);
+    Text(rp, (STRPTR)line3, sizeof(line3) - 1);
+
+    Move(rp, yesX, baseY);
+    Text(rp, (STRPTR)yes, sizeof(yes) - 1);
+    Move(rp, noX, baseY);
+    Text(rp, (STRPTR)no, sizeof(no) - 1);
+
+    if (yesSelected) {
+        Move(rp, yesX, underlineY);
+        Draw(rp, (WORD)(yesX + TextLength(rp, (STRPTR)yes, sizeof(yes) - 1) - 1), underlineY);
+    } else {
+        Move(rp, noX, underlineY);
+        Draw(rp, (WORD)(noX + TextLength(rp, (STRPTR)no, sizeof(no) - 1) - 1), underlineY);
+    }
+}
+
+BOOL Gfx_ShowRangeExitRequester(BOOL useDBuf) {
+    struct Screen *scr = Gfx_GetScreen();
+    struct RastPort *rp;
+    struct TextAttr ta = {"topaz.font", 8, FS_NORMAL, FPF_ROMFONT};
+    struct TextFont *font = NULL;
+    struct TextFont *oldFont = NULL;
+    struct BitMap saved;
+    BOOL savedReady = FALSE;
+    BOOL yesSelected = FALSE;
+    BOOL prevLeft = FALSE;
+    BOOL prevRight = FALSE;
+    struct RastPort modalRP;
+    UBYTE oldDrawMode = JAM1;
+    UBYTE oldFgPen = 1;
+    UBYTE oldBgPen = 0;
+    UWORD bgPen, requesterTextPen;
+    WORD reqX, reqY;
+    UWORD p;
+
+    if (!scr || !scr->RastPort.BitMap) return FALSE;
+
+    if (useDBuf && Gfx_IsDoubleBufferingEnabled() && screenBuffers[sbIndex] &&
+        screenBuffers[sbIndex]->sb_BitMap) {
+        modalRP = scr->RastPort;
+        modalRP.BitMap = screenBuffers[sbIndex]->sb_BitMap;
+        rp = &modalRP;
+    } else {
+        rp = &scr->RastPort;
+    }
+    if (!rp || !rp->BitMap) return FALSE;
+
+    reqX = (WORD)((scr->Width - RANGE_EXIT_REQ_W) / 2);
+    reqY = (WORD)((scr->Height - RANGE_EXIT_REQ_H) / 2);
+    if (reqX < 0) reqX = 0;
+    if (reqY < 0) reqY = 0;
+
+    oldFont = rp->Font;
+    oldDrawMode = rp->DrawMode;
+    oldFgPen = rp->FgPen;
+    oldBgPen = rp->BgPen;
+
+    memset(&saved, 0, sizeof(saved));
+    InitBitMap(&saved, rp->BitMap->Depth, RANGE_EXIT_REQ_W, RANGE_EXIT_REQ_H);
+    savedReady = TRUE;
+    for (p = 0; p < saved.Depth; p++) {
+        saved.Planes[p] = AllocRaster(RANGE_EXIT_REQ_W, RANGE_EXIT_REQ_H);
+        if (!saved.Planes[p]) {
+            savedReady = FALSE;
+            break;
+        }
+    }
+    if (savedReady) {
+        WaitBlit();
+        BltBitMap(rp->BitMap, reqX, reqY, &saved, 0, 0, RANGE_EXIT_REQ_W,
+                  RANGE_EXIT_REQ_H, 0xC0, 0xFF, NULL);
+        WaitBlit();
+    }
+
+    font = OpenFont(&ta);
+    FindRequesterPens(scr, &bgPen, &requesterTextPen);
+    Input_ResetState();
+    SetDrMd(rp, JAM1);
+    DrawRangeExitRequester(rp, font, reqX, reqY, bgPen, requesterTextPen, yesSelected);
+    WaitBlit();
+
+    for (;;) {
+        BOOL left, right;
+        BOOL selectionChanged = FALSE;
+
+        Input_PollWindow(Gfx_GetWindow());
+
+        if (Input_KeyPressed(RAWKEY_Y)) {
+            yesSelected = TRUE;
+            goto range_confirmed;
+        }
+        if (Input_KeyPressed(RAWKEY_N)) {
+            goto range_cancelled;
+        }
+
+        /* Amiga+Q is deliberately consumed while this requester owns input.
+         * It must never open the Workbench requester on top of this one. */
+        (void)Input_QuitPressed();
+        /* Repeated Esc while the Esc requester is already open is inert. */
+        (void)Input_KeyPressed(RAWKEY_ESC);
+
+        left = Input_Left();
+        right = Input_Right();
+        if (left && !prevLeft && !yesSelected) {
+            yesSelected = TRUE;
+            selectionChanged = TRUE;
+        }
+        if (right && !prevRight && yesSelected) {
+            yesSelected = FALSE;
+            selectionChanged = TRUE;
+        }
+        prevLeft = left;
+        prevRight = right;
+
+        if (selectionChanged) {
+            DrawRangeExitRequester(rp, font, reqX, reqY, bgPen, requesterTextPen, yesSelected);
+            WaitBlit();
+        }
+
+        if (Input_FirePressed()) {
+            if (yesSelected) goto range_confirmed;
+            goto range_cancelled;
+        }
+        WaitTOF();
+    }
+
+range_confirmed:
+    if (oldFont) SetFont(rp, oldFont);
+    SetDrMd(rp, oldDrawMode);
+    SetAPen(rp, oldFgPen);
+    SetBPen(rp, oldBgPen);
+    if (font) CloseFont(font);
+    Input_ResetState();
+    for (p = 0; p < saved.Depth; p++) {
+        if (saved.Planes[p]) FreeRaster(saved.Planes[p], RANGE_EXIT_REQ_W, RANGE_EXIT_REQ_H);
+    }
+    return TRUE;
+
+range_cancelled:
+    if (savedReady) {
+        WaitBlit();
+        BltBitMap(&saved, 0, 0, rp->BitMap, reqX, reqY, RANGE_EXIT_REQ_W,
+                  RANGE_EXIT_REQ_H, 0xC0, 0xFF, NULL);
+        WaitBlit();
+    }
+    if (oldFont) SetFont(rp, oldFont);
+    SetDrMd(rp, oldDrawMode);
+    SetAPen(rp, oldFgPen);
+    SetBPen(rp, oldBgPen);
+    if (font) CloseFont(font);
+    Input_ResetState();
+    for (p = 0; p < saved.Depth; p++) {
+        if (saved.Planes[p]) FreeRaster(saved.Planes[p], RANGE_EXIT_REQ_W, RANGE_EXIT_REQ_H);
+    }
     return FALSE;
 }
 

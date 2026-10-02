@@ -4738,6 +4738,20 @@ show_title:
                     Gfx_DisableDoubleBuffering();
                 }
 
+                if (summaryData.abortedToTitle) {
+                    /* Esc-confirmed range abort: the range has already reset
+                     * gameplay/audio state.  Skip Summary and Hi-Score and
+                     * rebuild the title screen from black. */
+                    Gfx_FadeOutCurrentScreenToBlack(rangePalette, 32);
+                    if (!ShowGeneratedTitleScreenFromBlack()) {
+                        goto fail;
+                    }
+                    for (int i = 0; i < 32; i++) {
+                        currentLoPal[i] = titlePalette[i];
+                    }
+                    goto show_title;
+                }
+
                 if (!ShowSummaryScreen(&summaryData)) {
                     goto exit_ok;
                 }
