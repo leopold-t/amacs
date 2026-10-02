@@ -16,19 +16,38 @@ static struct Screen *screen = NULL;
 static struct Window *window = NULL;
 
 /* Global display palette mode.  The logical/original palette of the
- * currently visible screen is kept separately so F1 can always restore it
- * exactly after the Night Vision transform. */
-static BOOL nightVisionEnabled = FALSE;
+ * currently visible screen is kept separately so a display-mode toggle can
+ * always restore it exactly. */
+typedef enum {
+    DISPLAY_STANDARD = 0,
+    DISPLAY_NIGHT_VISION,
+    DISPLAY_RED_ROOM
+} DisplayMode;
+
+static DisplayMode displayMode = DISPLAY_STANDARD;
 static UWORD logicalPalette[32];
 static UWORD logicalPaletteColors = 0;
 
-static UWORD NightVisionRGB4(UWORD rgb) {
+static UWORD PaletteLuminanceRGB4(UWORD rgb) {
     UWORD r = (rgb >> 8) & 0x0F;
     UWORD g = (rgb >> 4) & 0x0F;
     UWORD b = rgb & 0x0F;
-    UWORD y = (UWORD)((r * 30 + g * 59 + b * 11) / 100);
 
+    return (UWORD)((r * 30 + g * 59 + b * 11) / 100);
+}
+
+static UWORD NightVisionRGB4(UWORD rgb) {
+    UWORD y = PaletteLuminanceRGB4(rgb);
     return (UWORD)(y << 4);
+}
+
+static UWORD RedRoomRGB4(UWORD rgb) {
+    UWORD y = PaletteLuminanceRGB4(rgb);
+
+    /* Keep the red-room palette deliberately subdued: even the brightest
+     * original pen reaches only about 75 percent of full red intensity. */
+    y = (UWORD)((y * 3) / 4);
+    return (UWORD)(y << 8);
 }
 
 static void RememberLogicalPalette(const UWORD *pal, UWORD colors) {
@@ -57,7 +76,7 @@ static void LoadDisplayPalette(struct ViewPort *vp, const UWORD *pal, UWORD colo
         return;
     }
 
-    if (!nightVisionEnabled) {
+    if (displayMode == DISPLAY_STANDARD) {
         LoadRGB4(vp, pal, colors);
         return;
     }
@@ -66,7 +85,11 @@ static void LoadDisplayPalette(struct ViewPort *vp, const UWORD *pal, UWORD colo
         colors = 32;
     }
     for (i = 0; i < colors; i++) {
-        transformed[i] = NightVisionRGB4(pal[i]);
+        if (displayMode == DISPLAY_RED_ROOM) {
+            transformed[i] = RedRoomRGB4(pal[i]);
+        } else {
+            transformed[i] = NightVisionRGB4(pal[i]);
+        }
     }
     LoadRGB4(vp, transformed, colors);
 }
@@ -941,13 +964,14 @@ void Gfx_ToggleNightVision(void) {
     UWORD i;
     UWORD transformed[32];
 
-    nightVisionEnabled = nightVisionEnabled ? FALSE : TRUE;
+    displayMode = (displayMode == DISPLAY_NIGHT_VISION)
+        ? DISPLAY_STANDARD : DISPLAY_NIGHT_VISION;
 
     if (!screen || !logicalPaletteColors) {
         return;
     }
 
-    if (!nightVisionEnabled) {
+    if (displayMode == DISPLAY_STANDARD) {
         LoadRGB4(&screen->ViewPort, logicalPalette, logicalPaletteColors);
     } else {
         for (i = 0; i < logicalPaletteColors; i++) {
@@ -959,8 +983,35 @@ void Gfx_ToggleNightVision(void) {
     WaitTOF();
 }
 
+void Gfx_ToggleRedRoom(void) {
+    UWORD i;
+    UWORD transformed[32];
+
+    displayMode = (displayMode == DISPLAY_RED_ROOM)
+        ? DISPLAY_STANDARD : DISPLAY_RED_ROOM;
+
+    if (!screen || !logicalPaletteColors) {
+        return;
+    }
+
+    if (displayMode == DISPLAY_STANDARD) {
+        LoadRGB4(&screen->ViewPort, logicalPalette, logicalPaletteColors);
+    } else {
+        for (i = 0; i < logicalPaletteColors; i++) {
+            transformed[i] = RedRoomRGB4(logicalPalette[i]);
+        }
+        LoadRGB4(&screen->ViewPort, transformed, logicalPaletteColors);
+    }
+
+    WaitTOF();
+}
+
 BOOL Gfx_IsNightVisionEnabled(void) {
-    return nightVisionEnabled;
+    return (displayMode == DISPLAY_NIGHT_VISION) ? TRUE : FALSE;
+}
+
+BOOL Gfx_IsRedRoomEnabled(void) {
+    return (displayMode == DISPLAY_RED_ROOM) ? TRUE : FALSE;
 }
 
 void Gfx_FadeOutCurrentScreenToBlack(const UWORD *currentPal, UWORD colors) {

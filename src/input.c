@@ -40,6 +40,7 @@ static BOOL mouseFireDown = FALSE;
 #endif
 
 #define RAWKEY_F1 0x50
+#define RAWKEY_F2 0x51
 #define RAWKEY_Q 0x10
 #define RAWKEY_W 0x11
 #define RAWKEY_P 0x19
@@ -131,6 +132,8 @@ void Input_PollWindow(struct Window *win) {
 
                 if (code == RAWKEY_F1 && !keyDown[code]) {
                     Gfx_ToggleNightVision();
+                } else if (code == RAWKEY_F2 && !keyDown[code]) {
+                    Gfx_ToggleRedRoom();
                 }
 
                 if (!keyDown[code]) {

@@ -1791,8 +1791,10 @@ static BOOL PollHiScoreNameInput(char *outChar, BOOL *outBackspace, BOOL *outEnt
 
             if ((code & 0x80) == 0) {
                 if (code == 0x50) {
-                    /* F1 remains global while initials are entered. */
+                    /* Display-mode keys remain global while initials are entered. */
                     Gfx_ToggleNightVision();
+                } else if (code == 0x51) {
+                    Gfx_ToggleRedRoom();
                 } else if (IsQuitShortcutRaw(code, msg->Qualifier)) {
                     *outEsc = TRUE;
                     changed = TRUE;
