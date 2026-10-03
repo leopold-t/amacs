@@ -976,6 +976,35 @@ static WORD RearRecoilOffsetY(WORD frontRecoilY, WORD *history) {
     return delayed;
 }
 
+/* 17x17 corner overlay used on the firing range while one of the
+ * special palette modes is active.  The shape is intentionally hard-edged:
+ * it is drawn last, above sights/HUD, so moving optics can pass underneath it. */
+static void DrawSpecialModeVignette(struct RastPort *rp) {
+    static const UBYTE cornerWidth[17] = {
+        17, 15, 12, 11, 10, 9, 7, 6, 6, 5, 4, 3, 2, 2, 2, 1, 1
+    };
+    UWORD y;
+
+    if (!rp || !(Gfx_IsNightVisionEnabled() || Gfx_IsRedRoomEnabled() || Gfx_IsAmberEnabled())) {
+        return;
+    }
+
+    SetAPen(rp, HUD_TEXT_PEN);
+
+    for (y = 0; y < 17; y++) {
+        UWORD w = cornerWidth[y];
+        WORD bottomY = (WORD)(SCR_H - 1 - y);
+
+        /* Top-left / top-right. */
+        RectFill(rp, 0, (WORD)y, (WORD)(w - 1), (WORD)y);
+        RectFill(rp, (WORD)(SCR_W - w), (WORD)y, SCR_W - 1, (WORD)y);
+
+        /* Bottom-left / bottom-right: vertical mirror of the same corner. */
+        RectFill(rp, 0, bottomY, (WORD)(w - 1), bottomY);
+        RectFill(rp, (WORD)(SCR_W - w), bottomY, SCR_W - 1, bottomY);
+    }
+}
+
 static void DrawResultFlash(struct RastPort *rp, UWORD colorIndex) {
     if (!rp) {
         return;
@@ -2005,6 +2034,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 DrawReloadStatusText(rp, hudFont, reloadState != RELOAD_STATE_NONE, paused,
                                      showFinalScore);
                 DrawAccuracy(rp, hudFont, showFinalScore);
+
+                /* Special-mode corner vignette is the topmost Range layer. */
+                DrawSpecialModeVignette(rp);
 
                 if (useDBuf) {
                     Gfx_SwapBuffers();
