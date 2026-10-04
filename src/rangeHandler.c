@@ -27,15 +27,19 @@ extern BOOL Input_Down(void);
 #define RAWKEY_K 0x27
 #define RAWKEY_M 0x37
 
-typedef enum RangeControlMode {
-    RANGE_CONTROL_JOYSTICK = 0,
-    RANGE_CONTROL_KEYBOARD,
-    RANGE_CONTROL_MOUSE
-} RangeControlMode;
-
-/* Persistent for the lifetime of AMACS.  Settings will later expose this
- * same value; for now every fresh program start defaults to joystick. */
+/* Persistent for the lifetime of AMACS.  Both Settings and the J/K/M
+ * shortcuts on the firing range operate on this same value. */
 static RangeControlMode gPrimaryControl = RANGE_CONTROL_JOYSTICK;
+
+RangeControlMode Range_GetPrimaryControl(void) {
+    return gPrimaryControl;
+}
+
+void Range_SetPrimaryControl(RangeControlMode mode) {
+    if (mode >= RANGE_CONTROL_JOYSTICK && mode <= RANGE_CONTROL_MOUSE) {
+        gPrimaryControl = mode;
+    }
+}
 
 static BOOL RangeControlLeft(void) {
     if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyLeft();

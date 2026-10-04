@@ -201,12 +201,13 @@ static const UWORD SummaryPaletteRGB4[32] = {
  * treatment, gradient frame and Topaz text. */
 #define MENU_TEXT_PEN TRAINING_INFO_TEXT_PEN
 #define MENU_SHADOW_PEN TRAINING_INFO_SHADOW_PEN
-#define MENU_LINE1_Y 105
-#define MENU_LINE2_Y 125
+#define MENU_LINE1_Y 91
+#define MENU_LINE2_Y 115
+#define MENU_LINE3_Y 139
 #define MENU_TEXT_AREA_X (TRAINING_INFO_PANEL_X1 + TRAINING_INFO_PANEL_BORDER)
-#define MENU_TEXT_AREA_Y 94
+#define MENU_TEXT_AREA_Y 84
 #define MENU_TEXT_AREA_W ((TRAINING_INFO_PANEL_X2 - TRAINING_INFO_PANEL_BORDER) - MENU_TEXT_AREA_X + 1)
-#define MENU_TEXT_AREA_H 42
+#define MENU_TEXT_AREA_H 66
 #define MENU_VISIBLE_TICKS 35
 #define MENU_HIDDEN_TICKS 15
 
@@ -298,7 +299,8 @@ typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
 typedef enum {
     MENU_RESULT_QUIT = 0,
     MENU_RESULT_TEN_SHOT,
-    MENU_RESULT_ZEROING
+    MENU_RESULT_ZEROING,
+    MENU_RESULT_SETTINGS
 } MenuResult;
 
 #ifndef IEQUALIFIER_LCOMMAND
@@ -3877,11 +3879,55 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
     }
 }
 
+static WORD MainMenuLineY(UWORD selected) {
+    if (selected == 0) return MENU_LINE1_Y;
+    if (selected == 1) return MENU_LINE2_Y;
+    return MENU_LINE3_Y;
+}
+
+/* Redraw only the active row during blinking.  Restoring the complete menu
+ * text area for every blink can briefly disturb neighbouring rows on slower
+ * machines. */
+static void RestoreMenuLine(struct RastPort *rp, struct BitMap *background, WORD y) {
+    WORD h;
+    WORD srcY;
+
+    if (!rp || !background || !rp->BitMap) return;
+    h = (WORD)((rp->TxHeight ? rp->TxHeight : 8) + 2);
+    srcY = (WORD)(y - MENU_TEXT_AREA_Y);
+    if (srcY < 0) srcY = 0;
+    if (srcY + h > MENU_TEXT_AREA_H) h = (WORD)(MENU_TEXT_AREA_H - srcY);
+    if (h <= 0) return;
+
+    BltBitMap(background, 0, srcY, rp->BitMap, MENU_TEXT_AREA_X,
+              (WORD)(MENU_TEXT_AREA_Y + srcY), MENU_TEXT_AREA_W, h,
+              0xC0, 0xFF, NULL);
+    WaitBlit();
+}
+
+static void BlinkMainMenuItem(struct RastPort *rp, struct TextFont *font,
+                              UWORD selected, BOOL visible,
+                              struct BitMap *background) {
+    const char *line;
+    WORD y = MainMenuLineY(selected);
+
+    if (selected == 0) line = "> TEN SHOT CHALLENGE";
+    else if (selected == 1) line = "> ZEROING";
+    else line = "> SETTINGS";
+
+    RestoreMenuLine(rp, background, y);
+    if (visible) {
+        DrawCenteredTextWithShadowMain(rp, font, y, MENU_TEXT_PEN,
+                                       MENU_SHADOW_PEN, line);
+    }
+}
+
 static void DrawMainMenuItems(struct RastPort *rp, struct TextFont *font,
                               UWORD selected, BOOL selectedVisible,
                               struct BitMap *background) {
     const char *line1 = (selected == 0) ? "> TEN SHOT CHALLENGE" : "  TEN SHOT CHALLENGE";
     const char *line2 = (selected == 1) ? "> ZEROING" : "  ZEROING";
+    const char *line3 = (selected == 2) ? "> SETTINGS" : "  SETTINGS";
 
     if (!rp || !background || !rp->BitMap) {
         return;
@@ -3902,6 +3948,181 @@ static void DrawMainMenuItems(struct RastPort *rp, struct TextFont *font,
     if (selected != 1 || selectedVisible) {
         DrawCenteredTextWithShadowMain(rp, font, MENU_LINE2_Y, MENU_TEXT_PEN,
                                        MENU_SHADOW_PEN, line2);
+    }
+
+    if (selected != 2 || selectedVisible) {
+        DrawCenteredTextWithShadowMain(rp, font, MENU_LINE3_Y, MENU_TEXT_PEN,
+                                       MENU_SHADOW_PEN, line3);
+    }
+}
+
+static const char *PrimaryControlName(RangeControlMode mode) {
+    switch (mode) {
+        case RANGE_CONTROL_KEYBOARD: return "KEYBOARD";
+        case RANGE_CONTROL_MOUSE: return "MOUSE";
+        case RANGE_CONTROL_JOYSTICK:
+        default: return "JOYSTICK";
+    }
+}
+
+static void DrawSettingsControl(struct RastPort *rp, struct TextFont *font,
+                                RangeControlMode mode, BOOL selectedVisible,
+                                struct BitMap *background) {
+    if (!rp || !background || !rp->BitMap) return;
+
+    BltBitMap(background, 0, 0, rp->BitMap, MENU_TEXT_AREA_X, MENU_TEXT_AREA_Y,
+              MENU_TEXT_AREA_W, MENU_TEXT_AREA_H, 0xC0, 0xFF, NULL);
+    WaitBlit();
+
+    DrawCenteredTextWithShadowMain(rp, font, MENU_LINE1_Y, MENU_TEXT_PEN,
+                                   MENU_SHADOW_PEN, "SETTINGS");
+    if (selectedVisible) {
+        const char *prefix = "> PRIMARY CONTROL: ";
+        const char *value = PrimaryControlName(mode);
+        const char *reference = "JOYSTICK";
+        WORD prefixWidth = TextLength(rp, (STRPTR)prefix, (UWORD)strlen(prefix));
+        WORD referenceWidth = TextLength(rp, (STRPTR)reference, (UWORD)strlen(reference));
+        WORD x = (WORD)((LO_WIDTH - (prefixWidth + referenceWidth)) / 2);
+        DrawTextWithShadowExMain(rp, font, x, MENU_LINE2_Y, MENU_TEXT_PEN,
+                                 MENU_SHADOW_PEN, prefix, (UWORD)strlen(prefix));
+        DrawTextWithShadowExMain(rp, font, (WORD)(x + prefixWidth), MENU_LINE2_Y,
+                                 MENU_TEXT_PEN, MENU_SHADOW_PEN, value,
+                                 (UWORD)strlen(value));
+    }
+}
+
+static void DrawSettingsControlLine(struct RastPort *rp, struct TextFont *font,
+                                    RangeControlMode mode, BOOL visible,
+                                    struct BitMap *background) {
+    const char *prefix = "> PRIMARY CONTROL: ";
+    const char *value = PrimaryControlName(mode);
+    const char *reference = "JOYSTICK";
+    WORD prefixWidth, referenceWidth;
+    WORD x;
+
+    if (!rp || !background || !rp->BitMap) return;
+    if (font) SetFont(rp, font);
+
+    RestoreMenuLine(rp, background, MENU_LINE2_Y);
+    if (!visible) return;
+
+    /* Anchor the value column to JOYSTICK so KEYBOARD and MOUSE never shift
+     * horizontally when the selected control method changes. */
+    prefixWidth = TextLength(rp, (STRPTR)prefix, (UWORD)strlen(prefix));
+    referenceWidth = TextLength(rp, (STRPTR)reference, (UWORD)strlen(reference));
+    x = (WORD)((LO_WIDTH - (prefixWidth + referenceWidth)) / 2);
+    DrawTextWithShadowExMain(rp, font, x, MENU_LINE2_Y, MENU_TEXT_PEN,
+                             MENU_SHADOW_PEN, prefix, (UWORD)strlen(prefix));
+    DrawTextWithShadowExMain(rp, font, (WORD)(x + prefixWidth), MENU_LINE2_Y,
+                             MENU_TEXT_PEN, MENU_SHADOW_PEN, value,
+                             (UWORD)strlen(value));
+}
+
+static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
+    struct Screen *screen = Gfx_GetScreen();
+    struct RastPort *rp;
+    struct TextFont *font = NULL;
+    struct BitMap background;
+    struct RastPort backgroundRP;
+    BOOL backgroundReady = FALSE;
+    BOOL prevLeft, prevRight;
+    BOOL selectedVisible = TRUE;
+    WORD blinkTicks = MENU_VISIBLE_TICKS;
+    RangeControlMode pending = Range_GetPrimaryControl();
+    UWORD black[32] = {0};
+
+    if (!screen || !screen->RastPort.BitMap || !fromPal) return FALSE;
+    rp = &screen->RastPort;
+
+    Gfx_FadeOutCurrentScreenToBlack(fromPal, fromColors);
+    LoadRGB4(&screen->ViewPort, black, 32);
+    SettleDisplay(2);
+    if (!LoadRawImageToScreen(WOODLAND_FILE, screen)) return FALSE;
+
+    DrawTrainingInfoDimmedPanel(rp);
+    DrawTrainingInfoFrame(rp);
+
+    font = OpenFont(&gSummaryFontAttr);
+    if (font) {
+        SetFont(rp, font);
+        SetSoftStyle(rp, FSF_BOLD, FSF_BOLD);
+    }
+
+    memset(&background, 0, sizeof(background));
+    memset(&backgroundRP, 0, sizeof(backgroundRP));
+    if (InitSummaryBackBuffer(&background, &backgroundRP, MENU_TEXT_AREA_W,
+                              MENU_TEXT_AREA_H, LO_DEPTH)) {
+        BltBitMap(rp->BitMap, MENU_TEXT_AREA_X, MENU_TEXT_AREA_Y, &background, 0, 0,
+                  MENU_TEXT_AREA_W, MENU_TEXT_AREA_H, 0xC0, 0xFF, NULL);
+        WaitBlit();
+        backgroundReady = TRUE;
+    }
+    if (!backgroundReady) {
+        if (font) { SetSoftStyle(rp, FS_NORMAL, FSF_BOLD); CloseFont(font); }
+        return FALSE;
+    }
+
+    DrawSettingsControl(rp, font, pending, selectedVisible, &background);
+    WaitBlit();
+    SettleDisplay(1);
+    Gfx_FadeInCurrentScreenFromBlack(TrainingInfoPaletteRGB4, 32);
+
+    prevLeft = Input_Left();
+    prevRight = Input_Right();
+    WaitForAdvanceRelease();
+
+    for (;;) {
+        BOOL adv = FALSE, esc = FALSE;
+        BOOL leftNow, rightNow;
+        PollAdvanceAndEsc(&adv, &esc);
+
+        if (esc) {
+            if (Gfx_ShowQuitRequester(FALSE)) {
+                if (font) { SetSoftStyle(rp, FS_NORMAL, FSF_BOLD); CloseFont(font); }
+                FreeSummaryBackBuffer(&background, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
+                return FALSE;
+            }
+            WaitForAdvanceRelease();
+        }
+
+        leftNow = Input_Left();
+        rightNow = Input_Right();
+        if ((leftNow && !prevLeft) || (rightNow && !prevRight)) {
+            if (rightNow && !prevRight) {
+                pending = (pending == RANGE_CONTROL_MOUSE) ? RANGE_CONTROL_JOYSTICK
+                                                          : (RangeControlMode)(pending + 1);
+            } else {
+                pending = (pending == RANGE_CONTROL_JOYSTICK) ? RANGE_CONTROL_MOUSE
+                                                             : (RangeControlMode)(pending - 1);
+            }
+            selectedVisible = TRUE;
+            blinkTicks = MENU_VISIBLE_TICKS;
+            WaitTOF();
+            DrawSettingsControlLine(rp, font, pending, selectedVisible, &background);
+            WaitBlit();
+        }
+        prevLeft = leftNow;
+        prevRight = rightNow;
+
+        if (adv) {
+            Range_SetPrimaryControl(pending);
+            WaitForAdvanceRelease();
+            if (font) { SetSoftStyle(rp, FS_NORMAL, FSF_BOLD); CloseFont(font); }
+            FreeSummaryBackBuffer(&background, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
+            return TRUE;
+        }
+
+        blinkTicks--;
+        if (blinkTicks <= 0) {
+            selectedVisible = selectedVisible ? FALSE : TRUE;
+            blinkTicks = selectedVisible ? MENU_VISIBLE_TICKS : MENU_HIDDEN_TICKS;
+            WaitTOF();
+            DrawSettingsControlLine(rp, font, pending, selectedVisible, &background);
+            WaitBlit();
+        }
+
+        Sound_Update();
+        WaitTOF();
     }
 }
 
@@ -3995,9 +4216,9 @@ static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
 
         if ((upNow && !prevUp) || (downNow && !prevDown)) {
             if (upNow && !prevUp) {
-                selected = (selected == 0) ? 1 : 0;
+                selected = (selected == 0) ? 2 : (UWORD)(selected - 1);
             } else {
-                selected = (selected == 1) ? 0 : 1;
+                selected = (selected == 2) ? 0 : (UWORD)(selected + 1);
             }
 
             /* The row that just became inactive is redrawn steadily.  The new
@@ -4032,7 +4253,7 @@ static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
                 CloseFont(font);
             }
             FreeSummaryBackBuffer(&menuBackground, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
-            return MENU_RESULT_ZEROING;
+            return (selected == 1) ? MENU_RESULT_ZEROING : MENU_RESULT_SETTINGS;
         }
 
         blinkTicks--;
@@ -4043,7 +4264,7 @@ static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
             /* Synchronize the blink redraw with the beginning of the video
              * frame so the user never sees the intermediate restored state. */
             WaitTOF();
-            DrawMainMenuItems(rp, font, selected, selectedVisible, &menuBackground);
+            BlinkMainMenuItem(rp, font, selected, selectedVisible, &menuBackground);
             WaitBlit();
         }
 
@@ -4490,12 +4711,16 @@ show_title:
                     currentLoPal[i] = trainingInfoPalette[i];
                 }
 
-                if (menuResult != MENU_RESULT_ZEROING) {
+                if (menuResult == MENU_RESULT_ZEROING) {
+                    if (!ShowZeroingScreen(currentLoPal, 32)) {
+                        goto exit_ok;
+                    }
+                } else if (menuResult == MENU_RESULT_SETTINGS) {
+                    if (!ShowSettingsScreen(currentLoPal, 32)) {
+                        goto exit_ok;
+                    }
+                } else {
                     break;
-                }
-
-                if (!ShowZeroingScreen(currentLoPal, 32)) {
-                    goto exit_ok;
                 }
 
                 for (int i = 0; i < 32; i++) {

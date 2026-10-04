@@ -3,6 +3,15 @@
 
 #include <exec/types.h>
 
+typedef enum RangeControlMode {
+    RANGE_CONTROL_JOYSTICK = 0,
+    RANGE_CONTROL_KEYBOARD,
+    RANGE_CONTROL_MOUSE
+} RangeControlMode;
+
+RangeControlMode Range_GetPrimaryControl(void);
+void Range_SetPrimaryControl(RangeControlMode mode);
+
 typedef struct RangeSummaryData {
     UWORD score;
     UWORD accuracy;
