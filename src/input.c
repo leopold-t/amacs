@@ -27,7 +27,9 @@ static ULONG ReadJoyPort2(void) {
 
 static UBYTE keyDown[256];
 static UBYTE keyPressed[256];
-static BOOL firePressedEdge = FALSE;
+static BOOL joyFirePressedEdge = FALSE;
+static BOOL keyboardFirePressedEdge = FALSE;
+static BOOL mouseFirePressedEdge = FALSE;
 static BOOL quitPressedEdge = FALSE;
 static BOOL joyFireDown = FALSE;
 static BOOL mouseFireDown = FALSE;
@@ -68,7 +70,9 @@ BOOL Input_Init(void) {
         keyPressed[i] = 0;
     }
 
-    firePressedEdge = FALSE;
+    joyFirePressedEdge = FALSE;
+    keyboardFirePressedEdge = FALSE;
+    mouseFirePressedEdge = FALSE;
     quitPressedEdge = FALSE;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;
@@ -90,25 +94,20 @@ BOOL IsJoystickFirePressed(void) {
     return (p & JPF_BUTTON_RED) ? TRUE : FALSE;
 }
 
-BOOL Input_Left(void) {
-    ULONG p = ReadJoyPort2();
-    return ((p & JPF_JOY_LEFT) || keyDown[RAWKEY_A]) ? TRUE : FALSE;
-}
+BOOL Input_JoyLeft(void) { return (ReadJoyPort2() & JPF_JOY_LEFT) ? TRUE : FALSE; }
+BOOL Input_JoyRight(void) { return (ReadJoyPort2() & JPF_JOY_RIGHT) ? TRUE : FALSE; }
+BOOL Input_JoyUp(void) { return (ReadJoyPort2() & JPF_JOY_UP) ? TRUE : FALSE; }
+BOOL Input_JoyDown(void) { return (ReadJoyPort2() & JPF_JOY_DOWN) ? TRUE : FALSE; }
 
-BOOL Input_Right(void) {
-    ULONG p = ReadJoyPort2();
-    return ((p & JPF_JOY_RIGHT) || keyDown[RAWKEY_D]) ? TRUE : FALSE;
-}
+BOOL Input_KeyboardLeft(void) { return keyDown[RAWKEY_A] ? TRUE : FALSE; }
+BOOL Input_KeyboardRight(void) { return keyDown[RAWKEY_D] ? TRUE : FALSE; }
+BOOL Input_KeyboardUp(void) { return keyDown[RAWKEY_W] ? TRUE : FALSE; }
+BOOL Input_KeyboardDown(void) { return keyDown[RAWKEY_S] ? TRUE : FALSE; }
 
-BOOL Input_Up(void) {
-    ULONG p = ReadJoyPort2();
-    return ((p & JPF_JOY_UP) || keyDown[RAWKEY_W]) ? TRUE : FALSE;
-}
-
-BOOL Input_Down(void) {
-    ULONG p = ReadJoyPort2();
-    return ((p & JPF_JOY_DOWN) || keyDown[RAWKEY_S]) ? TRUE : FALSE;
-}
+BOOL Input_Left(void) { return (Input_JoyLeft() || Input_KeyboardLeft()) ? TRUE : FALSE; }
+BOOL Input_Right(void) { return (Input_JoyRight() || Input_KeyboardRight()) ? TRUE : FALSE; }
+BOOL Input_Up(void) { return (Input_JoyUp() || Input_KeyboardUp()) ? TRUE : FALSE; }
+BOOL Input_Down(void) { return (Input_JoyDown() || Input_KeyboardDown()) ? TRUE : FALSE; }
 
 void Input_PollWindow(struct Window *win) {
     struct IntuiMessage *msg;
@@ -117,7 +116,7 @@ void Input_PollWindow(struct Window *win) {
     joyNow = IsJoystickFirePressed();
 
     if (joyNow && !joyFireDown) {
-        firePressedEdge = TRUE;
+        joyFirePressedEdge = TRUE;
     }
 
     joyFireDown = joyNow;
@@ -143,7 +142,7 @@ void Input_PollWindow(struct Window *win) {
                  * the Settings menu makes the devices mutually exclusive. */
                 if ((code == RAWKEY_SPACE || code == RAWKEY_RETURN ||
                      code == RAWKEY_NUMPAD_ENTER) && !keyDown[code]) {
-                    firePressedEdge = TRUE;
+                    keyboardFirePressedEdge = TRUE;
                 }
 
                 if (code == RAWKEY_F1 && !keyDown[code]) {
@@ -186,7 +185,7 @@ void Input_PollWindow(struct Window *win) {
         if (msg->Class == IDCMP_MOUSEBUTTONS) {
             if (msg->Code == SELECTDOWN) {
                 if (!mouseFireDown) {
-                    firePressedEdge = TRUE;
+                    mouseFirePressedEdge = TRUE;
                 }
 
                 mouseFireDown = TRUE;
@@ -217,18 +216,38 @@ BOOL Input_QuitPressed(void) {
     return FALSE;
 }
 
-BOOL Input_FirePressed(void) {
-    if (firePressedEdge) {
-        firePressedEdge = FALSE;
-        return TRUE;
-    }
-
+BOOL Input_JoyFirePressed(void) {
+    if (joyFirePressedEdge) { joyFirePressedEdge = FALSE; return TRUE; }
     return FALSE;
 }
 
+BOOL Input_KeyboardFirePressed(void) {
+    if (keyboardFirePressedEdge) { keyboardFirePressedEdge = FALSE; return TRUE; }
+    return FALSE;
+}
+
+BOOL Input_MouseFirePressed(void) {
+    if (mouseFirePressedEdge) { mouseFirePressedEdge = FALSE; return TRUE; }
+    return FALSE;
+}
+
+BOOL Input_JoyFireDown(void) { return joyFireDown; }
+BOOL Input_KeyboardFireDown(void) {
+    return (keyDown[RAWKEY_SPACE] || keyDown[RAWKEY_RETURN] ||
+            keyDown[RAWKEY_NUMPAD_ENTER]) ? TRUE : FALSE;
+}
+BOOL Input_MouseFireDown(void) { return mouseFireDown; }
+
+BOOL Input_FirePressed(void) {
+    BOOL pressed = (joyFirePressedEdge || keyboardFirePressedEdge || mouseFirePressedEdge) ? TRUE : FALSE;
+    joyFirePressedEdge = FALSE;
+    keyboardFirePressedEdge = FALSE;
+    mouseFirePressedEdge = FALSE;
+    return pressed;
+}
+
 BOOL Input_IsFireDown(void) {
-    return (joyFireDown || mouseFireDown || keyDown[RAWKEY_SPACE] ||
-            keyDown[RAWKEY_RETURN] || keyDown[RAWKEY_NUMPAD_ENTER]) ? TRUE : FALSE;
+    return (Input_JoyFireDown() || Input_KeyboardFireDown() || Input_MouseFireDown()) ? TRUE : FALSE;
 }
 
 void Input_PeekMouseDelta(WORD *dx, WORD *dy) {
@@ -266,7 +285,9 @@ void Input_GetMouseDelta(WORD *dx, WORD *dy) {
 
 void Input_ResetState(void) {
     UWORD i;
-    firePressedEdge = FALSE;
+    joyFirePressedEdge = FALSE;
+    keyboardFirePressedEdge = FALSE;
+    mouseFirePressedEdge = FALSE;
     quitPressedEdge = FALSE;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;

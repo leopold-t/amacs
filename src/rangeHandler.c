@@ -22,6 +22,57 @@ extern BOOL Input_Right(void);
 extern BOOL Input_Up(void);
 extern BOOL Input_Down(void);
 
+
+#define RAWKEY_J 0x26
+#define RAWKEY_K 0x27
+#define RAWKEY_M 0x37
+
+typedef enum RangeControlMode {
+    RANGE_CONTROL_JOYSTICK = 0,
+    RANGE_CONTROL_KEYBOARD,
+    RANGE_CONTROL_MOUSE
+} RangeControlMode;
+
+/* Persistent for the lifetime of AMACS.  Settings will later expose this
+ * same value; for now every fresh program start defaults to joystick. */
+static RangeControlMode gPrimaryControl = RANGE_CONTROL_JOYSTICK;
+
+static BOOL RangeControlLeft(void) {
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyLeft();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardLeft();
+    return FALSE;
+}
+static BOOL RangeControlRight(void) {
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyRight();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardRight();
+    return FALSE;
+}
+static BOOL RangeControlUp(void) {
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyUp();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardUp();
+    return FALSE;
+}
+static BOOL RangeControlDown(void) {
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyDown();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardDown();
+    return FALSE;
+}
+static BOOL RangeControlFirePressed(void) {
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyFirePressed();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardFirePressed();
+    return Input_MouseFirePressed();
+}
+static BOOL RangeControlFireDown(void) {
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyFireDown();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardFireDown();
+    return Input_MouseFireDown();
+}
+static void RangeDiscardInactiveFireEdges(void) {
+    if (gPrimaryControl != RANGE_CONTROL_JOYSTICK) (void)Input_JoyFirePressed();
+    if (gPrimaryControl != RANGE_CONTROL_KEYBOARD) (void)Input_KeyboardFirePressed();
+    if (gPrimaryControl != RANGE_CONTROL_MOUSE) (void)Input_MouseFirePressed();
+}
+
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
 #define FRONTSIGHT_MASK "gfx/FrontSight.mask"
 
@@ -1508,6 +1559,18 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     for (;;) {
         Input_PollWindow(Gfx_GetWindow());
 
+        /* Range control is exclusive. J/K/M changes the persistent primary
+         * device immediately; menus and all non-Range screens keep their
+         * existing parallel joystick/keyboard handling. */
+        if (Input_KeyPressed(RAWKEY_J)) {
+            gPrimaryControl = RANGE_CONTROL_JOYSTICK;
+        } else if (Input_KeyPressed(RAWKEY_K)) {
+            gPrimaryControl = RANGE_CONTROL_KEYBOARD;
+        } else if (Input_KeyPressed(RAWKEY_M)) {
+            gPrimaryControl = RANGE_CONTROL_MOUSE;
+        }
+        RangeDiscardInactiveFireEdges();
+
         if (!paused) {
             Sound_Update();
             if (!roundEnding && !showFinalScore) {
@@ -1637,15 +1700,15 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
              * those events and require a release if Fire is still held.
              */
             if (!sightPresented) {
-                if (Input_FirePressed() || Input_IsFireDown()) {
+                if (RangeControlFirePressed() || RangeControlFireDown()) {
                     shotNeedsRelease = TRUE;
                 }
-            } else if (!Input_IsFireDown()) {
+            } else if (!RangeControlFireDown()) {
                 shotNeedsRelease = FALSE;
             }
 
             if (sightPresented && !roundEnding && !showFinalScore &&
-                reloadState == RELOAD_STATE_NONE && Input_FirePressed()) {
+                reloadState == RELOAD_STATE_NONE && RangeControlFirePressed()) {
                 if (ammoCount > 0 && !shotNeedsRelease &&
                     ShotCooldownReady(shotCooldownActive, &lastShotStamp)) {
                     WORD aimX;
@@ -1740,15 +1803,19 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                  * the normal aiming code later in this frame. */
                 Input_PeekMouseDelta(&reloadMouseDX, &reloadMouseDY);
                 (void)reloadMouseDX;
-                reloadUp = (Input_Up() || reloadMouseDY < 0) ? TRUE : FALSE;
-                reloadDown = (Input_Down() || reloadMouseDY > 0) ? TRUE : FALSE;
+                reloadUp = RangeControlUp();
+                reloadDown = RangeControlDown();
+                if (gPrimaryControl == RANGE_CONTROL_MOUSE) {
+                    reloadUp = (reloadMouseDY < 0) ? TRUE : FALSE;
+                    reloadDown = (reloadMouseDY > 0) ? TRUE : FALSE;
+                }
 
                 /* Fire during reload is ignored completely.  Consume the edge
                  * here so it cannot be applied immediately after the magazine
                  * is seated.  If Fire is held, require a release before the
                  * next valid shot.
                  */
-                if (Input_FirePressed() || Input_IsFireDown()) {
+                if (RangeControlFirePressed() || RangeControlFireDown()) {
                     shotNeedsRelease = TRUE;
                 }
 
@@ -1784,8 +1851,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 WORD mouseDX = 0;
                 WORD mouseDY = 0;
                 BOOL mouseMoving;
-                int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
-                int dirY = (Input_Down() ? 1 : 0) - (Input_Up() ? 1 : 0);
+                int dirX = (RangeControlRight() ? 1 : 0) - (RangeControlLeft() ? 1 : 0);
+                int dirY = (RangeControlDown() ? 1 : 0) - (RangeControlUp() ? 1 : 0);
 
                 /* Treat mouse movement as another directional input source.
                  * It deliberately feeds the existing sight-motion model
@@ -1793,13 +1860,16 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                  * the same acceleration, inertia and deceleration used by
                  * joystick and keyboard aiming. */
                 Input_GetMouseDelta(&mouseDX, &mouseDY);
-                mouseMoving = (mouseDX != 0 || mouseDY != 0) ? TRUE : FALSE;
+                mouseMoving = (gPrimaryControl == RANGE_CONTROL_MOUSE &&
+                               (mouseDX != 0 || mouseDY != 0)) ? TRUE : FALSE;
 
-                if (mouseDX < 0) dirX = -1;
-                else if (mouseDX > 0) dirX = 1;
+                if (gPrimaryControl == RANGE_CONTROL_MOUSE) {
+                    if (mouseDX < 0) dirX = -1;
+                    else if (mouseDX > 0) dirX = 1;
 
-                if (mouseDY < 0) dirY = -1;
-                else if (mouseDY > 0) dirY = 1;
+                    if (mouseDY < 0) dirY = -1;
+                    else if (mouseDY > 0) dirY = 1;
+                }
 
                 if (dirX != 0) {
                     if (prevDirX == 0 || dirX != prevDirX) {
