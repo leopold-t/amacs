@@ -21,5 +21,7 @@ BOOL Input_KeyPressed(UBYTE rawCode);
 BOOL Input_QuitPressed(void);
 BOOL Input_FirePressed(void);
 BOOL Input_IsFireDown(void);
+void Input_GetMouseDelta(WORD *dx, WORD *dy);
+void Input_PeekMouseDelta(WORD *dx, WORD *dy);
 
 #endif

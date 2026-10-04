@@ -1729,8 +1729,19 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             }
 
             if (!roundEnding && !showFinalScore && reloadState != RELOAD_STATE_NONE) {
-                BOOL reloadUp = Input_Up();
-                BOOL reloadDown = Input_Down();
+                WORD reloadMouseDX = 0;
+                WORD reloadMouseDY = 0;
+                BOOL reloadUp;
+                BOOL reloadDown;
+
+                /* Mouse reload uses the raw vertical gesture, independently
+                 * of sight inertia: move up, then move down.  Peek rather
+                 * than consume the delta so the same movement still reaches
+                 * the normal aiming code later in this frame. */
+                Input_PeekMouseDelta(&reloadMouseDX, &reloadMouseDY);
+                (void)reloadMouseDX;
+                reloadUp = (Input_Up() || reloadMouseDY < 0) ? TRUE : FALSE;
+                reloadDown = (Input_Down() || reloadMouseDY > 0) ? TRUE : FALSE;
 
                 /* Fire during reload is ignored completely.  Consume the edge
                  * here so it cannot be applied immediately after the magazine
@@ -1770,8 +1781,25 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             }
 
             {
+                WORD mouseDX = 0;
+                WORD mouseDY = 0;
+                BOOL mouseMoving;
                 int dirX = (Input_Right() ? 1 : 0) - (Input_Left() ? 1 : 0);
                 int dirY = (Input_Down() ? 1 : 0) - (Input_Up() ? 1 : 0);
+
+                /* Treat mouse movement as another directional input source.
+                 * It deliberately feeds the existing sight-motion model
+                 * instead of changing ringX/ringY directly.  This preserves
+                 * the same acceleration, inertia and deceleration used by
+                 * joystick and keyboard aiming. */
+                Input_GetMouseDelta(&mouseDX, &mouseDY);
+                mouseMoving = (mouseDX != 0 || mouseDY != 0) ? TRUE : FALSE;
+
+                if (mouseDX < 0) dirX = -1;
+                else if (mouseDX > 0) dirX = 1;
+
+                if (mouseDY < 0) dirY = -1;
+                else if (mouseDY > 0) dirY = 1;
 
                 if (dirX != 0) {
                     if (prevDirX == 0 || dirX != prevDirX) {
@@ -1894,9 +1922,13 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 }
 
                 {
-                    BOOL joystickMoving = (dirX != 0 || dirY != 0) ? TRUE : FALSE;
-                    WORD handSwayDeltaX = UpdateHandSway(&state, joystickMoving);
-                    WORD breathDeltaY = UpdateBreathing(&state, joystickMoving);
+                    BOOL joystickMoving;
+                    WORD handSwayDeltaX;
+                    WORD breathDeltaY;
+
+                    joystickMoving = (dirX != 0 || dirY != 0 || mouseMoving) ? TRUE : FALSE;
+                    handSwayDeltaX = UpdateHandSway(&state, joystickMoving);
+                    breathDeltaY = UpdateBreathing(&state, joystickMoving);
 
                     if (!joystickMoving && handSwayDeltaX != 0) {
                         ringX = (WORD)(ringX + handSwayDeltaX);

@@ -31,6 +31,8 @@ static BOOL firePressedEdge = FALSE;
 static BOOL quitPressedEdge = FALSE;
 static BOOL joyFireDown = FALSE;
 static BOOL mouseFireDown = FALSE;
+static LONG mouseDeltaX = 0;
+static LONG mouseDeltaY = 0;
 
 #ifndef IEQUALIFIER_LCOMMAND
 #define IEQUALIFIER_LCOMMAND 0x0080
@@ -48,6 +50,9 @@ static BOOL mouseFireDown = FALSE;
 #define RAWKEY_A 0x20
 #define RAWKEY_S 0x21
 #define RAWKEY_D 0x22
+#define RAWKEY_SPACE 0x40
+#define RAWKEY_NUMPAD_ENTER 0x43
+#define RAWKEY_RETURN 0x44
 
 static BOOL IsAmigaQualifier(UWORD qualifier) {
     return (qualifier & (IEQUALIFIER_LCOMMAND | IEQUALIFIER_RCOMMAND)) ? TRUE : FALSE;
@@ -67,6 +72,8 @@ BOOL Input_Init(void) {
     quitPressedEdge = FALSE;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;
+    mouseDeltaX = 0;
+    mouseDeltaY = 0;
 
     return (LowLevelBase != NULL);
 }
@@ -131,6 +138,14 @@ void Input_PollWindow(struct Window *win) {
                     quitPressedEdge = TRUE;
                 }
 
+                /* Space, Return and numeric keypad Enter are keyboard triggers.
+                 * Keep joystick Fire and LMB active as parallel controls until
+                 * the Settings menu makes the devices mutually exclusive. */
+                if ((code == RAWKEY_SPACE || code == RAWKEY_RETURN ||
+                     code == RAWKEY_NUMPAD_ENTER) && !keyDown[code]) {
+                    firePressedEdge = TRUE;
+                }
+
                 if (code == RAWKEY_F1 && !keyDown[code]) {
                     Gfx_ToggleNightVision();
                 } else if (code == RAWKEY_F2 && !keyDown[code]) {
@@ -159,6 +174,13 @@ void Input_PollWindow(struct Window *win) {
                  */
                 keyPressed[RAWKEY_P] = 1;
             }
+        }
+
+        if (msg->Class == IDCMP_MOUSEMOVE) {
+            /* With IDCMP_DELTAMOVE enabled, MouseX/MouseY are relative
+             * movement values rather than absolute pointer coordinates. */
+            mouseDeltaX += (LONG)msg->MouseX;
+            mouseDeltaY += (LONG)msg->MouseY;
         }
 
         if (msg->Class == IDCMP_MOUSEBUTTONS) {
@@ -205,7 +227,41 @@ BOOL Input_FirePressed(void) {
 }
 
 BOOL Input_IsFireDown(void) {
-    return (joyFireDown || mouseFireDown) ? TRUE : FALSE;
+    return (joyFireDown || mouseFireDown || keyDown[RAWKEY_SPACE] ||
+            keyDown[RAWKEY_RETURN] || keyDown[RAWKEY_NUMPAD_ENTER]) ? TRUE : FALSE;
+}
+
+void Input_PeekMouseDelta(WORD *dx, WORD *dy) {
+    LONG x = mouseDeltaX;
+    LONG y = mouseDeltaY;
+
+    /* Clamp only to the WORD API range; do not consume the accumulated
+     * movement.  The Range reload gesture can inspect it before the aiming
+     * code consumes the same delta later in the frame. */
+    if (x < -32768L) x = -32768L;
+    if (x > 32767L) x = 32767L;
+    if (y < -32768L) y = -32768L;
+    if (y > 32767L) y = 32767L;
+
+    if (dx) *dx = (WORD)x;
+    if (dy) *dy = (WORD)y;
+}
+
+void Input_GetMouseDelta(WORD *dx, WORD *dy) {
+    LONG x = mouseDeltaX;
+    LONG y = mouseDeltaY;
+
+    /* Clamp only to the WORD API range; normal per-frame deltas are tiny. */
+    if (x < -32768L) x = -32768L;
+    if (x > 32767L) x = 32767L;
+    if (y < -32768L) y = -32768L;
+    if (y > 32767L) y = 32767L;
+
+    if (dx) *dx = (WORD)x;
+    if (dy) *dy = (WORD)y;
+
+    mouseDeltaX = 0;
+    mouseDeltaY = 0;
 }
 
 void Input_ResetState(void) {
@@ -214,6 +270,8 @@ void Input_ResetState(void) {
     quitPressedEdge = FALSE;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;
+    mouseDeltaX = 0;
+    mouseDeltaY = 0;
 
     for (i = 0; i < 256; i++) {
         keyDown[i] = FALSE;

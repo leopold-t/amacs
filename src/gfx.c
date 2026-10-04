@@ -921,13 +921,14 @@ BOOL Gfx_OpenScreenAndWindow(UWORD width, UWORD height, UBYTE depth, ULONG displ
                                    {WA_Backdrop, TRUE},
                                    {WA_Activate, TRUE},
                                    {WA_RMBTrap, TRUE},
+                                   {WA_ReportMouse, TRUE},
                                    /* Keep normal gameplay/menu input RAWKEY-only.  IDCMP_VANILLAKEY is
                                     * enabled temporarily by the high-score name-entry screen.
                                     * Requesting both for the whole program can divert printable
                                     * keys (including W/A/S/D) away from RAWKEY, which means the
                                     * shared input layer cannot reliably see both key-down and
                                     * key-up events for held movement. */
-                                   {WA_IDCMP, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS},
+                                   {WA_IDCMP, IDCMP_RAWKEY | IDCMP_MOUSEBUTTONS | IDCMP_MOUSEMOVE | IDCMP_DELTAMOVE},
                                    {TAG_DONE, 0}};
 
     window = OpenWindowTagList(NULL, windowTags);
