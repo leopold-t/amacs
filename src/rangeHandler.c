@@ -1123,13 +1123,47 @@ static void DrawLevelTitle(struct RastPort *rp, struct TextFont *font) {
     DrawTextWithShadow(rp, font, x, HUD_TEXT_Y, HUD_TEXT_PEN, gLevelTitle, len);
 }
 
+static const char *GetPrimaryControlHudText(void) {
+    switch (gPrimaryControl) {
+        case RANGE_CONTROL_KEYBOARD:
+            return "KBD";
+        case RANGE_CONTROL_MOUSE:
+            return "MSE";
+        case RANGE_CONTROL_JOYSTICK:
+        default:
+            return "JOY";
+    }
+}
+
+static void DrawPrimaryControl(struct RastPort *rp, struct TextFont *font) {
+    const char *text = GetPrimaryControlHudText();
+    UWORD len = TextLen(text);
+    WORD blockWidth;
+    WORD rightBlockX;
+    WORD x;
+
+    if (!rp) {
+        return;
+    }
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    blockWidth = TextLength(rp, (STRPTR)"[\x7F]", 3);
+    rightBlockX = (WORD)(SCR_W - HUD_MARGIN_RIGHT - blockWidth - 15);
+    x = (WORD)(rightBlockX - TextLength(rp, (STRPTR)text, len));
+
+    DrawTextWithShadow(rp, font, x, HUD_AMMO_Y, HUD_TEXT_PEN, text, len);
+}
+
 static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD ammoCount) {
-    char text[(HUD_AMMO_BLOCK_COUNT * 3) + 1];
+    static const char gFullBlock[] = "[\x7F]";
     UWORD blocksVisible;
     UWORD i;
-    UWORD pos = 0;
-    WORD x;
+    UWORD len = 3;
     WORD width;
+    WORD x;
 
     if (!rp) {
         return;
@@ -1141,22 +1175,19 @@ static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD amm
 
     blocksVisible = (UWORD)((ammoCount + (HUD_MAGAZINE_SIZE - 1)) / HUD_MAGAZINE_SIZE);
 
-    for (i = 0; i < HUD_AMMO_BLOCK_COUNT; i++) {
-        text[pos++] = '[';
-        text[pos++] = (i >= (HUD_AMMO_BLOCK_COUNT - blocksVisible)) ? '\x7F' : ' ';
-        text[pos++] = ']';
-    }
-
-    text[pos] = '\0';
-
     if (font) {
         SetFont(rp, font);
     }
 
-    width = TextLength(rp, (STRPTR)text, pos);
-    x = (WORD)(SCR_W - HUD_MARGIN_RIGHT - width);
+    width = TextLength(rp, (STRPTR)gFullBlock, len);
+    x = (WORD)(SCR_W - HUD_MARGIN_RIGHT - width - 8);
 
-    DrawTextWithShadow(rp, font, x, HUD_AMMO_Y, HUD_TEXT_PEN, text, pos);
+    /* Keep the former right-hand magazine in its original position.  The
+     * former left-hand magazine is stacked directly below it. */
+    for (i = 0; i < blocksVisible; i++) {
+        DrawTextWithShadow(rp, font, x, (WORD)(HUD_AMMO_Y + (i * 13)), HUD_TEXT_PEN,
+                           gFullBlock, len);
+    }
 }
 
 static void DrawLastShotResult(struct RastPort *rp, struct TextFont *font, BOOL shotTaken,
@@ -2129,6 +2160,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                 DrawHitCounter(rp, hudFont);
                 DrawLevelTitle(rp, hudFont);
+                DrawPrimaryControl(rp, hudFont);
                 DrawAmmoBlocks(rp, hudFont, ammoCount);
                 DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
                 DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
