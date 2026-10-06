@@ -39,7 +39,7 @@ void Gfx_FadeOutCurrentScreenToBlack(const UWORD *currentPal, UWORD colors);
 void Gfx_FadeInCurrentScreenFromBlack(const UWORD *targetPal, UWORD colors);
 
 /* Global display modes. F1 toggles the luminance-preserving green Night
- * Vision palette; F2 toggles a deliberately dimmed red Red Room palette;
+ * Vision palette; F2 toggles an equally bright red Red Room palette;
  * F3 toggles a warm amber monochrome palette. Selecting another mode while
  * one is active switches directly to the newly selected mode. */
 void Gfx_ToggleNightVision(void);

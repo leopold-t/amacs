@@ -64,9 +64,7 @@ static UWORD AmberRGB4(UWORD rgb) {
 static UWORD RedRoomRGB4(UWORD rgb) {
     UWORD y = PaletteLuminanceRGB4(rgb);
 
-    /* Keep the red-room palette deliberately subdued: even the brightest
-     * original pen reaches only about 75 percent of full red intensity. */
-    y = (UWORD)((y * 3) / 4);
+    /* Match the Night Vision luminance, using red instead of green. */
     return (UWORD)(y << 8);
 }
 
