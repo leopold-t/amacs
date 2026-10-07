@@ -16,6 +16,7 @@
 
 #include "bob.h"
 #include "gfx.h"
+#include "rangeHandler.h"
 #include "targetScoring.h"
 
 #define TARGET050_RAW "gfx/Target050.raw"
@@ -526,6 +527,56 @@ static UWORD GetDistanceForSeries(const TargetSeries *s) {
     return 0;
 }
 
+/* Full-value crosswind drift in screen pixels, derived from FM 3-22.9 C1
+ * and converted for the AMACS target sprites.  Columns correspond to
+ * 50, 100, 150, 200, 250 and 300 metres. */
+static const UBYTE gWindDrift10Mph[6] = {1, 1, 2, 3, 3, 4};
+static const UBYTE gWindDrift20Mph[6] = {2, 2, 4, 5, 7, 8};
+static const UBYTE gWindDrift30Mph[6] = {2, 4, 6, 8, 10, 11};
+
+static WORD GetWindDriftOffset(UWORD distance) {
+    const UBYTE *table;
+    RangeWindDirection direction;
+    UWORD speed;
+    UWORD index;
+    WORD drift;
+
+    speed = Range_GetWindSpeed();
+    if (speed == 0) return 0;
+
+    switch (distance) {
+        case 50:  index = 0; break;
+        case 100: index = 1; break;
+        case 150: index = 2; break;
+        case 200: index = 3; break;
+        case 250: index = 4; break;
+        case 300: index = 5; break;
+        default: return 0;
+    }
+
+    if (speed == 10) table = gWindDrift10Mph;
+    else if (speed == 20) table = gWindDrift20Mph;
+    else if (speed == 30) table = gWindDrift30Mph;
+    else return 0;
+
+    drift = (WORD)table[index];
+    direction = Range_GetWindDirection();
+
+    if (direction == RANGE_WIND_HALF_LEFT ||
+        direction == RANGE_WIND_HALF_RIGHT) {
+        /* Round half-value wind to the nearest whole pixel, .5 upward. */
+        drift = (WORD)((drift + 1) / 2);
+    }
+
+    /* LEFT/RIGHT names describe where the wind comes from. */
+    if (direction == RANGE_WIND_FULL_RIGHT ||
+        direction == RANGE_WIND_HALF_RIGHT) {
+        drift = (WORD)-drift;
+    }
+
+    return drift;
+}
+
 static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, WORD sightOffsetX, WORD sightOffsetY,
                            UBYTE *hitScore) {
     WORD left;
@@ -538,6 +589,7 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, WORD sightOffsetX, W
     BYTE zeroOffsetY;
     WORD parallaxX;
     WORD parallaxY;
+    WORD windOffsetX;
     WORD bulletX;
     WORD bulletY;
 
@@ -549,15 +601,18 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, WORD sightOffsetX, W
     zeroOffsetY = TargetScoring_GetZeroOffset(distance);
     parallaxX = TargetScoring_GetParallaxOffset(distance, sightOffsetX);
     parallaxY = TargetScoring_GetParallaxOffset(distance, sightOffsetY);
+    windOffsetX = GetWindDriftOffset(distance);
 
     /*
      * Apply sight-derived ballistic adjustments before hit detection,
      * not during scoring. Positive BZO offset means the bullet goes up
      * on screen, so Y decreases. Parallax offsets are applied in both
      * axes and may move the bullet outside the target/mask, producing
-     * a clean miss.
+     * a clean miss.  Crosswind is applied to the final horizontal impact
+     * coordinate: wind from the left moves the bullet right (+X), while
+     * wind from the right moves it left (-X).
      */
-    bulletX = (WORD)(x + parallaxX);
+    bulletX = (WORD)(x + parallaxX + windOffsetX);
     bulletY = (WORD)(y + parallaxY - zeroOffsetY);
 
     if (bulletX < left || bulletX >= (left + width) || bulletY < top ||
