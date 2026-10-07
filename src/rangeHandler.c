@@ -1182,6 +1182,7 @@ static void DrawPrimaryControl(struct RastPort *rp, struct TextFont *font) {
 
 static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD ammoCount) {
     static const char gFullBlock[] = "[\x7F]";
+    static const char gEmptyBlock[] = "[ ]";
     UWORD blocksVisible;
     UWORD i;
     UWORD len = 3;
@@ -1207,9 +1208,10 @@ static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD amm
 
     /* Keep the former right-hand magazine in its original position.  The
      * former left-hand magazine is stacked directly below it. */
-    for (i = 0; i < blocksVisible; i++) {
+    for (i = 0; i < HUD_AMMO_BLOCK_COUNT; i++) {
+        const char *block = (i < blocksVisible) ? gFullBlock : gEmptyBlock;
         DrawTextWithShadow(rp, font, x, (WORD)(HUD_AMMO_Y + (i * 13)), HUD_TEXT_PEN,
-                           gFullBlock, len);
+                           block, len);
     }
 }
 
