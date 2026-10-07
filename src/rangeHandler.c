@@ -30,6 +30,8 @@ extern BOOL Input_Down(void);
 /* Persistent for the lifetime of AMACS.  Both Settings and the J/K/M
  * shortcuts on the firing range operate on this same value. */
 static RangeControlMode gPrimaryControl = RANGE_CONTROL_JOYSTICK;
+static UWORD gWindSpeed = 0;
+static RangeWindDirection gWindDirection = RANGE_WIND_FULL_LEFT;
 
 RangeControlMode Range_GetPrimaryControl(void) {
     return gPrimaryControl;
@@ -39,6 +41,23 @@ void Range_SetPrimaryControl(RangeControlMode mode) {
     if (mode >= RANGE_CONTROL_JOYSTICK && mode <= RANGE_CONTROL_MOUSE) {
         gPrimaryControl = mode;
     }
+}
+
+UWORD Range_GetWindSpeed(void) {
+    return gWindSpeed;
+}
+
+void Range_SetWindSpeed(UWORD mph) {
+    if (mph <= 30 && (mph % 10) == 0) gWindSpeed = mph;
+}
+
+RangeWindDirection Range_GetWindDirection(void) {
+    return gWindDirection;
+}
+
+void Range_SetWindDirection(RangeWindDirection direction) {
+    if (direction >= RANGE_WIND_FULL_LEFT && direction <= RANGE_WIND_HALF_RIGHT)
+        gWindDirection = direction;
 }
 
 static BOOL RangeControlLeft(void) {

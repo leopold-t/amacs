@@ -3965,57 +3965,132 @@ static const char *PrimaryControlName(RangeControlMode mode) {
     }
 }
 
-static void DrawSettingsControl(struct RastPort *rp, struct TextFont *font,
-                                RangeControlMode mode, BOOL selectedVisible,
-                                struct BitMap *background) {
-    if (!rp || !background || !rp->BitMap) return;
+#define SETTINGS_TITLE_Y 78
+#define SETTINGS_CONTROL_Y 98
+#define SETTINGS_WIND_Y 116
+#define SETTINGS_SPEED_Y 134
+#define SETTINGS_DIRECTION_Y 152
+#define SETTINGS_TEXT_AREA_Y 72
+#define SETTINGS_TEXT_AREA_H 100
+#define SETTINGS_PANEL_Y2 178
+#define SETTINGS_LEFT_X 68
+#define SETTINGS_ARROW_X 52
+#define SETTINGS_DISABLED_PEN 27
+#define SETTINGS_DISABLED_SHADOW_PEN 7
 
-    BltBitMap(background, 0, 0, rp->BitMap, MENU_TEXT_AREA_X, MENU_TEXT_AREA_Y,
-              MENU_TEXT_AREA_W, MENU_TEXT_AREA_H, 0xC0, 0xFF, NULL);
-    WaitBlit();
-
-    DrawCenteredTextWithShadowMain(rp, font, MENU_LINE1_Y, MENU_TEXT_PEN,
-                                   MENU_SHADOW_PEN, "SETTINGS");
-    if (selectedVisible) {
-        const char *prefix = "> PRIMARY CONTROL: ";
-        const char *value = PrimaryControlName(mode);
-        const char *reference = "JOYSTICK";
-        WORD prefixWidth = TextLength(rp, (STRPTR)prefix, (UWORD)strlen(prefix));
-        WORD referenceWidth = TextLength(rp, (STRPTR)reference, (UWORD)strlen(reference));
-        WORD x = (WORD)((LO_WIDTH - (prefixWidth + referenceWidth)) / 2);
-        DrawTextWithShadowExMain(rp, font, x, MENU_LINE2_Y, MENU_TEXT_PEN,
-                                 MENU_SHADOW_PEN, prefix, (UWORD)strlen(prefix));
-        DrawTextWithShadowExMain(rp, font, (WORD)(x + prefixWidth), MENU_LINE2_Y,
-                                 MENU_TEXT_PEN, MENU_SHADOW_PEN, value,
-                                 (UWORD)strlen(value));
+static const char *WindDirectionName(RangeWindDirection direction) {
+    switch (direction) {
+        case RANGE_WIND_HALF_LEFT: return "HALF LEFT";
+        case RANGE_WIND_FULL_RIGHT: return "FULL RIGHT";
+        case RANGE_WIND_HALF_RIGHT: return "HALF RIGHT";
+        case RANGE_WIND_FULL_LEFT:
+        default: return "FULL LEFT";
     }
 }
 
-static void DrawSettingsControlLine(struct RastPort *rp, struct TextFont *font,
-                                    RangeControlMode mode, BOOL visible,
-                                    struct BitMap *background) {
-    const char *prefix = "> PRIMARY CONTROL: ";
-    const char *value = PrimaryControlName(mode);
-    const char *reference = "JOYSTICK";
-    WORD prefixWidth, referenceWidth;
-    WORD x;
+
+static const char *WindSpeedName(UWORD speed) {
+    switch (speed) {
+        case 10: return "10 MPH";
+        case 20: return "20 MPH";
+        case 30: return "30 MPH";
+        default: return "0 MPH";
+    }
+}
+
+static void BuildSettingsLine(char *dst, const char *label, const char *value) {
+    strcpy(dst, label);
+    strcat(dst, value);
+}
+
+static void DrawSettingsText(struct RastPort *rp, struct TextFont *font, WORD y,
+                             UWORD pen, UWORD shadowPenValue, BOOL selected,
+                             const char *text) {
+    if (selected) {
+        DrawTextWithShadowExMain(rp, font, SETTINGS_ARROW_X, y, pen, shadowPenValue, ">", 1);
+    }
+    DrawTextWithShadowExMain(rp, font, SETTINGS_LEFT_X, y, pen, shadowPenValue,
+                             text, (UWORD)strlen(text));
+}
+static WORD SettingsLineY(UWORD selected) {
+    if (selected == 0) return SETTINGS_CONTROL_Y;
+    if (selected == 1) return SETTINGS_SPEED_Y;
+    return SETTINGS_DIRECTION_Y;
+}
+
+static void RestoreSettingsLine(struct RastPort *rp, struct BitMap *background, WORD y) {
+    WORD h, srcY;
+    if (!rp || !background || !rp->BitMap) return;
+    h = (WORD)((rp->TxHeight ? rp->TxHeight : 8) + 2);
+    srcY = (WORD)(y - SETTINGS_TEXT_AREA_Y);
+    if (srcY < 0) srcY = 0;
+    if (srcY + h > SETTINGS_TEXT_AREA_H) h = (WORD)(SETTINGS_TEXT_AREA_H - srcY);
+    if (h <= 0) return;
+    BltBitMap(background, 0, srcY, rp->BitMap, MENU_TEXT_AREA_X,
+              (WORD)(SETTINGS_TEXT_AREA_Y + srcY), MENU_TEXT_AREA_W, h,
+              0xC0, 0xFF, NULL);
+    WaitBlit();
+}
+
+static void DrawSettingsRow(struct RastPort *rp, struct TextFont *font,
+                            UWORD selected, BOOL selectedVisible,
+                            RangeControlMode control, UWORD windSpeed,
+                            RangeWindDirection windDirection,
+                            struct BitMap *background) {
+    char line[40];
+    WORD y = SettingsLineY(selected);
 
     if (!rp || !background || !rp->BitMap) return;
     if (font) SetFont(rp, font);
+    RestoreSettingsLine(rp, background, y);
+    if (!selectedVisible) return;
 
-    RestoreMenuLine(rp, background, MENU_LINE2_Y);
-    if (!visible) return;
+    if (selected == 0) {
+        BuildSettingsLine(line, "PRIMARY CONTROL: ", PrimaryControlName(control));
+    } else if (selected == 1) {
+        BuildSettingsLine(line, "SPEED: ", WindSpeedName(windSpeed));
+    } else {
+        BuildSettingsLine(line, "DIRECTION: ", WindDirectionName(windDirection));
+    }
+    DrawSettingsText(rp, font, y, MENU_TEXT_PEN, MENU_SHADOW_PEN, TRUE, line);
+}
 
-    /* Anchor the value column to JOYSTICK so KEYBOARD and MOUSE never shift
-     * horizontally when the selected control method changes. */
-    prefixWidth = TextLength(rp, (STRPTR)prefix, (UWORD)strlen(prefix));
-    referenceWidth = TextLength(rp, (STRPTR)reference, (UWORD)strlen(reference));
-    x = (WORD)((LO_WIDTH - (prefixWidth + referenceWidth)) / 2);
-    DrawTextWithShadowExMain(rp, font, x, MENU_LINE2_Y, MENU_TEXT_PEN,
-                             MENU_SHADOW_PEN, prefix, (UWORD)strlen(prefix));
-    DrawTextWithShadowExMain(rp, font, (WORD)(x + prefixWidth), MENU_LINE2_Y,
-                             MENU_TEXT_PEN, MENU_SHADOW_PEN, value,
-                             (UWORD)strlen(value));
+static void DrawSettingsScreen(struct RastPort *rp, struct TextFont *font,
+                               UWORD selected, BOOL selectedVisible,
+                               RangeControlMode control, UWORD windSpeed,
+                               RangeWindDirection windDirection,
+                               struct BitMap *background) {
+    char line[40];
+    UWORD directionPen, directionShadow;
+
+    if (!rp || !background || !rp->BitMap) return;
+    BltBitMap(background, 0, 0, rp->BitMap, MENU_TEXT_AREA_X, SETTINGS_TEXT_AREA_Y,
+              MENU_TEXT_AREA_W, SETTINGS_TEXT_AREA_H, 0xC0, 0xFF, NULL);
+    WaitBlit();
+
+    DrawCenteredTextWithShadowMain(rp, font, SETTINGS_TITLE_Y, MENU_TEXT_PEN,
+                                   MENU_SHADOW_PEN, "SETTINGS");
+    if (selected != 0 || selectedVisible) {
+        BuildSettingsLine(line, "PRIMARY CONTROL: ", PrimaryControlName(control));
+        DrawSettingsText(rp, font, SETTINGS_CONTROL_Y, MENU_TEXT_PEN, MENU_SHADOW_PEN,
+                         selected == 0, line);
+    }
+
+    DrawCenteredTextWithShadowMain(rp, font, SETTINGS_WIND_Y, MENU_TEXT_PEN,
+                                   MENU_SHADOW_PEN, "WIND OPTIONS");
+    if (selected != 1 || selectedVisible) {
+        BuildSettingsLine(line, "SPEED: ", WindSpeedName(windSpeed));
+        DrawSettingsText(rp, font, SETTINGS_SPEED_Y, MENU_TEXT_PEN, MENU_SHADOW_PEN,
+                         selected == 1, line);
+    }
+
+    directionPen = windSpeed ? MENU_TEXT_PEN : SETTINGS_DISABLED_PEN;
+    directionShadow = windSpeed ? MENU_SHADOW_PEN : SETTINGS_DISABLED_SHADOW_PEN;
+    if (selected != 2 || selectedVisible) {
+        BuildSettingsLine(line, "DIRECTION: ", WindDirectionName(windDirection));
+        DrawSettingsText(rp, font, SETTINGS_DIRECTION_Y, directionPen, directionShadow,
+                         selected == 2, line);
+    }
 }
 
 static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
@@ -4025,10 +4100,13 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     struct BitMap background;
     struct RastPort backgroundRP;
     BOOL backgroundReady = FALSE;
-    BOOL prevLeft, prevRight;
+    BOOL prevLeft, prevRight, prevUp, prevDown;
     BOOL selectedVisible = TRUE;
     WORD blinkTicks = MENU_VISIBLE_TICKS;
-    RangeControlMode pending = Range_GetPrimaryControl();
+    UWORD selected = 0;
+    RangeControlMode pendingControl = Range_GetPrimaryControl();
+    UWORD pendingSpeed = Range_GetWindSpeed();
+    RangeWindDirection pendingDirection = Range_GetWindDirection();
     UWORD black[32] = {0};
 
     if (!screen || !screen->RastPort.BitMap || !fromPal) return FALSE;
@@ -4039,8 +4117,14 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     SettleDisplay(2);
     if (!LoadRawImageToScreen(WOODLAND_FILE, screen)) return FALSE;
 
-    DrawTrainingInfoDimmedPanel(rp);
-    DrawTrainingInfoFrame(rp);
+    DrawDimmedWoodlandPanel(rp,
+                            TRAINING_INFO_PANEL_X1, TRAINING_INFO_PANEL_Y1,
+                            TRAINING_INFO_PANEL_X2, SETTINGS_PANEL_Y2,
+                            TRAINING_INFO_PANEL_BORDER);
+    DrawGradientPanelFrame(rp,
+                           TRAINING_INFO_PANEL_X1, TRAINING_INFO_PANEL_Y1,
+                           TRAINING_INFO_PANEL_X2, SETTINGS_PANEL_Y2,
+                           TRAINING_INFO_PANEL_BORDER);
 
     font = OpenFont(&gSummaryFontAttr);
     if (font) {
@@ -4051,9 +4135,9 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     memset(&background, 0, sizeof(background));
     memset(&backgroundRP, 0, sizeof(backgroundRP));
     if (InitSummaryBackBuffer(&background, &backgroundRP, MENU_TEXT_AREA_W,
-                              MENU_TEXT_AREA_H, LO_DEPTH)) {
-        BltBitMap(rp->BitMap, MENU_TEXT_AREA_X, MENU_TEXT_AREA_Y, &background, 0, 0,
-                  MENU_TEXT_AREA_W, MENU_TEXT_AREA_H, 0xC0, 0xFF, NULL);
+                              SETTINGS_TEXT_AREA_H, LO_DEPTH)) {
+        BltBitMap(rp->BitMap, MENU_TEXT_AREA_X, SETTINGS_TEXT_AREA_Y, &background, 0, 0,
+                  MENU_TEXT_AREA_W, SETTINGS_TEXT_AREA_H, 0xC0, 0xFF, NULL);
         WaitBlit();
         backgroundReady = TRUE;
     }
@@ -4062,53 +4146,84 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
         return FALSE;
     }
 
-    DrawSettingsControl(rp, font, pending, selectedVisible, &background);
+    DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
+                       pendingSpeed, pendingDirection, &background);
     WaitBlit();
     SettleDisplay(1);
     Gfx_FadeInCurrentScreenFromBlack(TrainingInfoPaletteRGB4, 32);
 
-    prevLeft = Input_Left();
-    prevRight = Input_Right();
+    prevLeft = Input_Left(); prevRight = Input_Right();
+    prevUp = Input_Up(); prevDown = Input_Down();
     WaitForAdvanceRelease();
 
     for (;;) {
         BOOL adv = FALSE, esc = FALSE;
-        BOOL leftNow, rightNow;
+        BOOL leftNow, rightNow, upNow, downNow;
         PollAdvanceAndEsc(&adv, &esc);
 
         if (esc) {
             if (Gfx_ShowQuitRequester(FALSE)) {
                 if (font) { SetSoftStyle(rp, FS_NORMAL, FSF_BOLD); CloseFont(font); }
-                FreeSummaryBackBuffer(&background, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
+                FreeSummaryBackBuffer(&background, MENU_TEXT_AREA_W, SETTINGS_TEXT_AREA_H);
                 return FALSE;
             }
             WaitForAdvanceRelease();
         }
 
-        leftNow = Input_Left();
-        rightNow = Input_Right();
-        if ((leftNow && !prevLeft) || (rightNow && !prevRight)) {
-            if (rightNow && !prevRight) {
-                pending = (pending == RANGE_CONTROL_MOUSE) ? RANGE_CONTROL_JOYSTICK
-                                                          : (RangeControlMode)(pending + 1);
+        leftNow = Input_Left(); rightNow = Input_Right();
+        upNow = Input_Up(); downNow = Input_Down();
+
+        if ((upNow && !prevUp) || (downNow && !prevDown)) {
+            if (downNow && !prevDown) {
+                if (selected == 0) selected = 1;
+                else if (selected == 1 && pendingSpeed > 0) selected = 2;
+                else selected = 0;
             } else {
-                pending = (pending == RANGE_CONTROL_JOYSTICK) ? RANGE_CONTROL_MOUSE
-                                                             : (RangeControlMode)(pending - 1);
+                if (selected == 0) selected = (pendingSpeed > 0) ? 2 : 1;
+                else if (selected == 2) selected = 1;
+                else selected = 0;
             }
             selectedVisible = TRUE;
             blinkTicks = MENU_VISIBLE_TICKS;
             WaitTOF();
-            DrawSettingsControlLine(rp, font, pending, selectedVisible, &background);
+            DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
+                               pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
-        prevLeft = leftNow;
-        prevRight = rightNow;
+
+        if ((leftNow && !prevLeft) || (rightNow && !prevRight)) {
+            if (selected == 0) {
+                if (rightNow && !prevRight)
+                    pendingControl = (pendingControl == RANGE_CONTROL_MOUSE) ? RANGE_CONTROL_JOYSTICK : (RangeControlMode)(pendingControl + 1);
+                else
+                    pendingControl = (pendingControl == RANGE_CONTROL_JOYSTICK) ? RANGE_CONTROL_MOUSE : (RangeControlMode)(pendingControl - 1);
+            } else if (selected == 1) {
+                if (rightNow && !prevRight) { if (pendingSpeed < 30) pendingSpeed += 10; }
+                else { if (pendingSpeed > 0) pendingSpeed -= 10; }
+                if (pendingSpeed == 0 && selected == 2) selected = 1;
+            } else if (pendingSpeed > 0) {
+                if (rightNow && !prevRight)
+                    pendingDirection = (pendingDirection == RANGE_WIND_HALF_RIGHT) ? RANGE_WIND_FULL_LEFT : (RangeWindDirection)(pendingDirection + 1);
+                else
+                    pendingDirection = (pendingDirection == RANGE_WIND_FULL_LEFT) ? RANGE_WIND_HALF_RIGHT : (RangeWindDirection)(pendingDirection - 1);
+            }
+            selectedVisible = TRUE;
+            blinkTicks = MENU_VISIBLE_TICKS;
+            WaitTOF();
+            DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
+                               pendingSpeed, pendingDirection, &background);
+            WaitBlit();
+        }
+        prevLeft = leftNow; prevRight = rightNow;
+        prevUp = upNow; prevDown = downNow;
 
         if (adv) {
-            Range_SetPrimaryControl(pending);
+            Range_SetPrimaryControl(pendingControl);
+            Range_SetWindSpeed(pendingSpeed);
+            Range_SetWindDirection(pendingDirection);
             WaitForAdvanceRelease();
             if (font) { SetSoftStyle(rp, FS_NORMAL, FSF_BOLD); CloseFont(font); }
-            FreeSummaryBackBuffer(&background, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
+            FreeSummaryBackBuffer(&background, MENU_TEXT_AREA_W, SETTINGS_TEXT_AREA_H);
             return TRUE;
         }
 
@@ -4117,7 +4232,8 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             selectedVisible = selectedVisible ? FALSE : TRUE;
             blinkTicks = selectedVisible ? MENU_VISIBLE_TICKS : MENU_HIDDEN_TICKS;
             WaitTOF();
-            DrawSettingsControlLine(rp, font, pending, selectedVisible, &background);
+            DrawSettingsRow(rp, font, selected, selectedVisible, pendingControl,
+                            pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
 

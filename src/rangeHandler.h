@@ -12,6 +12,18 @@ typedef enum RangeControlMode {
 RangeControlMode Range_GetPrimaryControl(void);
 void Range_SetPrimaryControl(RangeControlMode mode);
 
+typedef enum RangeWindDirection {
+    RANGE_WIND_FULL_LEFT = 0,
+    RANGE_WIND_HALF_LEFT,
+    RANGE_WIND_FULL_RIGHT,
+    RANGE_WIND_HALF_RIGHT
+} RangeWindDirection;
+
+UWORD Range_GetWindSpeed(void);
+void Range_SetWindSpeed(UWORD mph);
+RangeWindDirection Range_GetWindDirection(void);
+void Range_SetWindDirection(RangeWindDirection direction);
+
 typedef struct RangeSummaryData {
     UWORD score;
     UWORD accuracy;
