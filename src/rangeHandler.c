@@ -1215,6 +1215,48 @@ static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD amm
     }
 }
 
+static void DrawWindStatus(struct RastPort *rp, struct TextFont *font) {
+    const char *valueText;
+    const char *prefixText;
+    const char *suffixText;
+    char text[24];
+    UWORD len;
+    WORD width;
+    WORD x;
+
+    if (!rp || gWindSpeed == 0) {
+        return;
+    }
+
+    prefixText = (gWindDirection == RANGE_WIND_FULL_RIGHT ||
+                  gWindDirection == RANGE_WIND_HALF_RIGHT) ? "<- " : "";
+    suffixText = (gWindDirection == RANGE_WIND_FULL_LEFT ||
+                  gWindDirection == RANGE_WIND_HALF_LEFT) ? " ->" : "";
+    valueText = (gWindDirection == RANGE_WIND_FULL_LEFT ||
+                 gWindDirection == RANGE_WIND_FULL_RIGHT) ? "FULL WIND " : "HALF WIND ";
+
+    text[0] = '\0';
+    strcat(text, prefixText);
+    strcat(text, valueText);
+    if (gWindSpeed == 10) {
+        strcat(text, "10 MPH");
+    } else if (gWindSpeed == 20) {
+        strcat(text, "20 MPH");
+    } else {
+        strcat(text, "30 MPH");
+    }
+    strcat(text, suffixText);
+
+    if (font) {
+        SetFont(rp, font);
+    }
+
+    len = TextLen(text);
+    width = TextLength(rp, (STRPTR)text, len);
+    x = (WORD)((SCR_W - width) / 2);
+    DrawTextWithShadow(rp, font, x, HUD_RESULT_Y, HUD_TEXT_PEN, text, len);
+}
+
 static void DrawLastShotResult(struct RastPort *rp, struct TextFont *font, BOOL shotTaken,
                                BOOL lastShotHit) {
     static const char gHitText[] = "HIT";
@@ -2187,6 +2229,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 DrawLevelTitle(rp, hudFont);
                 DrawPrimaryControl(rp, hudFont);
                 DrawAmmoBlocks(rp, hudFont, ammoCount);
+                DrawWindStatus(rp, hudFont);
                 DrawLastShotResult(rp, hudFont, shotTaken, lastShotHit);
                 DrawShotQuality(rp, hudFont, shotTaken, lastShotHit, lastShotScore);
                 DrawCenterStatusText(rp, hudFont, paused, showFinalScore);
