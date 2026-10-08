@@ -796,6 +796,7 @@ static const struct TextAttr gTargetRangesHeaderFontAttr = {"topaz.font", 9, FS_
 #define HISCORE_ENTRY_PROMPT_2_Y 212
 #define HISCORE_FILE_NAME "Scores.dat"
 #define HISCORE_FILE_HEADER "AMACS_HISCORES_V1"
+#define HISCORE_META_SEPARATOR ((char)0x7F)
 #define HISCORE_SAVE_ERROR_BG_PEN 7
 #define HISCORE_SAVE_ERROR_TEXT_PEN 19
 #define HISCORE_SAVE_ERROR_SHADOW_PEN 0
@@ -803,6 +804,10 @@ static const struct TextAttr gTargetRangesHeaderFontAttr = {"topaz.font", 9, FS_
 typedef struct HiScoreEntry {
     char name[HISCORE_NAME_LEN + 1];
     UWORD score;
+    char control;
+    UWORD windSpeed;
+    BOOL halfWind;
+    UWORD zeroRange;
 } HiScoreEntry;
 
 static const HiScoreEntry gDefaultHiScores[HISCORE_ENTRY_COUNT] = {
@@ -1313,6 +1318,10 @@ static void HiScore_SetEntry(UWORD index, const char *name, UWORD score) {
     }
 
     gHiScores[index].score = score;
+    gHiScores[index].control = 'J';
+    gHiScores[index].windSpeed = 0;
+    gHiScores[index].halfWind = FALSE;
+    gHiScores[index].zeroRange = 300;
 }
 
 static void HiScore_TrimLineEnd(char *line) {
@@ -1375,6 +1384,51 @@ static BOOL HiScore_ParseScoreLine(char *line, char **outName, UWORD *outScore) 
     *outName = &line[pos];
     *outScore = (UWORD)score;
     return TRUE;
+}
+
+/* Metadata follows DEL (0x7F); old lines without DEL remain valid. */
+static void HiScore_ParseMetadata(char *line, HiScoreEntry *entry) {
+    char *sep = strchr(line, HISCORE_META_SEPARATOR);
+    char *p;
+    UWORD speed = 0;
+    if (!entry) return;
+    entry->control = 'J';
+    entry->windSpeed = 0;
+    entry->halfWind = FALSE;
+    entry->zeroRange = 300; /* Legacy records predate zeroing metadata. */
+    if (!sep) return;
+    *sep = '\0';
+    p = sep + 1;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p != 'J' && *p != 'K' && *p != 'M') return;
+    entry->control = *p++;
+    while (*p == ' ' || *p == '\t') p++;
+
+    if ((p[0] == 'F' || p[0] == 'H') && p[1] == 'W' &&
+        (p[2] == ' ' || p[2] == '\t')) {
+        BOOL half = (p[0] == 'H') ? TRUE : FALSE;
+        p += 2;
+        while (*p == ' ' || *p == '\t') p++;
+        if (p[0] == '1' && p[1] == '0') { speed = 10; p += 2; }
+        else if (p[0] == '2' && p[1] == '0') { speed = 20; p += 2; }
+        else if (p[0] == '3' && p[1] == '0') { speed = 30; p += 2; }
+        else return;
+        if (*p != '\0' && *p != ' ' && *p != '\t') return;
+        entry->windSpeed = speed;
+        entry->halfWind = half;
+        while (*p == ' ' || *p == '\t') p++;
+    }
+
+    if (p[0] == 'Z' && p[1] == '2' && p[2] == '5' && p[3] == '0' &&
+        (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
+        entry->zeroRange = 250;
+        p += 4;
+    } else if (p[0] == 'Z' && p[1] == '3' && p[2] == '0' && p[3] == '0' &&
+               (p[4] == '\0' || p[4] == ' ' || p[4] == '\t')) {
+        entry->zeroRange = 300;
+        p += 4;
+    }
+    /* Unknown optional suffixes are ignored for forward compatibility. */
 }
 
 static void HiScore_ResetToDefaults(void) {
@@ -1499,13 +1553,17 @@ static void HiScore_LoadOnce(void) {
     }
 
     for (i = 0; i < HISCORE_ENTRY_COUNT; i++) {
-        loadedScores[i] = gDefaultHiScores[i];
+        memset(&loadedScores[i], 0, sizeof(loadedScores[i]));
+        strcpy(loadedScores[i].name, "BLANK RECORD");
+        loadedScores[i].control = 'J';
+        loadedScores[i].zeroRange = 300;
     }
 
     while (loaded < HISCORE_ENTRY_COUNT && Dos_ReadLine(fh, line, sizeof(line))) {
         char *name = NULL;
         UWORD score = 0;
         HiScore_TrimLineEnd(line);
+        HiScore_ParseMetadata(line, &loadedScores[loaded]);
 
         if (!HiScore_ParseScoreLine(line, &name, &score)) {
             Close(fh);
@@ -1530,12 +1588,8 @@ static void HiScore_LoadOnce(void) {
 
     Close(fh);
 
-    if (loaded < HISCORE_ENTRY_COUNT) {
-        HiScore_ResetToDefaults();
-        return;
-    }
-
-    /* If the file has more than 10 entries, they are intentionally ignored. */
+    /* Missing records stay as zero-score BLANK RECORD entries.
+     * Records after the tenth are intentionally ignored. */
     for (i = 0; i < HISCORE_ENTRY_COUNT; i++) {
         gHiScores[i] = loadedScores[i];
     }
@@ -1592,7 +1646,24 @@ static BOOL HiScore_Save(void) {
             }
         }
 
-        if (!Dos_WriteChar(fh, '\n')) {
+        /* DEL terminates the old-style score/name portion. */
+        if (!Dos_WriteChar(fh, HISCORE_META_SEPARATOR) ||
+            !Dos_WriteChar(fh, ' ') ||
+            !Dos_WriteChar(fh, (gHiScores[i].control == 'K' ||
+                                gHiScores[i].control == 'M') ? gHiScores[i].control : 'J')) {
+            ok = FALSE;
+            break;
+        }
+        if (gHiScores[i].windSpeed > 0) {
+            if (!Dos_WriteChar(fh, ' ') ||
+                !Dos_WriteCString(fh, gHiScores[i].halfWind ? "HW " : "FW ") ||
+                !Dos_WriteUWord(fh, gHiScores[i].windSpeed)) {
+                ok = FALSE;
+                break;
+            }
+        }
+        if (!Dos_WriteCString(fh, gHiScores[i].zeroRange == 250 ? " Z250" : " Z300") ||
+            !Dos_WriteChar(fh, '\n')) {
             ok = FALSE;
             break;
         }
@@ -1645,6 +1716,16 @@ static BOOL HiScore_InsertIfQualified(UWORD score, const char *name) {
     }
 
     HiScore_SetEntry((UWORD)insertAt, name, score);
+    switch (Range_GetPrimaryControl()) {
+        case RANGE_CONTROL_KEYBOARD: gHiScores[insertAt].control = 'K'; break;
+        case RANGE_CONTROL_MOUSE: gHiScores[insertAt].control = 'M'; break;
+        default: gHiScores[insertAt].control = 'J'; break;
+    }
+    gHiScores[insertAt].zeroRange = TargetScoring_GetZeroRange();
+    gHiScores[insertAt].windSpeed = Range_GetWindSpeed();
+    gHiScores[insertAt].halfWind =
+        (Range_GetWindDirection() == RANGE_WIND_HALF_LEFT ||
+         Range_GetWindDirection() == RANGE_WIND_HALF_RIGHT) ? TRUE : FALSE;
     return TRUE;
 }
 
