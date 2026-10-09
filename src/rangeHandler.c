@@ -827,10 +827,11 @@ static void StopBirdAmbient(RangeSessionState *state) {
     }
 
     Sound_StopBirdAmbient(FALSE);
+    Sound_SetWindSpeed(0);
 }
 
 static void UpdateBirdAmbient(RangeSessionState *state) {
-    if (!state || !state->birdAmbientEnabled) {
+    if (!state || !state->birdAmbientEnabled || Sound_IsWindAmbientEnabled()) {
         return;
     }
 
@@ -1585,6 +1586,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     Sound_SetPaused(FALSE);
     DateStamp(&state.roundStartStamp);
     ScheduleBirdAmbient(&state);
+    Sound_SetWindSpeed(Range_GetWindSpeed());
+    Sound_UpdateWindAmbient(); /* Start the first wind sample on range entry. */
 
     tempMaskPlane = (PLANEPTR)AllocRaster(FRONTSIGHT_W, FRONTSIGHT_H);
 
@@ -1673,6 +1676,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             Sound_Update();
             if (!roundEnding && !showFinalScore) {
                 UpdateBirdAmbient(&state);
+                Sound_UpdateWindAmbient();
             }
         }
 

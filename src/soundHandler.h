@@ -62,6 +62,9 @@ void Sound_PlayReloadMagOut(void);
 void Sound_PlayReloadMagIn(void);
 void Sound_ShutdownReloadSfx(void);
 
+void Sound_SetWindSpeed(UWORD mph);
+BOOL Sound_IsWindAmbientEnabled(void);
+void Sound_UpdateWindAmbient(void);
 BOOL Sound_InitBirdAmbient(void);
 void Sound_PlayBirdAmbient(void);
 void Sound_StopBirdAmbient(BOOL fadeOut);

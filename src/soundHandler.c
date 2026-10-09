@@ -38,6 +38,8 @@ typedef struct AudioVoice {
 #define SOUND_11KHZ_PERIOD 321
 #define SOUND_16KHZ_PERIOD 222
 #define SOUND_22KHZ_PERIOD 161
+#define WIND_FILE "audio/enhanced/Wind.raw"
+#define WIND_SAMPLE_TICKS 200UL /* 64000 bytes at 16 kHz, 50 ticks/s */
 
 #define SHOT_VOLUME 64
 #define SHOT_CYCLES 1
@@ -127,6 +129,14 @@ static Sample gSpeechReload = {NULL, 0};
 static Sample gReloadMagOut = {NULL, 0};
 static Sample gReloadMagIn = {NULL, 0};
 static Sample gBirdCall = {NULL, 0};
+static Sample gWind = {NULL, 0};
+static struct IOAudio *gWindVolumeIO = NULL;
+static BOOL gWindPlaying = FALSE;
+static UWORD gWindSpeed = 0;
+static UBYTE gWindCyclesUntilBird = 1;
+static UBYTE gWindCyclesCompleted = 0;
+static struct DateStamp gWindStartStamp;
+static UBYTE gWindLastVolume = 255;
 static Sample gSpeechExcellent = {NULL, 0};
 static Sample gSpeechSuperb = {NULL, 0};
 static Sample gSpeechWellDone = {NULL, 0};
@@ -177,6 +187,10 @@ static void ResetState(void) {
     gTitleVoice.playing = FALSE;
     gSpeechReloadPlaying = FALSE;
     gBirdAmbientPlaying = FALSE;
+    gWindPlaying = FALSE;
+    gWindLastVolume = 255;
+    gWindCyclesCompleted = 0;
+    gWindCyclesUntilBird = 1;
     gHitDueStamp.ds_Days = 0;
     gHitDueStamp.ds_Minute = 0;
     gHitDueStamp.ds_Tick = 0;
@@ -1370,6 +1384,92 @@ SoundError Sound_GetLastError(void) {
 }
 
 
+/* ADCMD_PERVOL uses a separate request: the main CH2 CMD_WRITE remains
+ * outstanding for the duration of the sample and must not be modified. */
+static void SetWindVolume(UBYTE volume) {
+    if (!gWindVolumeIO || !gTitleVoice.io || !gWindPlaying ||
+        volume == gWindLastVolume) return;
+    gWindVolumeIO->ioa_Request.io_Command = ADCMD_PERVOL;
+    gWindVolumeIO->ioa_Request.io_Flags = 0;
+    gWindVolumeIO->ioa_AllocKey = gTitleVoice.io->ioa_AllocKey;
+    gWindVolumeIO->ioa_Period = SOUND_16KHZ_PERIOD;
+    gWindVolumeIO->ioa_Volume = volume;
+    DoIO((struct IORequest *)gWindVolumeIO);
+    gWindLastVolume = volume;
+}
+
+BOOL Sound_IsWindAmbientEnabled(void) {
+    return gBirdAmbientInited && gWind.data && gWind.length == 64000UL && gWindSpeed != 0;
+}
+
+void Sound_SetWindSpeed(UWORD mph) {
+    if (mph > 30 || (mph % 10) != 0) mph = 0;
+    gWindSpeed = mph;
+    gWindCyclesCompleted = 0;
+    gWindCyclesUntilBird = 1;
+    gWindLastVolume = 255;
+    if (mph == 0 && gWindPlaying) {
+        StopVoice(&gTitleVoice);
+        gWindPlaying = FALSE;
+    }
+}
+
+void Sound_UpdateWindAmbient(void) {
+    struct DateStamp now;
+    ULONG elapsed;
+    UBYTE peak, volume;
+    if (!gBirdAmbientInited || !gWind.data || !gWindSpeed || gSoundPaused ||
+        !gSoundInited) return;
+    if (!gTitleVoice.io && !InitVoice(&gTitleVoice)) return;
+    if (!gWindVolumeIO) {
+        gWindVolumeIO = (struct IOAudio *)CreateIORequest(gTitleVoice.port, sizeof(struct IOAudio));
+        if (!gWindVolumeIO) return;
+    }
+    gWindVolumeIO->ioa_Request.io_Device = gTitleVoice.io->ioa_Request.io_Device;
+    gWindVolumeIO->ioa_Request.io_Unit = gTitleVoice.io->ioa_Request.io_Unit;
+    ReapVoice(&gTitleVoice);
+    if (gBirdAmbientPlaying) {
+        if (!gTitleVoice.playing) gBirdAmbientPlaying = FALSE;
+        else return;
+    }
+    if (gWindPlaying && !gTitleVoice.playing) {
+        gWindPlaying = FALSE;
+        ++gWindCyclesCompleted;
+        if (gWindCyclesCompleted >= gWindCyclesUntilBird &&
+            gBirdAmbientAvailable && gBirdCall.data) {
+            struct DateStamp stamp;
+            DateStamp(&stamp);
+            gWindCyclesCompleted = 0;
+            gWindCyclesUntilBird = (UBYTE)(1 + ((ULONG)stamp.ds_Tick +
+                (ULONG)stamp.ds_Minute * 37UL + (ULONG)stamp.ds_Days * 13UL) % 2UL);
+            Sound_PlayBirdAmbient();
+            return;
+        }
+    }
+    if (!gWindPlaying) {
+        if (gTitleVoice.playing) return;
+        StartVoiceSample(&gTitleVoice, &gWind, SOUND_16KHZ_PERIOD, 0, 1);
+        gWindPlaying = gTitleVoice.playing;
+        gWindLastVolume = 0;
+        DateStamp(&gWindStartStamp);
+        return;
+    }
+    DateStamp(&now);
+    elapsed = (ULONG)((now.ds_Days - gWindStartStamp.ds_Days) * 86400L * 50L +
+                       (now.ds_Minute - gWindStartStamp.ds_Minute) * 3000L +
+                       (now.ds_Tick - gWindStartStamp.ds_Tick));
+    /* Wind ambience peak volume by speed: 0/10/20/30 MPH. */
+    peak = (gWindSpeed >= 30U) ? 48U :
+           (gWindSpeed >= 20U) ? 30U :
+           (gWindSpeed >= 10U) ? 12U : 0U;
+    if (elapsed < 50UL) volume = (UBYTE)(peak * elapsed / 50UL);
+    else if (elapsed < 100UL) volume = peak;
+    else if (elapsed < WIND_SAMPLE_TICKS)
+        volume = (UBYTE)(peak * (WIND_SAMPLE_TICKS - elapsed) / 100UL);
+    else volume = 0;
+    SetWindVolume(volume);
+}
+
 BOOL Sound_InitBirdAmbient(void) {
     if (gBirdAmbientInited) {
         gLastError = SOUND_OK;
@@ -1384,14 +1484,11 @@ BOOL Sound_InitBirdAmbient(void) {
      * the firing range so the random ambient loop never performs floppy I/O
      * during active gameplay.
      */
-    if (!LoadSample(BIRD_CALL_FILE, &gBirdCall)) {
-        /* Optional ambient cue: missing file must not block the game. */
-        gBirdAmbientInited = TRUE;
-        gLastError = SOUND_OK;
-        return TRUE;
+    /* Both cues are optional and loaded before entering the range. */
+    gBirdAmbientAvailable = LoadSample(BIRD_CALL_FILE, &gBirdCall);
+    if (Sound_IsEnhancedAudioEnabled()) {
+        LoadSample(WIND_FILE, &gWind);
     }
-
-    gBirdAmbientAvailable = TRUE;
     gBirdAmbientInited = TRUE;
     gLastError = SOUND_OK;
     return TRUE;
@@ -1426,6 +1523,7 @@ void Sound_PlayBirdAmbient(void) {
     if (gTitleVoice.playing) {
         StopVoice(&gTitleVoice);
     }
+    gWindPlaying = FALSE;
 
     StartVoiceSample(&gTitleVoice, &gBirdCall, SOUND_22KHZ_PERIOD, 48, 1);
     gBirdAmbientPlaying = gTitleVoice.playing;
@@ -1445,12 +1543,13 @@ void Sound_StopBirdAmbient(BOOL fadeOut) {
             gBirdAmbientPlaying = FALSE;
         }
 
-        if (gBirdAmbientPlaying && gTitleVoice.playing) {
+        if ((gBirdAmbientPlaying || gWindPlaying) && gTitleVoice.playing) {
             StopVoice(&gTitleVoice);
         }
     }
 
     gBirdAmbientPlaying = FALSE;
+    gWindPlaying = FALSE;
     gLastError = SOUND_OK;
 }
 
@@ -1461,6 +1560,14 @@ void Sound_ShutdownBirdAmbient(void) {
 
     Sound_StopBirdAmbient(FALSE);
     FreeSample(&gBirdCall);
+    FreeSample(&gWind);
+    if (gWindVolumeIO) {
+        DeleteIORequest((struct IORequest *)gWindVolumeIO);
+        gWindVolumeIO = NULL;
+    }
+    gWindPlaying = FALSE;
+    gWindCyclesCompleted = 0;
+    gWindSpeed = 0;
     gBirdAmbientAvailable = FALSE;
     gBirdAmbientInited = FALSE;
 
@@ -1674,6 +1781,10 @@ void Sound_SetPaused(BOOL paused) {
 
     if (paused) {
         DateStamp(&gPauseStamp);
+        if (gWindPlaying) {
+            StopVoice(&gTitleVoice);
+            gWindPlaying = FALSE;
+        }
         gSoundPaused = TRUE;
         return;
     }
