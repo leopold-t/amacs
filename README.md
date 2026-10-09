@@ -15,6 +15,10 @@ The game uses sampled sound effects and narration generated with ElevenLabs. Mus
 - Multiple target types and engagement distances
 - Distance-based target scaling and scoring
 - Detailed hit visualisation and performance summaries
+- Configurable joystick, keyboard and mouse controls
+- Wind drift simulation with selectable wind conditions
+- Night Vision, Red Room and Amber firing range colour schemes
+- Ambient range sounds, including wind effects with Enhanced Audio
 - OCS/ECS/AGA compatibility
 - Workbench-friendly operation
 - Floppy disk compatible distribution
@@ -39,17 +43,20 @@ The floppy disk must be writable in order to save the high-score table. AMACS st
 
 ## Controls
 ### Global
-- **Amiga + Q** – Quit to Workbench.
+- **Amiga + Q** – Quit to Workbench (with confirmation).
 
 ### Menu Navigation
 - **Joystick** / **WASD** – Navigate menu options.
-- **Joystick Fire** / **Left Mouse Button** – Pull the trigger to select or continue.
+- **Settings** – Select the primary control method and configure wind speed and direction.
+- **Joystick Fire** / **Left Mouse Button** / **Space** / **Enter** – Pull the trigger to select or continue.
 
 ### Firing Range
-- **Joystick** / **WASD** – Aim using the iron sights.
-- **Joystick Forward then Back** / **W then S** – Reload the weapon.
-- **Joystick Fire** / **Left Mouse Button** – Pull the trigger to fire.
+- **Joystick** / **WASD** / **Mouse** – Aim using the iron sights.
+- **Joystick Forward then Back** / **W then S** / **Mouse Wheel Up then Down** – Reload the weapon.
+- **Joystick Fire** / **Left Mouse Button** / **Space** / **Enter** – Pull the trigger to fire.
 - **P** – Pause the simulation.
+- **F1 / F2 / F3** – Toggle Night Vision / Red Room / Amber colour schemes.
+- **Esc** – Request to leave the firing range (with confirmation).
 
 ## Acknowledgments
 The floppy disk edition of AMACS uses **GoWB**, a utility written by **Oliver Wagner**, to automatically load Workbench before launching the game. This ensures that the required Workbench environment and system libraries are available while keeping the startup process simple and transparent for the user.
@@ -62,7 +69,17 @@ AMACS includes excerpts from the following public domain recordings performed by
 These recordings are public domain works of the United States federal government and are available through Wikimedia Commons.
 
 ### Current Version
-AMACS v0.601
+AMACS v0.649
+
+### What's New in v0.649
+- Added a Settings screen for selecting the primary control method and configuring wind speed and direction.
+- Added mouse aiming, mouse wheel reloading and Space/Enter firing support, alongside joystick and WASD controls.
+- Added an active control method indicator to the Firing Range HUD.
+- Added wind drift to the ballistic simulation, based on **FM 3-22.9 C1, Rifle Marksmanship: M16-/M4-Series Weapons**, with wind speed and direction displayed on the Firing Range HUD.
+- Added ambient wind audio in Enhanced Audio mode, with smooth volume transitions and alternating bird calls.
+- Added Night Vision (F1), Red Room (F2) and Amber (F3) colour schemes, including a firing range vignette and improved Red Room visibility.
+- Added confirmation prompts when leaving the Firing Range or quitting to Workbench.
+- Prevented firing before the iron sights are displayed.
 
 ### What's New in v0.601
 - Added a new Main Menu screen.
@@ -84,7 +101,7 @@ AMACS v0.601
 **A:** There is no readily available light gun that can simply be connected to an Amiga. Supporting one would require uncommon hardware or a custom adapter, while classic light guns such as the NES Zapper also depend on CRT displays and generally do not work with modern LCDs. AMACS therefore focuses on standard, widely available controllers.
 
 **Q: Is a joystick or joypad required?**  
-**A:** No. AMACS can also be controlled with the keyboard using WASD, with the left mouse button as the trigger. A joystick is fully supported and recommended, however, as its grip is the closest of these control methods to the M16 pistol grip.
+**A:** No. AMACS supports joystick, keyboard and mouse controls. Aiming can be performed using WASD or the mouse, while firing is available through the Space or Enter keys and the left mouse button. A joystick is fully supported and recommended, however, as its grip is the closest of these control methods to the M16 pistol grip.
 
 **Q: Why are some sounds missing on an Amiga with 512 KB of Chip RAM?**  
 **A:** AMACS automatically disables Enhanced Audio on 512 KB Chip RAM systems to preserve enough memory for stable operation. The basic audio set is used instead.
