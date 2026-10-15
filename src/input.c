@@ -5,24 +5,122 @@
 #include <intuition/intuition.h>
 #include <intuition/screens.h>
 
+#ifndef AMACS_JOY_HARDWARE_ONLY
 #include <libraries/lowlevel.h>
 #include <proto/exec.h>
 #include <proto/lowlevel.h>
-
-/* Keep lowlevel.library optional until Input_Init() succeeds.
-   Providing our own base symbol prevents the C runtime/libamiga
-   from treating lowlevel.library as a mandatory startup dependency. */
-struct Library *LowLevelBase = NULL;
+#endif
 
 #include "input.h"
 #include "gfx.h"
 
-static ULONG ReadJoyPort2(void) {
-    if (!LowLevelBase) {
-        return 0;
+/* ------------------------------------------------------------------ */
+/* Joystick (controller port 2)                                        */
+/*                                                                     */
+/* lowlevel.library is OPTIONAL.  Input_Init() tries to open it; if    */
+/* it is present, ReadJoyPort(1) is used (USB/Poseidon joysticks, CD32 */
+/* pads and device auto-detection keep working).  If it is missing,    */
+/* the joystick is read directly from hardware instead.  Port 2 is the */
+/* joystick port; port 1 carries the mouse.  The fallback performs the */
+/* same register-level read lowlevel.library does for a standard      */
+/* digital joystick:                                                   */
+/*                                                                     */
+/*   JOY1DAT ($DFF00C)  direction counters of port 2                   */
+/*       Right = bit 1                                                 */
+/*       Left  = bit 9                                                 */
+/*       Down  = bit 1 XOR bit 0                                       */
+/*       Up    = bit 9 XOR bit 8                                       */
+/*   CIAA PRA ($BFE001) bit 7 = port 2 fire button (active low)        */
+/*                                                                     */
+/* Both registers are read-only here: nothing is written, so the OS    */
+/* and the mouse on port 1 are not disturbed.                          */
+/*                                                                     */
+/* Build with -DAMACS_JOY_HARDWARE_ONLY to drop every reference to     */
+/* lowlevel.library (headers included) and always use the hardware     */
+/* path.                                                               */
+/* ------------------------------------------------------------------ */
+#ifndef AMACS_JOY_HARDWARE_ONLY
+/* Our own base symbol keeps the C runtime/libamiga from treating
+ * lowlevel.library as a mandatory startup dependency; it stays NULL
+ * unless Input_Init() manages to open the library. */
+struct Library *LowLevelBase = NULL;
+#endif
+
+#define JOY2_JOY1DAT_ADDR 0x00DFF00CUL
+#define JOY2_CIAA_PRA_ADDR 0x00BFE001UL
+#define JOY2_CIAA_FIRE_BIT 7
+
+#define JOY_BIT_UP 0x01
+#define JOY_BIT_DOWN 0x02
+#define JOY_BIT_LEFT 0x04
+#define JOY_BIT_RIGHT 0x08
+#define JOY_BIT_FIRE 0x10
+
+/* Pure decoder (no hardware access) - kept separate so it can be unit tested. */
+static UBYTE DecodeJoyPort2(UWORD joy1dat, UBYTE ciaaPra) {
+    UBYTE r = 0;
+
+    if (joy1dat & 0x0200) {
+        r |= JOY_BIT_LEFT;
+    }
+    if (joy1dat & 0x0002) {
+        r |= JOY_BIT_RIGHT;
+    }
+    if (((joy1dat >> 9) ^ (joy1dat >> 8)) & 0x0001) {
+        r |= JOY_BIT_UP;
+    }
+    if (((joy1dat >> 1) ^ joy1dat) & 0x0001) {
+        r |= JOY_BIT_DOWN;
+    }
+    if (!(ciaaPra & (1 << JOY2_CIAA_FIRE_BIT))) {
+        r |= JOY_BIT_FIRE;
     }
 
-    return ReadJoyPort(1);
+    return r;
+}
+
+static UBYTE ReadJoyPort2Hardware(void) {
+    volatile UWORD *joy1dat = (volatile UWORD *)JOY2_JOY1DAT_ADDR;
+    volatile UBYTE *ciaaPra = (volatile UBYTE *)JOY2_CIAA_PRA_ADDR;
+
+    return DecodeJoyPort2(*joy1dat, *ciaaPra);
+}
+
+#ifndef AMACS_JOY_HARDWARE_ONLY
+static UBYTE ReadJoyPort2LowLevel(void) {
+    ULONG p = ReadJoyPort(1);
+    UBYTE r = 0;
+
+    if (p & JPF_JOY_UP) {
+        r |= JOY_BIT_UP;
+    }
+    if (p & JPF_JOY_DOWN) {
+        r |= JOY_BIT_DOWN;
+    }
+    if (p & JPF_JOY_LEFT) {
+        r |= JOY_BIT_LEFT;
+    }
+    if (p & JPF_JOY_RIGHT) {
+        r |= JOY_BIT_RIGHT;
+    }
+    if (p & JPF_BUTTON_RED) {
+        r |= JOY_BIT_FIRE;
+    }
+
+    return r;
+}
+#endif
+
+/* Returns a JOY_BIT_* mask for port 2, through lowlevel.library when it
+ * was opened and straight from the hardware otherwise. */
+static UBYTE ReadJoyPort2(void) {
+#ifndef AMACS_JOY_HARDWARE_ONLY
+    if (LowLevelBase) {
+        return ReadJoyPort2LowLevel();
+    }
+#endif
+
+    return ReadJoyPort2Hardware();
 }
 
 static UBYTE keyDown[256];
@@ -63,7 +161,11 @@ static BOOL IsAmigaQualifier(UWORD qualifier) {
 BOOL Input_Init(void) {
     int i;
 
+#ifndef AMACS_JOY_HARDWARE_ONLY
+    /* Optional: a failed open is not an error, ReadJoyPort2() simply
+     * falls back to the hardware path. */
     LowLevelBase = OpenLibrary("lowlevel.library", 0);
+#endif
 
     for (i = 0; i < 256; i++) {
         keyDown[i] = 0;
@@ -79,25 +181,27 @@ BOOL Input_Init(void) {
     mouseDeltaX = 0;
     mouseDeltaY = 0;
 
-    return (LowLevelBase != NULL);
+    return TRUE;
 }
 
 void Input_Shutdown(void) {
+#ifndef AMACS_JOY_HARDWARE_ONLY
     if (LowLevelBase) {
         CloseLibrary(LowLevelBase);
         LowLevelBase = NULL;
     }
+#endif
 }
 
 BOOL IsJoystickFirePressed(void) {
-    ULONG p = ReadJoyPort2();
-    return (p & JPF_BUTTON_RED) ? TRUE : FALSE;
+    UBYTE p = ReadJoyPort2();
+    return (p & JOY_BIT_FIRE) ? TRUE : FALSE;
 }
 
-BOOL Input_JoyLeft(void) { return (ReadJoyPort2() & JPF_JOY_LEFT) ? TRUE : FALSE; }
-BOOL Input_JoyRight(void) { return (ReadJoyPort2() & JPF_JOY_RIGHT) ? TRUE : FALSE; }
-BOOL Input_JoyUp(void) { return (ReadJoyPort2() & JPF_JOY_UP) ? TRUE : FALSE; }
-BOOL Input_JoyDown(void) { return (ReadJoyPort2() & JPF_JOY_DOWN) ? TRUE : FALSE; }
+BOOL Input_JoyLeft(void) { return (ReadJoyPort2() & JOY_BIT_LEFT) ? TRUE : FALSE; }
+BOOL Input_JoyRight(void) { return (ReadJoyPort2() & JOY_BIT_RIGHT) ? TRUE : FALSE; }
+BOOL Input_JoyUp(void) { return (ReadJoyPort2() & JOY_BIT_UP) ? TRUE : FALSE; }
+BOOL Input_JoyDown(void) { return (ReadJoyPort2() & JOY_BIT_DOWN) ? TRUE : FALSE; }
 
 BOOL Input_KeyboardLeft(void) { return keyDown[RAWKEY_A] ? TRUE : FALSE; }
 BOOL Input_KeyboardRight(void) { return keyDown[RAWKEY_D] ? TRUE : FALSE; }
