@@ -150,6 +150,11 @@ static LONG mouseDeltaY = 0;
 #define RAWKEY_A 0x20
 #define RAWKEY_S 0x21
 #define RAWKEY_D 0x22
+/* Amiga cursor keys (raw key codes). */
+#define RAWKEY_CURSOR_UP 0x4C
+#define RAWKEY_CURSOR_DOWN 0x4D
+#define RAWKEY_CURSOR_RIGHT 0x4E
+#define RAWKEY_CURSOR_LEFT 0x4F
 #define RAWKEY_SPACE 0x40
 #define RAWKEY_NUMPAD_ENTER 0x43
 #define RAWKEY_RETURN 0x44
@@ -203,10 +208,10 @@ BOOL Input_JoyRight(void) { return (ReadJoyPort2() & JOY_BIT_RIGHT) ? TRUE : FAL
 BOOL Input_JoyUp(void) { return (ReadJoyPort2() & JOY_BIT_UP) ? TRUE : FALSE; }
 BOOL Input_JoyDown(void) { return (ReadJoyPort2() & JOY_BIT_DOWN) ? TRUE : FALSE; }
 
-BOOL Input_KeyboardLeft(void) { return keyDown[RAWKEY_A] ? TRUE : FALSE; }
-BOOL Input_KeyboardRight(void) { return keyDown[RAWKEY_D] ? TRUE : FALSE; }
-BOOL Input_KeyboardUp(void) { return keyDown[RAWKEY_W] ? TRUE : FALSE; }
-BOOL Input_KeyboardDown(void) { return keyDown[RAWKEY_S] ? TRUE : FALSE; }
+BOOL Input_KeyboardLeft(void) { return (keyDown[RAWKEY_A] || keyDown[RAWKEY_CURSOR_LEFT]) ? TRUE : FALSE; }
+BOOL Input_KeyboardRight(void) { return (keyDown[RAWKEY_D] || keyDown[RAWKEY_CURSOR_RIGHT]) ? TRUE : FALSE; }
+BOOL Input_KeyboardUp(void) { return (keyDown[RAWKEY_W] || keyDown[RAWKEY_CURSOR_UP]) ? TRUE : FALSE; }
+BOOL Input_KeyboardDown(void) { return (keyDown[RAWKEY_S] || keyDown[RAWKEY_CURSOR_DOWN]) ? TRUE : FALSE; }
 
 BOOL Input_Left(void) { return (Input_JoyLeft() || Input_KeyboardLeft()) ? TRUE : FALSE; }
 BOOL Input_Right(void) { return (Input_JoyRight() || Input_KeyboardRight()) ? TRUE : FALSE; }

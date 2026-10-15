@@ -6,7 +6,8 @@
 typedef enum RangeControlMode {
     RANGE_CONTROL_JOYSTICK = 0,
     RANGE_CONTROL_KEYBOARD,
-    RANGE_CONTROL_MOUSE
+    RANGE_CONTROL_MOUSE,
+    RANGE_CONTROL_LINKED
 } RangeControlMode;
 
 RangeControlMode Range_GetPrimaryControl(void);

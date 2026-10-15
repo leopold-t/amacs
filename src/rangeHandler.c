@@ -26,6 +26,7 @@ extern BOOL Input_Down(void);
 #define RAWKEY_J 0x26
 #define RAWKEY_K 0x27
 #define RAWKEY_M 0x37
+#define RAWKEY_L 0x28
 
 /* Persistent for the lifetime of AMACS.  Both Settings and the J/K/M
  * shortcuts on the firing range operate on this same value. */
@@ -38,7 +39,7 @@ RangeControlMode Range_GetPrimaryControl(void) {
 }
 
 void Range_SetPrimaryControl(RangeControlMode mode) {
-    if (mode >= RANGE_CONTROL_JOYSTICK && mode <= RANGE_CONTROL_MOUSE) {
+    if (mode >= RANGE_CONTROL_JOYSTICK && mode <= RANGE_CONTROL_LINKED) {
         gPrimaryControl = mode;
     }
 }
@@ -62,22 +63,22 @@ void Range_SetWindDirection(RangeWindDirection direction) {
 
 static BOOL RangeControlLeft(void) {
     if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyLeft();
-    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardLeft();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED) return Input_KeyboardLeft();
     return FALSE;
 }
 static BOOL RangeControlRight(void) {
     if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyRight();
-    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardRight();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED) return Input_KeyboardRight();
     return FALSE;
 }
 static BOOL RangeControlUp(void) {
     if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyUp();
-    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardUp();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED) return Input_KeyboardUp();
     return FALSE;
 }
 static BOOL RangeControlDown(void) {
     if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyDown();
-    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardDown();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED) return Input_KeyboardDown();
     return FALSE;
 }
 static BOOL RangeControlFirePressed(void) {
@@ -93,7 +94,7 @@ static BOOL RangeControlFireDown(void) {
 static void RangeDiscardInactiveFireEdges(void) {
     if (gPrimaryControl != RANGE_CONTROL_JOYSTICK) (void)Input_JoyFirePressed();
     if (gPrimaryControl != RANGE_CONTROL_KEYBOARD) (void)Input_KeyboardFirePressed();
-    if (gPrimaryControl != RANGE_CONTROL_MOUSE) (void)Input_MouseFirePressed();
+    if (gPrimaryControl != RANGE_CONTROL_MOUSE && gPrimaryControl != RANGE_CONTROL_LINKED) (void)Input_MouseFirePressed();
 }
 
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
@@ -1153,6 +1154,8 @@ static const char *GetPrimaryControlHudText(void) {
             return "KBD";
         case RANGE_CONTROL_MOUSE:
             return "MSE";
+        case RANGE_CONTROL_LINKED:
+            return "K+L";
         case RANGE_CONTROL_JOYSTICK:
         default:
             return "JOY";
@@ -1660,7 +1663,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     for (;;) {
         Input_PollWindow(Gfx_GetWindow());
 
-        /* Range control is exclusive. J/K/M changes the persistent primary
+        /* Range control is exclusive. J/K/M/L changes the persistent primary
          * device immediately; menus and all non-Range screens keep their
          * existing parallel joystick/keyboard handling. */
         if (Input_KeyPressed(RAWKEY_J)) {
@@ -1669,6 +1672,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             gPrimaryControl = RANGE_CONTROL_KEYBOARD;
         } else if (Input_KeyPressed(RAWKEY_M)) {
             gPrimaryControl = RANGE_CONTROL_MOUSE;
+        } else if (Input_KeyPressed(RAWKEY_L)) {
+            gPrimaryControl = RANGE_CONTROL_LINKED;
         }
         RangeDiscardInactiveFireEdges();
 

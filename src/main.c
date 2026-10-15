@@ -1400,7 +1400,7 @@ static void HiScore_ParseMetadata(char *line, HiScoreEntry *entry) {
     *sep = '\0';
     p = sep + 1;
     while (*p == ' ' || *p == '\t') p++;
-    if (*p != 'J' && *p != 'K' && *p != 'M') return;
+    if (*p != 'J' && *p != 'K' && *p != 'M' && *p != 'L') return;
     entry->control = *p++;
     while (*p == ' ' || *p == '\t') p++;
 
@@ -1650,7 +1650,8 @@ static BOOL HiScore_Save(void) {
         if (!Dos_WriteChar(fh, HISCORE_META_SEPARATOR) ||
             !Dos_WriteChar(fh, ' ') ||
             !Dos_WriteChar(fh, (gHiScores[i].control == 'K' ||
-                                gHiScores[i].control == 'M') ? gHiScores[i].control : 'J')) {
+                                gHiScores[i].control == 'M' ||
+                                gHiScores[i].control == 'L') ? gHiScores[i].control : 'J')) {
             ok = FALSE;
             break;
         }
@@ -1719,6 +1720,7 @@ static BOOL HiScore_InsertIfQualified(UWORD score, const char *name) {
     switch (Range_GetPrimaryControl()) {
         case RANGE_CONTROL_KEYBOARD: gHiScores[insertAt].control = 'K'; break;
         case RANGE_CONTROL_MOUSE: gHiScores[insertAt].control = 'M'; break;
+        case RANGE_CONTROL_LINKED: gHiScores[insertAt].control = 'L'; break;
         default: gHiScores[insertAt].control = 'J'; break;
     }
     gHiScores[insertAt].zeroRange = TargetScoring_GetZeroRange();
@@ -4041,6 +4043,7 @@ static const char *PrimaryControlName(RangeControlMode mode) {
     switch (mode) {
         case RANGE_CONTROL_KEYBOARD: return "KEYBOARD";
         case RANGE_CONTROL_MOUSE: return "MOUSE";
+        case RANGE_CONTROL_LINKED: return "KBD+LMB";
         case RANGE_CONTROL_JOYSTICK:
         default: return "JOYSTICK";
     }
@@ -4275,9 +4278,9 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
         if ((leftNow && !prevLeft) || (rightNow && !prevRight)) {
             if (selected == 0) {
                 if (rightNow && !prevRight)
-                    pendingControl = (pendingControl == RANGE_CONTROL_MOUSE) ? RANGE_CONTROL_JOYSTICK : (RangeControlMode)(pendingControl + 1);
+                    pendingControl = (pendingControl == RANGE_CONTROL_LINKED) ? RANGE_CONTROL_JOYSTICK : (RangeControlMode)(pendingControl + 1);
                 else
-                    pendingControl = (pendingControl == RANGE_CONTROL_JOYSTICK) ? RANGE_CONTROL_MOUSE : (RangeControlMode)(pendingControl - 1);
+                    pendingControl = (pendingControl == RANGE_CONTROL_JOYSTICK) ? RANGE_CONTROL_LINKED : (RangeControlMode)(pendingControl - 1);
             } else if (selected == 1) {
                 if (rightNow && !prevRight) { if (pendingSpeed < 30) pendingSpeed += 10; }
                 else { if (pendingSpeed > 0) pendingSpeed -= 10; }
