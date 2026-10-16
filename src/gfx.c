@@ -126,6 +126,51 @@ static struct MsgPort *dbufPort = NULL;
 static BOOL dbufPrimed = FALSE;
 
 /*
+ * Legacy (Kickstart 2.x, graphics.library < 39) double buffering.
+ *
+ * AllocScreenBuffer()/ChangeScreenBuffer() only exist from V39.  On older
+ * systems the same page flip is done through the screen's ViewPort:
+ *   - buffer 0 is the screen's own BitMap,
+ *   - buffer 1 is an extra BitMap of identical geometry (AllocRaster planes),
+ *   - presenting a buffer = point ViewPort.RasInfo->BitMap at it and call
+ *     ScrollVPort(), which rewrites the bitplane pointers in the copper list.
+ * The new pointers take effect at the next vertical blank, so after every
+ * flip we WaitTOF() before the old front buffer is touched again - the same
+ * guarantee the V39 SafeMessage gives.  The screen's own BitMap is always
+ * restored into RasInfo before the screen is closed.
+ */
+static BOOL dbufLegacy = FALSE;
+static struct BitMap *legacyBitMaps[2] = {NULL, NULL}; /* [0] = screen's own bitmap */
+static struct BitMap legacyBackBm;                     /* [1] = extra buffer */
+static UWORD legacyBackWidth = 0;
+static UWORD legacyBackHeight = 0;
+
+/* TRUE on graphics.library V39+ (Kickstart 3.0+), where ScreenBuffers exist. */
+static BOOL GraphicsHasScreenBuffers(void) {
+    struct Library *lib = OpenLibrary("graphics.library", 39);
+
+    if (!lib) {
+        return FALSE;
+    }
+
+    CloseLibrary(lib);
+    return TRUE;
+}
+
+/* The BitMap that is currently ON SCREEN while double buffering is active. */
+static struct BitMap *DisplayedBitMap(void) {
+    if (!dbufEnabled) {
+        return NULL;
+    }
+
+    if (dbufLegacy) {
+        return legacyBitMaps[sbIndex];
+    }
+
+    return screenBuffers[sbIndex] ? screenBuffers[sbIndex]->sb_BitMap : NULL;
+}
+
+/*
  * Invisible pointer.
  *
  * IMPORTANT:
@@ -241,6 +286,136 @@ static void WaitSafe(struct ScreenBuffer *sb) {
     }
 }
 
+/* ---------------- Legacy (V36-V38) double buffering ---------------- */
+static void LegacyFreeBackBuffer(void) {
+    UWORD p;
+
+    for (p = 0; p < 8; p++) {
+        if (legacyBackBm.Planes[p]) {
+            FreeRaster(legacyBackBm.Planes[p], legacyBackWidth, legacyBackHeight);
+            legacyBackBm.Planes[p] = NULL;
+        }
+    }
+
+    legacyBackWidth = 0;
+    legacyBackHeight = 0;
+}
+
+/* Makes 'bm' the displayed bitmap of the screen's ViewPort. */
+static void LegacyPresentBitMap(struct BitMap *bm) {
+    WaitBlit();
+    screen->ViewPort.RasInfo->BitMap = bm;
+    ScrollVPort(&screen->ViewPort);
+}
+
+static BOOL LegacyEnableDoubleBuffering(void) {
+    struct RasInfo *ri;
+    struct BitMap *orig;
+    UWORD depth;
+    UWORD p;
+
+    if (!screen) {
+        return FALSE;
+    }
+
+    ri = screen->ViewPort.RasInfo;
+
+    if (!ri || !ri->BitMap) {
+        return FALSE;
+    }
+
+    orig = ri->BitMap;
+    depth = orig->Depth;
+
+    if (depth == 0 || depth > 8) {
+        return FALSE;
+    }
+
+    /* Same geometry as the screen's own bitmap. */
+    legacyBackWidth = (UWORD)(orig->BytesPerRow * 8);
+    legacyBackHeight = orig->Rows;
+
+    memset(&legacyBackBm, 0, sizeof(legacyBackBm));
+    InitBitMap(&legacyBackBm, depth, legacyBackWidth, legacyBackHeight);
+
+    for (p = 0; p < depth; p++) {
+        legacyBackBm.Planes[p] = AllocRaster(legacyBackWidth, legacyBackHeight);
+
+        if (!legacyBackBm.Planes[p]) {
+            /* Free what was allocated so far (LegacyFreeBackBuffer uses the
+             * stored dimensions), then let the caller fall back to the
+             * single-buffer path. */
+            LegacyFreeBackBuffer();
+            return FALSE;
+        }
+    }
+
+    legacyBitMaps[0] = orig;
+    legacyBitMaps[1] = &legacyBackBm;
+
+    sbIndex = 0; /* display buffer 0 (the screen's own bitmap) */
+    dbufPrimed = FALSE;
+
+    InitRastPort(&drawRP);
+    drawRP.BitMap = legacyBitMaps[1]; /* draw to back buffer */
+
+    /* clear back buffer */
+    SetRast(&drawRP, 0);
+    WaitBlit();
+
+    dbufLegacy = TRUE;
+    dbufEnabled = TRUE;
+    return TRUE;
+}
+
+static void LegacyDisableDoubleBuffering(void) {
+    struct BitMap *orig = legacyBitMaps[0];
+
+    if (screen && orig && screen->ViewPort.RasInfo) {
+        if (sbIndex != 0 && legacyBitMaps[sbIndex]) {
+            /* The extra buffer is on screen.  Copy the frame back into the
+             * screen's own bitmap (which is off screen right now), then
+             * switch back to it, so nothing older shows under whatever is
+             * drawn next. */
+            WaitBlit();
+            BltBitMap(legacyBitMaps[sbIndex], 0, 0, orig, 0, 0, screen->Width, screen->Height,
+                      0xC0, 0xFF, NULL);
+            WaitBlit();
+            LegacyPresentBitMap(orig);
+            WaitTOF();
+            WaitTOF();
+        } else if (screen->ViewPort.RasInfo->BitMap != orig) {
+            LegacyPresentBitMap(orig);
+            WaitTOF();
+            WaitTOF();
+        }
+    }
+
+    LegacyFreeBackBuffer();
+
+    legacyBitMaps[0] = NULL;
+    legacyBitMaps[1] = NULL;
+    dbufLegacy = FALSE;
+    dbufEnabled = FALSE;
+    dbufPrimed = FALSE;
+    sbIndex = 0;
+}
+
+static void LegacySwapBuffers(void) {
+    WORD newShow = (WORD)(1 - sbIndex);
+
+    /* Point the display at the buffer we just finished... */
+    LegacyPresentBitMap(legacyBitMaps[newShow]);
+    sbIndex = newShow;
+
+    /* ...and draw into the other one from now on. */
+    drawRP.BitMap = legacyBitMaps[1 - sbIndex];
+
+    /* The new bitplane pointers are picked up at the next vertical blank;
+     * only after that is the previous front buffer free for drawing. */
+    WaitTOF();
+}
+
 BOOL Gfx_EnableDoubleBuffering(void) {
     if (dbufEnabled) {
         return TRUE;
@@ -248,6 +423,11 @@ BOOL Gfx_EnableDoubleBuffering(void) {
 
     if (!screen) {
         return FALSE;
+    }
+
+    /* Kickstart 2.x: no ScreenBuffers, flip through the ViewPort instead. */
+    if (!GraphicsHasScreenBuffers()) {
+        return LegacyEnableDoubleBuffering();
     }
 
     if (!dbufPort) {
@@ -297,6 +477,11 @@ BOOL Gfx_EnableDoubleBuffering(void) {
 }
 
 void Gfx_DisableDoubleBuffering(void) {
+    if (dbufLegacy) {
+        LegacyDisableDoubleBuffering();
+        return;
+    }
+
     if (!dbufEnabled && !screenBuffers[0] && !screenBuffers[1] && !dbufPort) {
         return;
     }
@@ -358,6 +543,11 @@ struct RastPort *Gfx_GetDrawRastPort(void) {
 
 void Gfx_SwapBuffers(void) {
     if (!dbufEnabled || !screen) {
+        return;
+    }
+
+    if (dbufLegacy) {
+        LegacySwapBuffers();
         return;
     }
 
@@ -509,10 +699,9 @@ BOOL Gfx_ShowQuitRequester(BOOL useDBuf) {
      * into the buffer that is CURRENTLY DISPLAYED.  Do not disable/re-enable
      * ScreenBuffer double buffering here: doing so from the middle of the
      * range loop can wait for a SafeMessage that will never arrive. */
-    if (useDBuf && Gfx_IsDoubleBufferingEnabled() && screenBuffers[sbIndex] &&
-        screenBuffers[sbIndex]->sb_BitMap) {
+    if (useDBuf && Gfx_IsDoubleBufferingEnabled() && DisplayedBitMap()) {
         modalRP = scr->RastPort;
-        modalRP.BitMap = screenBuffers[sbIndex]->sb_BitMap;
+        modalRP.BitMap = DisplayedBitMap();
         rp = &modalRP;
         usingModalRP = TRUE;
     } else {
@@ -718,10 +907,9 @@ BOOL Gfx_ShowRangeExitRequester(BOOL useDBuf) {
 
     if (!scr || !scr->RastPort.BitMap) return FALSE;
 
-    if (useDBuf && Gfx_IsDoubleBufferingEnabled() && screenBuffers[sbIndex] &&
-        screenBuffers[sbIndex]->sb_BitMap) {
+    if (useDBuf && Gfx_IsDoubleBufferingEnabled() && DisplayedBitMap()) {
         modalRP = scr->RastPort;
-        modalRP.BitMap = screenBuffers[sbIndex]->sb_BitMap;
+        modalRP.BitMap = DisplayedBitMap();
         rp = &modalRP;
     } else {
         rp = &scr->RastPort;

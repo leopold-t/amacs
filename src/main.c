@@ -2986,8 +2986,14 @@ static WaitResult WaitForAdvanceNoTimeoutQuitConfirm(void) {
     }
 }
 
-/* Check if double buffering is safe on this system (graphics.library >= 39, Kick 3.0+) */
+/* Double buffering is used on every Kickstart version.  gfx.c picks the
+ * backend: ScreenBuffers on graphics.library V39+ (Kickstart 3.0+), or ViewPort
+ * page flipping (ScrollVPort) on older systems.
+ *
+ * Build with -DAMACS_NO_LEGACY_DBUF to restore the previous behaviour, where
+ * Kickstart 2.x runs single-buffered (the display flickers). */
 static BOOL UseDoubleBuffering(void) {
+#ifdef AMACS_NO_LEGACY_DBUF
     struct Library *GfxBase = OpenLibrary("graphics.library", 0);
 
     if (!GfxBase)
@@ -2997,6 +3003,9 @@ static BOOL UseDoubleBuffering(void) {
 
     CloseLibrary(GfxBase);
     return safe;
+#else
+    return TRUE;
+#endif
 }
 
 typedef struct TargetRangesBob {
@@ -5135,8 +5144,11 @@ show_title:
             memset(&summaryData, 0, sizeof(summaryData));
 
             if (useDBuf) {
+                /* If the back buffer cannot be allocated (e.g. not enough
+                 * Chip RAM on a small Kickstart 2.x machine), keep playing
+                 * single-buffered instead of aborting. */
                 if (!Gfx_EnableDoubleBuffering()) {
-                    goto fail;
+                    useDBuf = FALSE;
                 }
             }
 
