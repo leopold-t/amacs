@@ -17,6 +17,7 @@
 #include "bob.h"
 #include "gfx.h"
 #include "rangeHandler.h"
+#include "levelManager.h"
 #include "targetScoring.h"
 
 #define TARGET050_RAW "gfx/Target050.raw"
@@ -111,6 +112,12 @@ static struct DateStamp gPauseStamp;
 static ULONG gRandomState = 1;
 static UWORD gSpawnedTargets = 0;
 static UWORD gKilledTargets = 0;
+static BOOL gLevel1PendingSpawn = FALSE;
+static UWORD gLevel1DistanceIndex = 0;
+static UWORD gLevel1ShotsAtDistance = 0;
+static UWORD gLevel1HitsAtDistance = 0;
+static BOOL gLevel1Failed = FALSE;
+static BOOL gLevel1Completed = FALSE;
 
 static TargetSeries gSeries050;
 static TargetSeries gSeries100;
@@ -118,6 +125,19 @@ static TargetSeries gSeries150;
 static TargetSeries gSeries200;
 static TargetSeries gSeries250;
 static TargetSeries gSeries300;
+
+
+static TargetSeries *GetLevel1Series(UWORD targetIndex) {
+    switch (targetIndex) {
+        case 0: return &gSeries050;
+        case 1: return &gSeries100;
+        case 2: return &gSeries150;
+        case 3: return &gSeries200;
+        case 4: return &gSeries250;
+        default: return &gSeries300;
+    }
+}
+
 
 static TargetSeries *GetSeriesByDistance(TargetDistance distance) {
     switch (distance) {
@@ -207,7 +227,8 @@ static ULONG NextRandom(void) {
 }
 
 static BOOL ConsumeTargetBudget(void) {
-    if (gSpawnedTargets >= DEMO_TARGET_LIMIT) {
+    if (!LevelManager_GetConfig()->sequentialDistances &&
+        gSpawnedTargets >= LevelManager_GetConfig()->targetCount) {
         return FALSE;
     }
 
@@ -635,7 +656,8 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, WORD sightOffsetX, W
 
     s->hit = TRUE;
     s->visible = FALSE;
-    s->respawnAllowed = (gKilledTargets >= TARGET_RESPAWN_AFTER_KILLS) ? TRUE : FALSE;
+    s->respawnAllowed = LevelManager_GetConfig()->sequentialDistances ? FALSE :
+        ((gKilledTargets >= TARGET_RESPAWN_AFTER_KILLS) ? TRUE : FALSE);
     DateStamp(&s->startStamp);
     return TRUE;
 }
@@ -751,12 +773,22 @@ BOOL TargetsHandler_Init(void) {
     gSpawnedTargets = 0;
     gKilledTargets = 0;
     NextRandom();
-    SpawnSeries(&gSeries050, SERIES050_DELAY);
-    SpawnSeries(&gSeries100, SERIES100_DELAY);
-    SpawnSeries(&gSeries150, SERIES150_DELAY);
-    SpawnSeries(&gSeries200, SERIES200_DELAY);
-    SpawnSeries(&gSeries250, SERIES250_DELAY);
-    SpawnSeries(&gSeries300, SERIES300_DELAY);
+    gLevel1PendingSpawn = FALSE;
+    gLevel1DistanceIndex = 0;
+    gLevel1ShotsAtDistance = 0;
+    gLevel1HitsAtDistance = 0;
+    gLevel1Failed = FALSE;
+    gLevel1Completed = FALSE;
+    if (LevelManager_GetConfig()->sequentialDistances) {
+        SpawnSeries(GetLevel1Series(0), 0);
+    } else {
+        SpawnSeries(&gSeries050, SERIES050_DELAY);
+        SpawnSeries(&gSeries100, SERIES100_DELAY);
+        SpawnSeries(&gSeries150, SERIES150_DELAY);
+        SpawnSeries(&gSeries200, SERIES200_DELAY);
+        SpawnSeries(&gSeries250, SERIES250_DELAY);
+        SpawnSeries(&gSeries300, SERIES300_DELAY);
+    }
     gReady = TRUE;
     return TRUE;
 }
@@ -810,12 +842,33 @@ void TargetsHandler_Reset(void) {
     gKilledTargets = 0;
     NextRandom();
 
-    SpawnSeries(&gSeries050, SERIES050_DELAY);
-    SpawnSeries(&gSeries100, SERIES100_DELAY);
-    SpawnSeries(&gSeries150, SERIES150_DELAY);
-    SpawnSeries(&gSeries200, SERIES200_DELAY);
-    SpawnSeries(&gSeries250, SERIES250_DELAY);
-    SpawnSeries(&gSeries300, SERIES300_DELAY);
+    /* Clear stale targets when switching between Challenge and Full Course. */
+    {
+        TargetSeries *all[6] = {&gSeries050, &gSeries100, &gSeries150,
+                                &gSeries200, &gSeries250, &gSeries300};
+        UWORD i;
+        for (i = 0; i < 6; ++i) {
+            all[i]->visible = FALSE;
+            all[i]->hit = FALSE;
+            all[i]->respawnAllowed = FALSE;
+        }
+    }
+    gLevel1PendingSpawn = FALSE;
+    gLevel1DistanceIndex = 0;
+    gLevel1ShotsAtDistance = 0;
+    gLevel1HitsAtDistance = 0;
+    gLevel1Failed = FALSE;
+    gLevel1Completed = FALSE;
+    if (LevelManager_GetConfig()->sequentialDistances) {
+        SpawnSeries(GetLevel1Series(0), 0);
+    } else {
+        SpawnSeries(&gSeries050, SERIES050_DELAY);
+        SpawnSeries(&gSeries100, SERIES100_DELAY);
+        SpawnSeries(&gSeries150, SERIES150_DELAY);
+        SpawnSeries(&gSeries200, SERIES200_DELAY);
+        SpawnSeries(&gSeries250, SERIES250_DELAY);
+        SpawnSeries(&gSeries300, SERIES300_DELAY);
+    }
 }
 
 void TargetsHandler_ToggleSlot(UWORD slot) {
@@ -901,6 +954,17 @@ void TargetsHandler_Tick(void) {
     TickSeries(&gSeries200);
     TickSeries(&gSeries250);
     TickSeries(&gSeries300);
+    if (LevelManager_GetConfig()->sequentialDistances && gLevel1PendingSpawn &&
+        !gLevel1Failed && !gLevel1Completed) {
+        TargetSeries *next = GetLevel1Series(gLevel1DistanceIndex);
+        TargetSeries *previous = gLevel1DistanceIndex > 0
+            ? GetLevel1Series((UWORD)(gLevel1DistanceIndex - 1)) : NULL;
+        /* Wait for the previous hit animation, including at distance changes. */
+        if (!next->hit && (!previous || !previous->hit)) {
+            gLevel1PendingSpawn = FALSE;
+            SpawnSeries(next, 0);
+        }
+    }
 }
 
 void TargetsHandler_Draw(struct RastPort *rp) {
@@ -918,7 +982,10 @@ void TargetsHandler_Draw(struct RastPort *rp) {
 
 
 BOOL TargetsHandler_IsComplete(void) {
-    return (BOOL)(gReady && gKilledTargets >= DEMO_TARGET_LIMIT);
+    if (LevelManager_GetConfig()->sequentialDistances) {
+        return (BOOL)(gReady && gLevel1Completed);
+    }
+    return (BOOL)(gReady && gKilledTargets >= LevelManager_GetConfig()->targetCount);
 }
 
 void TargetsHandler_SetPaused(BOOL paused) {
@@ -1033,4 +1100,47 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffset
     }
 
     return FALSE;
+}
+/* Called exactly once for each fired round in Level 1, including misses. */
+void TargetsHandler_RecordShot(BOOL hit) {
+    TargetSeries *current;
+    if (!gReady || !LevelManager_GetConfig()->sequentialDistances ||
+        gLevel1Failed || gLevel1Completed) {
+        return;
+    }
+    current = GetLevel1Series(gLevel1DistanceIndex);
+    if (!hit) {
+        current->visible = FALSE;
+        current->hit = FALSE;
+        current->respawnAllowed = FALSE;
+    }
+    gLevel1ShotsAtDistance++;
+    if (hit) {
+        gLevel1HitsAtDistance++;
+    }
+    if (gLevel1HitsAtDistance >= 2) {
+        /* Two hits qualify this distance; skip its unused third target. */
+        gLevel1DistanceIndex++;
+        gLevel1ShotsAtDistance = 0;
+        gLevel1HitsAtDistance = 0;
+        if (gLevel1DistanceIndex >= 6) {
+            gLevel1Completed = TRUE;
+            gLevel1PendingSpawn = FALSE;
+            return;
+        }
+    } else if (gLevel1ShotsAtDistance >= 3) {
+        /* Refire: repeat a fresh three-target group at the same distance.
+         * The player advances only after two hits within one group. */
+        gLevel1ShotsAtDistance = 0;
+        gLevel1HitsAtDistance = 0;
+    }
+    gLevel1PendingSpawn = TRUE;
+}
+
+BOOL TargetsHandler_IsUnqualified(void) {
+    return (BOOL)(gReady && LevelManager_GetConfig()->sequentialDistances && gLevel1Failed);
+}
+
+UWORD TargetsHandler_GetPresentedCount(void) {
+    return gSpawnedTargets;
 }

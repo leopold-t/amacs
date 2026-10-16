@@ -16,6 +16,7 @@
 #include "soundHandler.h"
 #include "targetScoring.h"
 #include "targetsHandler.h"
+#include "levelManager.h"
 
 extern BOOL Input_Left(void);
 extern BOOL Input_Right(void);
@@ -190,7 +191,6 @@ static void RangeDiscardInactiveFireEdges(void) {
 #define HUD_FINAL_SCORE_Y (HUD_PAUSED_Y + 13)
 #define HUD_ACCURACY_Y (HUD_FINAL_SCORE_Y + 13)
 #define HUD_MAGAZINE_COUNT 2
-#define HUD_MAX_POSSIBLE_SCORE (HUD_MAGAZINE_COUNT * HUD_MAGAZINE_SIZE * SCORE_EXCELLENT)
 #define HUD_AMMO_Y HUD_TEXT_Y
 #define HUD_TEXT_PEN 25
 #define HUD_SHADOW_PEN 31
@@ -319,7 +319,7 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
 
     state->ringX = (SCR_W - REARSIGHT_W) / 2;
     state->ringY = (SCR_H - REARSIGHT_H) / 2;
-    state->ammoCount = HUD_MAGAZINE_COUNT * HUD_MAGAZINE_SIZE;
+    state->ammoCount = LevelManager_GetConfig()->magazineSize * LevelManager_GetConfig()->magazineCount;
     state->reloadState = RELOAD_STATE_NONE;
     state->reloadNeedsNeutral = FALSE;
     state->reloadSpeechStampValid = FALSE;
@@ -611,7 +611,15 @@ static UWORD CalculateTimeBonus(UWORD totalTime, UWORD accuracyPercent) {
 }
 
 static UWORD ScaleSummaryScore(UWORD score) {
-    ULONG scaled = (ULONG)score * 20UL;
+    UWORD count = TargetsHandler_GetPresentedCount();
+    ULONG scaled;
+
+    /* Normalize all courses to the original ten-target scoring scale.
+     * Rounding is applied only after scaling to avoid early truncation. */
+    if (count == 0) {
+        return 0;
+    }
+    scaled = ((ULONG)score * 20UL * 10UL + count / 2UL) / count;
 
     if (scaled > 65535UL) {
         return 65535;
@@ -697,7 +705,15 @@ static UWORD BuildAccuracyText(char *buf, UWORD value) {
 }
 
 static UWORD CalculateAccuracyPercent(UWORD score) {
-    ULONG percent = ((ULONG)score * 100UL) / (ULONG)HUD_MAX_POSSIBLE_SCORE;
+    UWORD count = TargetsHandler_GetPresentedCount();
+    ULONG maximum;
+    ULONG percent;
+
+    if (count == 0) {
+        return 0;
+    }
+    maximum = (ULONG)count * SCORE_EXCELLENT;
+    percent = ((ULONG)score * 100UL) / maximum;
 
     if (percent > 100UL) {
         percent = 100UL;
@@ -1128,7 +1144,7 @@ static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
 }
 
 static void DrawLevelTitle(struct RastPort *rp, struct TextFont *font) {
-    static const char gLevelTitle[] = "TEN SHOT CHALLENGE";
+    const char *gLevelTitle = LevelManager_GetConfig()->title;
     UWORD len;
     WORD width;
     WORD x;
@@ -1197,11 +1213,13 @@ static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD amm
         return;
     }
 
-    if (ammoCount > HUD_AMMO_MAX) {
-        ammoCount = HUD_AMMO_MAX;
+    const LevelConfig *cfg = LevelManager_GetConfig();
+    UWORD maxAmmo = (UWORD)(cfg->magazineCount * cfg->magazineSize);
+    if (ammoCount > maxAmmo) {
+        ammoCount = maxAmmo;
     }
 
-    blocksVisible = (UWORD)((ammoCount + (HUD_MAGAZINE_SIZE - 1)) / HUD_MAGAZINE_SIZE);
+    blocksVisible = (UWORD)((ammoCount + cfg->magazineSize - 1) / cfg->magazineSize);
 
     if (font) {
         SetFont(rp, font);
@@ -1212,7 +1230,7 @@ static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD amm
 
     /* Keep the former right-hand magazine in its original position.  The
      * former left-hand magazine is stacked directly below it. */
-    for (i = 0; i < HUD_AMMO_BLOCK_COUNT; i++) {
+    for (i = 0; i < LevelManager_GetConfig()->magazineCount; i++) {
         const char *block = (i < blocksVisible) ? gFullBlock : gEmptyBlock;
         DrawTextWithShadow(rp, font, x, (WORD)(HUD_AMMO_Y + (i * 13)), HUD_TEXT_PEN,
                            block, len);
@@ -1471,7 +1489,8 @@ static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL
     }
 
     DrawCenteredTextWithShadow(rp, font, ENDROUND_TITLE_Y, HUD_TEXT_PEN, HUD_SHADOW_PEN,
-                               levelCompleted ? "LEVEL COMPLETED" : "OUT OF AMMO");
+                               levelCompleted ? "LEVEL COMPLETED" :
+                               (TargetsHandler_IsUnqualified() ? "UNQUALIFIED" : "OUT OF AMMO"));
 
     DrawHitCounter(rp, font);
 
@@ -1863,9 +1882,11 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     }
 
                     resultFlashTicks = RESULT_FLASH_TICKS;
+                    TargetsHandler_RecordShot(lastShotHit);
                     targetsComplete = TargetsHandler_IsComplete();
 
-                    if (targetsComplete || ammoCount == 0) {
+                    if (targetsComplete ||
+                        (!LevelManager_GetConfig()->sequentialDistances && ammoCount == 0)) {
                         levelCompleted = targetsComplete;
                         state.finalShotValid = TRUE;
                         state.finalShotHitSnap = lastShotHit;
@@ -1874,6 +1895,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         if (outSummary) {
                             UWORD totalTime = (UWORD)ElapsedSecondsSince(&state.roundStartStamp);
 
+                            outSummary->levelQualified = targetsComplete;
                             outSummary->score = ScaleSummaryScore(state.sessionScore);
                             outSummary->accuracy = CalculateAccuracyPercent(state.sessionScore);
                             outSummary->totalTime = totalTime;
@@ -1891,7 +1913,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                         DateStamp(&finalScoreStamp);
                         finalScoreStampValid = TRUE;
-                    } else if ((ammoCount % HUD_MAGAZINE_SIZE) == 0) {
+                    } else if (ammoCount == 0 ||
+                               (ammoCount % LevelManager_GetConfig()->magazineSize) == 0) {
                         StartReloadPrompt(&state);
                         shotNeedsRelease = TRUE;
                     }
@@ -1946,7 +1969,17 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             }
 
             if (!roundEnding && !showFinalScore) {
-                UpdateReloadFinishing(&state);
+                {
+                    UBYTE previousReloadState = reloadState;
+                    UpdateReloadFinishing(&state);
+                    /* Level 1 has unlimited spare magazines: keep the manual
+                     * reload gesture, then seat a fresh 30-round magazine. */
+                    if (LevelManager_GetConfig()->sequentialDistances &&
+                        previousReloadState == RELOAD_STATE_FINISHING &&
+                        reloadState == RELOAD_STATE_NONE && ammoCount == 0) {
+                        ammoCount = LevelManager_GetConfig()->magazineSize;
+                    }
+                }
                 UpdateReloadSpeech(&state);
             }
 

@@ -201,13 +201,14 @@ static const UWORD SummaryPaletteRGB4[32] = {
  * treatment, gradient frame and Topaz text. */
 #define MENU_TEXT_PEN TRAINING_INFO_TEXT_PEN
 #define MENU_SHADOW_PEN TRAINING_INFO_SHADOW_PEN
-#define MENU_LINE1_Y 91
-#define MENU_LINE2_Y 115
-#define MENU_LINE3_Y 139
+#define MENU_LINE1_Y 82
+#define MENU_LINE2_Y 104
+#define MENU_LINE3_Y 126
+#define MENU_LINE4_Y 148
 #define MENU_TEXT_AREA_X (TRAINING_INFO_PANEL_X1 + TRAINING_INFO_PANEL_BORDER)
-#define MENU_TEXT_AREA_Y 84
+#define MENU_TEXT_AREA_Y 74
 #define MENU_TEXT_AREA_W ((TRAINING_INFO_PANEL_X2 - TRAINING_INFO_PANEL_BORDER) - MENU_TEXT_AREA_X + 1)
-#define MENU_TEXT_AREA_H 66
+#define MENU_TEXT_AREA_H 85
 #define MENU_VISIBLE_TICKS 35
 #define MENU_HIDDEN_TICKS 15
 
@@ -300,6 +301,7 @@ typedef enum { WAIT_TIMEOUT = 0, WAIT_ADVANCE, WAIT_ESC } WaitResult;
 typedef enum {
     MENU_RESULT_QUIT = 0,
     MENU_RESULT_TEN_SHOT,
+    MENU_RESULT_FULL_COURSE,
     MENU_RESULT_ZEROING,
     MENU_RESULT_SETTINGS
 } MenuResult;
@@ -2282,7 +2284,7 @@ static void DrawLevelInfoFrame(struct RastPort *rp) {
     }
 }
 
-static BOOL ShowLevelInfoScreen(void) {
+static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
     struct Screen *scr;
     struct RastPort *rp;
     struct TextFont *font = NULL;
@@ -2308,18 +2310,33 @@ static BOOL ShowLevelInfoScreen(void) {
 
     font = OpenFont(&gSummaryFontAttr);
 
-    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
-                                   LEVEL_INFO_SHADOW_PEN, "TEN SHOT CHALLENGE");
-    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
-                                   LEVEL_INFO_SHADOW_PEN, "10 TARGETS");
-    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
-                                   LEVEL_INFO_SHADOW_PEN, "50 TO 300 METERS");
-    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
-                                   LEVEL_INFO_SHADOW_PEN, "TARGETS ARE UNTIMED");
-    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
-                                   LEVEL_INFO_SHADOW_PEN, "TEN ROUNDS");
-    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
-                                   LEVEL_INFO_SHADOW_PEN, "TWO 5-ROUND MAGAZINES");
+    if (fullCoursePreview) {
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "LEVEL 1");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "INTRODUCTION");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "TARGETS ARE UNTIMED");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "HIT 2 OF 3 TARGETS");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "AT EACH RANGE");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "AMMO: 30 RDS, ONE MAG");
+    } else {
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "TEN SHOT CHALLENGE");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "10 TARGETS");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "50 TO 300 METERS");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "TARGETS ARE UNTIMED");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "TEN ROUNDS");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "TWO 5-ROUND MAGAZINES");
+    }
 
     /* Match Summary's prompt treatment: yellow text, dark one-pixel shadow,
      * centered at the same vertical position. */
@@ -2336,6 +2353,38 @@ static BOOL ShowLevelInfoScreen(void) {
     }
 
     return (waitResult == WAIT_ADVANCE) ? TRUE : FALSE;
+}
+
+/* Shown only after a failed FULL COURSE attempt, before the level briefing. */
+static BOOL ShowLevelRefireScreen(void) {
+    struct Screen *scr = Gfx_GetScreen();
+    struct RastPort *rp;
+    struct TextFont *font;
+    WaitResult result;
+
+    if (!scr || !scr->RastPort.BitMap) return FALSE;
+    rp = &scr->RastPort;
+    Gfx_FadeOutCurrentScreenToBlack(PerformancePaletteRGB4, 32);
+    SetRast(rp, LEVEL_INFO_BACKGROUND_PEN);
+    SetAPen(rp, LEVEL_INFO_PANEL_PEN);
+    RectFill(rp, LEVEL_INFO_FRAME_X1 + 7, LEVEL_INFO_FRAME_Y1 + 7,
+             LEVEL_INFO_FRAME_X2 - 7, LEVEL_INFO_FRAME_Y2 - 7);
+    DrawLevelInfoFrame(rp);
+    font = OpenFont(&gSummaryFontAttr);
+    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y,
+                                   LEVEL_INFO_TEXT_PEN, LEVEL_INFO_SHADOW_PEN,
+                                   "STANDARD NOT MET");
+    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y,
+                                   LEVEL_INFO_TEXT_PEN, LEVEL_INFO_SHADOW_PEN,
+                                   "PREPARE TO REFIRE");
+    DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_PROMPT_Y,
+                                   LEVEL_INFO_PROMPT_PEN, LEVEL_INFO_SHADOW_PEN,
+                                   "PULL TRIGGER TO CONTINUE");
+    WaitBlit();
+    Gfx_FadeInCurrentScreenFromBlack(PerformancePaletteRGB4, 32);
+    result = WaitForAdvanceOnly();
+    if (font) CloseFont(font);
+    return result == WAIT_ADVANCE;
 }
 
 static BOOL InitSummaryBackBuffer(struct BitMap *bm, struct RastPort *rp, UWORD width, UWORD height,
@@ -2387,7 +2436,8 @@ static void FreeSummaryBackBuffer(struct BitMap *bm, UWORD width, UWORD height) 
     }
 }
 
-static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
+static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePreview,
+                              BOOL *outStandardMet) {
     typedef struct SummaryStep {
         const char *distanceText;
         const AmacsBob *bob;
@@ -2431,6 +2481,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     WORD tableY;
     WaitResult waitResult;
     BOOL rankSpeechPlayed = FALSE;
+    BOOL fullCourseStandardMet = FALSE;
 
     memset(&summaryBM, 0, sizeof(summaryBM));
     memset(&summaryRP, 0, sizeof(summaryRP));
@@ -2492,6 +2543,17 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
     perf250 = TargetScoring_GetPerformance(250);
     perf300 = TargetScoring_GetPerformance(300);
     perfTotal = (UWORD)(perf050 + perf100 + perf150 + perf200 + perf250 + perf300);
+
+    /* Level completion and shot placement are independent requirements.
+     * The overall shooting rank remains exclusive to TEN SHOT CHALLENGE. */
+    fullCourseStandardMet = (summary && summary->levelQualified &&
+                             hitsTotal > 0 &&
+                             (ULONG)perfTotal * 100UL >
+                                 (ULONG)hitsTotal * 5UL * 40UL);
+
+    if (outStandardMet) {
+        *outStandardMet = fullCourseStandardMet;
+    }
 
     steps[0].distanceText = "50 Meter";
     steps[0].bob = scoringFTypeLoaded ? &scoringFTypeBob : NULL;
@@ -2560,6 +2622,24 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_DISTANCE_Y,
                                            SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN,
                                            steps[stepIndex].distanceText);
+
+            if (fullCoursePreview) {
+                /* Per-range feedback is only shown in FULL COURSE.  The
+                 * overall SHOT LOC standard is evaluated on the final page. */
+                UWORD rangeHits = 0;
+                switch (stepIndex) {
+                    case 0: rangeHits = hits050; break;
+                    case 1: rangeHits = hits100; break;
+                    case 2: rangeHits = hits150; break;
+                    case 3: rangeHits = hits200; break;
+                    case 4: rangeHits = hits250; break;
+                    case 5: rangeHits = hits300; break;
+                }
+                DrawCenteredTextWithShadowMain(&summaryRP, font, 177,
+                                               SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN,
+                                               rangeHits >= 2 ? "STANDARD MET"
+                                                              : "STANDARD NOT MET");
+            }
         } else {
             DrawCenteredTextWithShadowMain(&summaryRP, font, SUMMARY_TITLE_Y, 31, 24, "SUMMARY");
             DrawRightAlignedTextWithShadowMain(&summaryRP, font, SUMMARY_TABLE_HITS_X,
@@ -2674,7 +2754,14 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
                                      SUMMARY_SHOT_LOCATION_Y, 31, 24, line,
                                      (UWORD)strlen(line));
 
-            BuildSummaryRankLine(line, acc);
+            if (fullCoursePreview) {
+                /* FULL COURSE levels show qualification, not a shooting rank.
+                 * Final rank is reserved for the future Level 9 summary. */
+                strcpy(line, fullCourseStandardMet
+                             ? "STANDARD MET" : "STANDARD NOT MET");
+            } else {
+                BuildSummaryRankLine(line, acc);
+            }
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_RIGHT_X, SUMMARY_RANK_Y,
                                      SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN, line,
                                      (UWORD)strlen(line));
@@ -2695,7 +2782,13 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         }
 
         if (stepIndex >= 6 && !rankSpeechPlayed) {
-            if (acc >= 90) {
+            if (fullCoursePreview) {
+                if (fullCourseStandardMet) {
+                    Sound_PlaySpeechWellDone();
+                } else {
+                    Sound_PlaySpeechUnacceptable();
+                }
+            } else if (acc >= 90) {
                 Sound_PlaySpeechExcellent();
             } else if (acc >= 75) {
                 Sound_PlaySpeechSuperb();
@@ -2748,7 +2841,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
         BOOL alreadyBlack = FALSE;
         BOOL playFanfare = FALSE;
 
-        if (HiScore_IsQualified(totalScore)) {
+        if (!fullCoursePreview && HiScore_IsQualified(totalScore)) {
             if (!ShowNewHiScoreEntryScreen(totalScore)) {
                 return FALSE;
             }
@@ -2757,7 +2850,21 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary) {
             playFanfare = TRUE;
         }
 
-        if (!ShowTitleScorePlaceholderScreen(alreadyBlack, playFanfare)) {
+        if (fullCoursePreview && fullCourseStandardMet) {
+            struct Screen *titleScreen;
+            struct RastPort *titleRP;
+            Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
+            titleScreen = Gfx_GetScreen();
+            if (!titleScreen || !titleScreen->RastPort.BitMap) return FALSE;
+            titleRP = &titleScreen->RastPort;
+            if (!LoadRawImageToRastPort(TITLE_FILE, titleRP, LO_WIDTH, LO_HEIGHT)) return FALSE;
+            DrawGeneratedTitleText(titleRP);
+            WaitBlit();
+            Gfx_FadeInCurrentScreenFromBlack(titlePalette, 32);
+        } else if (fullCoursePreview) {
+            /* Failed course attempt: go directly to the level briefing. */
+            Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
+        } else if (!ShowTitleScorePlaceholderScreen(alreadyBlack, playFanfare)) {
             return FALSE;
         }
     }
@@ -3976,79 +4083,61 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
 }
 
 static WORD MainMenuLineY(UWORD selected) {
-    if (selected == 0) return MENU_LINE1_Y;
-    if (selected == 1) return MENU_LINE2_Y;
-    return MENU_LINE3_Y;
+    static const WORD rows[4] = { MENU_LINE1_Y, MENU_LINE2_Y, MENU_LINE3_Y, MENU_LINE4_Y };
+    return rows[selected < 4 ? selected : 3];
 }
 
-/* Redraw only the active row during blinking.  Restoring the complete menu
- * text area for every blink can briefly disturb neighbouring rows on slower
- * machines. */
+/* Restore only the selected line during blinking. */
 static void RestoreMenuLine(struct RastPort *rp, struct BitMap *background, WORD y) {
     WORD h;
     WORD srcY;
-
     if (!rp || !background || !rp->BitMap) return;
     h = (WORD)((rp->TxHeight ? rp->TxHeight : 8) + 2);
     srcY = (WORD)(y - MENU_TEXT_AREA_Y);
     if (srcY < 0) srcY = 0;
     if (srcY + h > MENU_TEXT_AREA_H) h = (WORD)(MENU_TEXT_AREA_H - srcY);
     if (h <= 0) return;
-
     BltBitMap(background, 0, srcY, rp->BitMap, MENU_TEXT_AREA_X,
               (WORD)(MENU_TEXT_AREA_Y + srcY), MENU_TEXT_AREA_W, h,
               0xC0, 0xFF, NULL);
     WaitBlit();
 }
 
+static const char *MainMenuItemText(UWORD selected, BOOL active) {
+    static const char *activeLines[4] = {
+        "> FULL COURSE", "> TEN SHOT CHALLENGE", "> ZEROING", "> SETTINGS"
+    };
+    static const char *inactiveLines[4] = {
+        "  FULL COURSE", "  TEN SHOT CHALLENGE", "  ZEROING", "  SETTINGS"
+    };
+    if (selected >= 4) selected = 3;
+    return active ? activeLines[selected] : inactiveLines[selected];
+}
+
 static void BlinkMainMenuItem(struct RastPort *rp, struct TextFont *font,
                               UWORD selected, BOOL visible,
                               struct BitMap *background) {
-    const char *line;
     WORD y = MainMenuLineY(selected);
-
-    if (selected == 0) line = "> TEN SHOT CHALLENGE";
-    else if (selected == 1) line = "> ZEROING";
-    else line = "> SETTINGS";
-
     RestoreMenuLine(rp, background, y);
     if (visible) {
         DrawCenteredTextWithShadowMain(rp, font, y, MENU_TEXT_PEN,
-                                       MENU_SHADOW_PEN, line);
+                                       MENU_SHADOW_PEN, MainMenuItemText(selected, TRUE));
     }
 }
 
 static void DrawMainMenuItems(struct RastPort *rp, struct TextFont *font,
                               UWORD selected, BOOL selectedVisible,
                               struct BitMap *background) {
-    const char *line1 = (selected == 0) ? "> TEN SHOT CHALLENGE" : "  TEN SHOT CHALLENGE";
-    const char *line2 = (selected == 1) ? "> ZEROING" : "  ZEROING";
-    const char *line3 = (selected == 2) ? "> SETTINGS" : "  SETTINGS";
-
-    if (!rp || !background || !rp->BitMap) {
-        return;
-    }
-
-    /* Restore the clean dimmed camouflage beneath both rows before redrawing.
-     * This makes the 0.7/0.3 s blink remove both glyphs and their shadow without
-     * flattening the camouflage or leaving text ghosts behind. */
+    UWORD i;
+    if (!rp || !background || !rp->BitMap) return;
     BltBitMap(background, 0, 0, rp->BitMap, MENU_TEXT_AREA_X, MENU_TEXT_AREA_Y,
               MENU_TEXT_AREA_W, MENU_TEXT_AREA_H, 0xC0, 0xFF, NULL);
     WaitBlit();
-
-    if (selected != 0 || selectedVisible) {
-        DrawCenteredTextWithShadowMain(rp, font, MENU_LINE1_Y, MENU_TEXT_PEN,
-                                       MENU_SHADOW_PEN, line1);
-    }
-
-    if (selected != 1 || selectedVisible) {
-        DrawCenteredTextWithShadowMain(rp, font, MENU_LINE2_Y, MENU_TEXT_PEN,
-                                       MENU_SHADOW_PEN, line2);
-    }
-
-    if (selected != 2 || selectedVisible) {
-        DrawCenteredTextWithShadowMain(rp, font, MENU_LINE3_Y, MENU_TEXT_PEN,
-                                       MENU_SHADOW_PEN, line3);
+    for (i = 0; i < 4; i++) {
+        if (i != selected || selectedVisible) {
+            DrawCenteredTextWithShadowMain(rp, font, MainMenuLineY(i), MENU_TEXT_PEN,
+                MENU_SHADOW_PEN, MainMenuItemText(i, i == selected));
+        }
     }
 }
 
@@ -4435,9 +4524,9 @@ static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
 
         if ((upNow && !prevUp) || (downNow && !prevDown)) {
             if (upNow && !prevUp) {
-                selected = (selected == 0) ? 2 : (UWORD)(selected - 1);
+                selected = (selected == 0) ? 3 : (UWORD)(selected - 1);
             } else {
-                selected = (selected == 2) ? 0 : (UWORD)(selected + 1);
+                selected = (selected == 3) ? 0 : (UWORD)(selected + 1);
             }
 
             /* The row that just became inactive is redrawn steadily.  The new
@@ -4464,7 +4553,7 @@ static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
                     CloseFont(font);
                 }
                 FreeSummaryBackBuffer(&menuBackground, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
-                return MENU_RESULT_TEN_SHOT;
+                return MENU_RESULT_FULL_COURSE;
             }
 
             if (font) {
@@ -4472,7 +4561,8 @@ static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
                 CloseFont(font);
             }
             FreeSummaryBackBuffer(&menuBackground, MENU_TEXT_AREA_W, MENU_TEXT_AREA_H);
-            return (selected == 1) ? MENU_RESULT_ZEROING : MENU_RESULT_SETTINGS;
+            return (selected == 1) ? MENU_RESULT_TEN_SHOT :
+                   (selected == 2) ? MENU_RESULT_ZEROING : MENU_RESULT_SETTINGS;
         }
 
         blinkTicks--;
@@ -4770,6 +4860,7 @@ typedef enum { ATTR_TRAINING_INFO = 0, ATTR_FUNDAMENTALS } AttractScreen;
 
 int main(void) {
     BOOL engaged = FALSE;
+    BOOL fullCoursePreview = FALSE;
     UWORD currentLoPal[32];
     UWORD nextLoPal[32];
 
@@ -4922,7 +5013,9 @@ show_title:
                 }
             }
 
-            if (menuResult == MENU_RESULT_TEN_SHOT) {
+            if (menuResult == MENU_RESULT_TEN_SHOT || menuResult == MENU_RESULT_FULL_COURSE) {
+                fullCoursePreview = (menuResult == MENU_RESULT_FULL_COURSE);
+                LevelManager_SetMode(fullCoursePreview ? LEVEL_MANAGER_MODE_LEVEL1 : LEVEL_MANAGER_MODE_DEMO);
                 engaged = TRUE;
                 /* Reuse the existing pre-range path beginning at Target Ranges. */
                 attr = ATTR_FUNDAMENTALS;
@@ -5135,9 +5228,11 @@ show_title:
                 }
             }
 
+            /* Re-enter here after an unsuccessful FULL COURSE level. */
+        retry_full_course_level:
             /* Generated level briefing: no bitmap asset, just the Performance
              * palette, Topaz text and vector-drawn frame. */
-            if (!ShowLevelInfoScreen()) {
+            if (!ShowLevelInfoScreen(fullCoursePreview)) {
                 goto exit_ok;
             }
 
@@ -5145,6 +5240,11 @@ show_title:
             Sound_StopSpeechLoop(TRUE);
             Sound_PlayNarratorPrepareToFire();
 
+            if (fullCoursePreview) {
+                for (int i = 0; i < 32; i++) {
+                    currentLoPal[i] = PerformancePaletteRGB4[i];
+                }
+            }
             if (!Gfx_CrossFadeToImage(RANGE_FILE, currentLoPal, 32, rangePalette, 32)) {
                 goto fail;
             }
@@ -5181,8 +5281,25 @@ show_title:
                     goto show_title;
                 }
 
-                if (!ShowSummaryScreen(&summaryData)) {
-                    goto exit_ok;
+                {
+                    BOOL standardMet = FALSE;
+                    if (!ShowSummaryScreen(&summaryData, fullCoursePreview, &standardMet)) {
+                        goto exit_ok;
+                    }
+                    if (fullCoursePreview && !standardMet) {
+                        /* Only the failed attempt is discarded. Earlier
+                         * qualified course levels must remain intact when
+                         * multi-level progression is added. The next range
+                         * initialization resets hit/scoring counters. */
+                        IS_NEW_GAME_SESSION = TRUE;
+                        if (!ShowLevelRefireScreen()) {
+                            goto exit_ok;
+                        }
+                        for (int i = 0; i < 32; i++) {
+                            currentLoPal[i] = PerformancePaletteRGB4[i];
+                        }
+                        goto retry_full_course_level;
+                    }
                 }
 
                 for (int i = 0; i < 32; i++) {

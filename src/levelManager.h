@@ -11,6 +11,17 @@ typedef enum LevelManagerMode {
     LEVEL_MANAGER_MODE_LEVEL1
 } LevelManagerMode;
 
+typedef struct LevelConfig {
+    UWORD targetCount;
+    UWORD requiredHits;
+    UWORD magazineSize;
+    UWORD magazineCount;
+    BOOL sequentialDistances;
+    BOOL untimedTargets;
+    const char *title;
+} LevelConfig;
+
+const LevelConfig *LevelManager_GetConfig(void);
 void LevelManager_Init(void);
 void LevelManager_Shutdown(void);
 void LevelManager_SetMode(LevelManagerMode mode);

@@ -55,6 +55,9 @@ void TargetsHandler_SetPaused(BOOL paused);
 BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffsetY,
                              UWORD *hitDelayTicks, UBYTE *hitScore, UBYTE *hitVolume);
 BOOL TargetsHandler_IsComplete(void);
+BOOL TargetsHandler_IsUnqualified(void);
+void TargetsHandler_RecordShot(BOOL hit);
+UWORD TargetsHandler_GetPresentedCount(void);
 UWORD TargetsHandler_GetSlotCount(TargetDistance distance);
 BOOL TargetsHandler_SelectSlot(TargetDistance distance, UWORD slotIndex);
 BOOL TargetsHandler_GetTargetInfo(TargetDistance distance, TargetInfo *outInfo);

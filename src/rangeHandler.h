@@ -33,6 +33,7 @@ typedef struct RangeSummaryData {
     BOOL summaryLastShotHit;
     UBYTE summaryLastShotScore;
     BOOL abortedToTitle;
+    BOOL levelQualified;
 } RangeSummaryData;
 
 /* Runs the range loop with a movable front sight.
