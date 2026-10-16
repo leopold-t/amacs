@@ -215,17 +215,18 @@ static const UWORD SummaryPaletteRGB4[32] = {
  * uses a larger dimmed panel so the future sight picture and trajectory graph
  * can be added without changing the overall layout. */
 #define ZEROING_PANEL_X1 18
-#define ZEROING_PANEL_Y1 62
+#define ZEROING_PANEL_Y1 39
 #define ZEROING_PANEL_X2 301
-#define ZEROING_PANEL_Y2 209
+#define ZEROING_PANEL_Y2 217
 #define ZEROING_PANEL_BORDER 7
 #define ZEROING_TEXT_PEN TRAINING_INFO_TEXT_PEN
 #define ZEROING_SHADOW_PEN TRAINING_INFO_SHADOW_PEN
-#define ZEROING_TITLE_Y 81
-#define ZEROING_LINE1_Y 98
-#define ZEROING_LINE2_Y 115
+#define ZEROING_TITLE_Y 56
+#define ZEROING_RETURN_PROMPT_Y 194
+#define ZEROING_LINE1_Y 78
+#define ZEROING_LINE2_Y 95
 #define ZEROING_TEXT_AREA_X 48
-#define ZEROING_TEXT_AREA_Y 91
+#define ZEROING_TEXT_AREA_Y 71
 #define ZEROING_TEXT_AREA_W 224
 #define ZEROING_TEXT_AREA_H 36
 
@@ -237,10 +238,10 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define FRONT_SIGHT_ZERO_W 84
 #define FRONT_SIGHT_ZERO_H 57
 #define FRONT_SIGHT_ZERO_X 30
-#define FRONT_SIGHT_ZERO_Y 137
+#define FRONT_SIGHT_ZERO_Y 122
 #define ZEROING_TARGET_PEN 22
 #define ZEROING_TARGET_AREA_X 68
-#define ZEROING_TARGET_AREA_Y 139
+#define ZEROING_TARGET_AREA_Y 124
 #define ZEROING_TARGET_AREA_W 7
 #define ZEROING_TARGET_AREA_H 8
 
@@ -249,19 +250,19 @@ static const UWORD SummaryPaletteRGB4[32] = {
  * perspective-corrected gameplay BZO offsets.  Ballistic inch values are
  * pre-scaled at 5 px per inch for plotting. */
 #define ZEROING_GRAPH_AXIS_X 134
-#define ZEROING_GRAPH_AXIS_Y 161
+#define ZEROING_GRAPH_AXIS_Y 146
 #define ZEROING_GRAPH_AXIS_X2 284
-#define ZEROING_GRAPH_AXIS_Y1 132
-#define ZEROING_GRAPH_AXIS_Y2 193
+#define ZEROING_GRAPH_AXIS_Y1 117
+#define ZEROING_GRAPH_AXIS_Y2 178
 #define ZEROING_GRAPH_BLUE_PEN 11       /* RGB4 0x00D */
 #define ZEROING_GRAPH_TRAJECTORY_PEN 12 /* RGB4 0xE91, warm gold/orange */
 #define ZEROING_GRAPH_AXIS_PEN ZEROING_TEXT_PEN
 #define ZEROING_GRAPH_LABEL_PEN ZEROING_TEXT_PEN
 #define ZEROING_GRAPH_AREA_X 106
-#define ZEROING_GRAPH_AREA_Y 128
+#define ZEROING_GRAPH_AREA_Y 113
 #define ZEROING_GRAPH_AREA_W 185
 #define ZEROING_GRAPH_AREA_H 70
-#define ZEROING_GRAPH_X_LABEL_Y 165
+#define ZEROING_GRAPH_X_LABEL_Y 150
 
 /* Generated Target Ranges screen.  The original 320x256 RAW is no longer
  * needed: the green field and all static labels are rendered with ROM Topaz. */
@@ -3356,9 +3357,9 @@ static void DrawZeroingTargetFragment(struct RastPort *rp) {
          *   5x1  : x=69..73, y=142
          *   7x4  : x=68..74, y=143..146
          */
-        RectFill(rp, 70, 139, 72, 141);
-        RectFill(rp, 69, 142, 73, 142);
-        RectFill(rp, 68, 143, 74, 146);
+        RectFill(rp, 70, 129, 72, 131);
+        RectFill(rp, 69, 132, 73, 132);
+        RectFill(rp, 68, 133, 74, 136);
     } else {
         /*
          * 300 m target fragment, anchored by its bottom-left pixel at (69,146):
@@ -3366,8 +3367,8 @@ static void DrawZeroingTargetFragment(struct RastPort *rp) {
          *   3x2  : x=70..72, y=142..143
          *   5x3  : x=69..73, y=144..146
          */
-        RectFill(rp, 70, 142, 72, 143);
-        RectFill(rp, 69, 144, 73, 146);
+        RectFill(rp, 70, 132, 72, 133);
+        RectFill(rp, 69, 134, 73, 136);
     }
 }
 
@@ -3760,6 +3761,9 @@ static BOOL ShowZeroingScreen(const UWORD *fromPal, UWORD fromColors) {
     DrawCenteredTextWithShadowMain(rp, font, ZEROING_TITLE_Y,
                                    ZEROING_TEXT_PEN, ZEROING_SHADOW_PEN,
                                    "ZEROING");
+    DrawCenteredTextWithShadowMain(rp, font, ZEROING_RETURN_PROMPT_Y,
+                                   ZEROING_TEXT_PEN, ZEROING_SHADOW_PEN,
+                                   "PULL TRIGGER TO RETURN TO MENU");
 
     memset(&zeroingBackground, 0, sizeof(zeroingBackground));
     memset(&zeroingBackgroundRP, 0, sizeof(zeroingBackgroundRP));
@@ -4058,14 +4062,16 @@ static const char *PrimaryControlName(RangeControlMode mode) {
     }
 }
 
-#define SETTINGS_TITLE_Y 78
-#define SETTINGS_CONTROL_Y 98
-#define SETTINGS_WIND_Y 116
-#define SETTINGS_SPEED_Y 134
-#define SETTINGS_DIRECTION_Y 152
+#define SETTINGS_TITLE_Y 66
+#define SETTINGS_CONTROL_Y 96
+#define SETTINGS_WIND_Y 118
+#define SETTINGS_SPEED_Y 136
+#define SETTINGS_DIRECTION_Y 154
 #define SETTINGS_TEXT_AREA_Y 72
 #define SETTINGS_TEXT_AREA_H 100
-#define SETTINGS_PANEL_Y2 178
+#define SETTINGS_PANEL_Y1 49
+#define SETTINGS_PANEL_Y2 207
+#define SETTINGS_RETURN_PROMPT_Y 184
 #define SETTINGS_LEFT_X 68
 #define SETTINGS_ARROW_X 52
 #define SETTINGS_DISABLED_PEN 27
@@ -4211,12 +4217,12 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     if (!LoadRawImageToScreen(WOODLAND_FILE, screen)) return FALSE;
 
     DrawDimmedWoodlandPanel(rp,
-                            TRAINING_INFO_PANEL_X1, TRAINING_INFO_PANEL_Y1,
-                            TRAINING_INFO_PANEL_X2, SETTINGS_PANEL_Y2,
+                            ZEROING_PANEL_X1, SETTINGS_PANEL_Y1,
+                            ZEROING_PANEL_X2, SETTINGS_PANEL_Y2,
                             TRAINING_INFO_PANEL_BORDER);
     DrawGradientPanelFrame(rp,
-                           TRAINING_INFO_PANEL_X1, TRAINING_INFO_PANEL_Y1,
-                           TRAINING_INFO_PANEL_X2, SETTINGS_PANEL_Y2,
+                           ZEROING_PANEL_X1, SETTINGS_PANEL_Y1,
+                           ZEROING_PANEL_X2, SETTINGS_PANEL_Y2,
                            TRAINING_INFO_PANEL_BORDER);
 
     font = OpenFont(&gSummaryFontAttr);
@@ -4224,6 +4230,10 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
         SetFont(rp, font);
         SetSoftStyle(rp, FSF_BOLD, FSF_BOLD);
     }
+
+    DrawCenteredTextWithShadowMain(rp, font, SETTINGS_RETURN_PROMPT_Y,
+                                   MENU_TEXT_PEN, MENU_SHADOW_PEN,
+                                   "PULL TRIGGER TO RETURN TO MENU");
 
     memset(&background, 0, sizeof(background));
     memset(&backgroundRP, 0, sizeof(backgroundRP));
