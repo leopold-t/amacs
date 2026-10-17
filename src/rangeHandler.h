@@ -12,6 +12,8 @@ typedef enum RangeControlMode {
 
 RangeControlMode Range_GetPrimaryControl(void);
 void Range_SetPrimaryControl(RangeControlMode mode);
+UWORD Range_GetMouseSensitivity(void);
+void Range_SetMouseSensitivity(UWORD percent);
 
 typedef enum RangeWindDirection {
     RANGE_WIND_FULL_LEFT = 0,

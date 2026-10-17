@@ -28,11 +28,16 @@ extern BOOL Input_Down(void);
 #define RAWKEY_K 0x27
 #define RAWKEY_M 0x37
 #define RAWKEY_L 0x28
+#define RAWKEY_PLUS 0x5E /* Numeric keypad + */
+#define RAWKEY_MINUS 0x0B /* Main keyboard - */
+#define RAWKEY_KP_MINUS 0x4A
+#define RAWKEY_EQUALS 0x0C /* Main keyboard = / shifted + */
 
 /* Persistent for the lifetime of AMACS.  Both Settings and the J/K/M
  * shortcuts on the firing range operate on this same value. */
 static RangeControlMode gPrimaryControl = RANGE_CONTROL_JOYSTICK;
 static UWORD gWindSpeed = 0;
+static UWORD gMouseSensitivity = 100;
 static RangeWindDirection gWindDirection = RANGE_WIND_FULL_LEFT;
 
 RangeControlMode Range_GetPrimaryControl(void) {
@@ -43,6 +48,13 @@ void Range_SetPrimaryControl(RangeControlMode mode) {
     if (mode >= RANGE_CONTROL_JOYSTICK && mode <= RANGE_CONTROL_LINKED) {
         gPrimaryControl = mode;
     }
+}
+
+UWORD Range_GetMouseSensitivity(void) { return gMouseSensitivity; }
+
+void Range_SetMouseSensitivity(UWORD percent) {
+    if (percent >= 5 && percent <= 100 && (percent % 5) == 0)
+        gMouseSensitivity = percent;
 }
 
 UWORD Range_GetWindSpeed(void) {
@@ -1770,6 +1782,15 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         } else if (Input_KeyPressed(RAWKEY_L)) {
             gPrimaryControl = RANGE_CONTROL_LINKED;
         }
+        /* Live mouse sensitivity shortcuts, shared by both game modes. */
+        if (gPrimaryControl == RANGE_CONTROL_MOUSE) {
+            if (Input_KeyPressed(RAWKEY_PLUS) || Input_KeyPressed(RAWKEY_EQUALS)) {
+                if (gMouseSensitivity < 100) gMouseSensitivity += 5;
+            }
+            if (Input_KeyPressed(RAWKEY_MINUS) || Input_KeyPressed(RAWKEY_KP_MINUS)) {
+                if (gMouseSensitivity > 5) gMouseSensitivity -= 5;
+            }
+        }
         RangeDiscardInactiveFireEdges();
 
         /* The shot which opened this modal is never its acknowledgement.
@@ -2176,6 +2197,19 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                                (mouseDX != 0 || mouseDY != 0)) ? TRUE : FALSE;
 
                 if (gPrimaryControl == RANGE_CONTROL_MOUSE) {
+                    /* Filter mouse pulses before the existing sight-motion
+                     * model. Preserve fractional movement across frames. */
+                    static LONG mouseFractionX = 0, mouseFractionY = 0;
+                    LONG sx, sy;
+                    mouseFractionX += (LONG)mouseDX * gMouseSensitivity;
+                    mouseFractionY += (LONG)mouseDY * gMouseSensitivity;
+                    sx = mouseFractionX / 100;
+                    sy = mouseFractionY / 100;
+                    mouseFractionX -= sx * 100;
+                    mouseFractionY -= sy * 100;
+                    mouseDX = (WORD)sx;
+                    mouseDY = (WORD)sy;
+                    mouseMoving = (mouseDX != 0 || mouseDY != 0) ? TRUE : FALSE;
                     if (mouseDX < 0) dirX = -1;
                     else if (mouseDX > 0) dirX = 1;
 

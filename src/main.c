@@ -4186,10 +4186,11 @@ static const char *PrimaryControlName(RangeControlMode mode) {
 }
 
 #define SETTINGS_TITLE_Y 66
-#define SETTINGS_CONTROL_Y 96
-#define SETTINGS_WIND_Y 118
-#define SETTINGS_SPEED_Y 136
-#define SETTINGS_DIRECTION_Y 154
+#define SETTINGS_CONTROL_Y 91
+#define SETTINGS_MOUSE_Y 108
+#define SETTINGS_WIND_Y 125
+#define SETTINGS_SPEED_Y 142
+#define SETTINGS_DIRECTION_Y 159
 #define SETTINGS_TEXT_AREA_Y 72
 #define SETTINGS_TEXT_AREA_H 100
 #define SETTINGS_PANEL_Y1 49
@@ -4225,6 +4226,17 @@ static void BuildSettingsLine(char *dst, const char *label, const char *value) {
     strcat(dst, value);
 }
 
+static void MouseSensitivityName(char *out, UWORD value) {
+    if (value == 100) {
+        strcpy(out, "100%");
+    } else {
+        out[0] = (char)('0' + value / 10);
+        out[1] = (char)('0' + value % 10);
+        out[2] = '%';
+        out[3] = '\0';
+    }
+}
+
 static void DrawSettingsText(struct RastPort *rp, struct TextFont *font, WORD y,
                              UWORD pen, UWORD shadowPenValue, BOOL selected,
                              const char *text) {
@@ -4236,7 +4248,8 @@ static void DrawSettingsText(struct RastPort *rp, struct TextFont *font, WORD y,
 }
 static WORD SettingsLineY(UWORD selected) {
     if (selected == 0) return SETTINGS_CONTROL_Y;
-    if (selected == 1) return SETTINGS_SPEED_Y;
+    if (selected == 1) return SETTINGS_MOUSE_Y;
+    if (selected == 2) return SETTINGS_SPEED_Y;
     return SETTINGS_DIRECTION_Y;
 }
 
@@ -4256,10 +4269,12 @@ static void RestoreSettingsLine(struct RastPort *rp, struct BitMap *background, 
 
 static void DrawSettingsRow(struct RastPort *rp, struct TextFont *font,
                             UWORD selected, BOOL selectedVisible,
-                            RangeControlMode control, UWORD windSpeed,
+                            RangeControlMode control, UWORD sensitivity, UWORD windSpeed,
                             RangeWindDirection windDirection,
                             struct BitMap *background) {
     char line[40];
+    char sens[8];
+    UWORD pen = MENU_TEXT_PEN, shadow = MENU_SHADOW_PEN;
     WORD y = SettingsLineY(selected);
 
     if (!rp || !background || !rp->BitMap) return;
@@ -4270,19 +4285,28 @@ static void DrawSettingsRow(struct RastPort *rp, struct TextFont *font,
     if (selected == 0) {
         BuildSettingsLine(line, "PRIMARY CONTROL: ", PrimaryControlName(control));
     } else if (selected == 1) {
+        MouseSensitivityName(sens, sensitivity);
+        BuildSettingsLine(line, "MOUSE SENSITIVITY: ", sens);
+        if (control != RANGE_CONTROL_MOUSE) {
+            pen = SETTINGS_DISABLED_PEN;
+            shadow = SETTINGS_DISABLED_SHADOW_PEN;
+        }
+    } else if (selected == 2) {
         BuildSettingsLine(line, "SPEED: ", WindSpeedName(windSpeed));
     } else {
         BuildSettingsLine(line, "DIRECTION: ", WindDirectionName(windDirection));
+        if (!windSpeed) { pen = SETTINGS_DISABLED_PEN; shadow = SETTINGS_DISABLED_SHADOW_PEN; }
     }
-    DrawSettingsText(rp, font, y, MENU_TEXT_PEN, MENU_SHADOW_PEN, TRUE, line);
+    DrawSettingsText(rp, font, y, pen, shadow, TRUE, line);
 }
 
 static void DrawSettingsScreen(struct RastPort *rp, struct TextFont *font,
                                UWORD selected, BOOL selectedVisible,
-                               RangeControlMode control, UWORD windSpeed,
+                               RangeControlMode control, UWORD sensitivity, UWORD windSpeed,
                                RangeWindDirection windDirection,
                                struct BitMap *background) {
     char line[40];
+    char sens[8];
     UWORD directionPen, directionShadow;
 
     if (!rp || !background || !rp->BitMap) return;
@@ -4298,20 +4322,28 @@ static void DrawSettingsScreen(struct RastPort *rp, struct TextFont *font,
                          selected == 0, line);
     }
 
+    if (selected != 1 || selectedVisible) {
+        MouseSensitivityName(sens, sensitivity);
+        BuildSettingsLine(line, "MOUSE SENSITIVITY: ", sens);
+        DrawSettingsText(rp, font, SETTINGS_MOUSE_Y,
+                         control == RANGE_CONTROL_MOUSE ? MENU_TEXT_PEN : SETTINGS_DISABLED_PEN,
+                         control == RANGE_CONTROL_MOUSE ? MENU_SHADOW_PEN : SETTINGS_DISABLED_SHADOW_PEN,
+                         selected == 1, line);
+    }
     DrawCenteredTextWithShadowMain(rp, font, SETTINGS_WIND_Y, MENU_TEXT_PEN,
                                    MENU_SHADOW_PEN, "WIND OPTIONS");
-    if (selected != 1 || selectedVisible) {
+    if (selected != 2 || selectedVisible) {
         BuildSettingsLine(line, "SPEED: ", WindSpeedName(windSpeed));
         DrawSettingsText(rp, font, SETTINGS_SPEED_Y, MENU_TEXT_PEN, MENU_SHADOW_PEN,
-                         selected == 1, line);
+                         selected == 2, line);
     }
 
     directionPen = windSpeed ? MENU_TEXT_PEN : SETTINGS_DISABLED_PEN;
     directionShadow = windSpeed ? MENU_SHADOW_PEN : SETTINGS_DISABLED_SHADOW_PEN;
-    if (selected != 2 || selectedVisible) {
+    if (selected != 3 || selectedVisible) {
         BuildSettingsLine(line, "DIRECTION: ", WindDirectionName(windDirection));
         DrawSettingsText(rp, font, SETTINGS_DIRECTION_Y, directionPen, directionShadow,
-                         selected == 2, line);
+                         selected == 3, line);
     }
 }
 
@@ -4328,6 +4360,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     UWORD selected = 0;
     RangeControlMode pendingControl = Range_GetPrimaryControl();
     UWORD pendingSpeed = Range_GetWindSpeed();
+    UWORD pendingSensitivity = Range_GetMouseSensitivity();
     RangeWindDirection pendingDirection = Range_GetWindDirection();
     UWORD black[32] = {0};
 
@@ -4373,7 +4406,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     }
 
     DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                       pendingSpeed, pendingDirection, &background);
+                       pendingSensitivity, pendingSpeed, pendingDirection, &background);
     WaitBlit();
     SettleDisplay(1);
     Gfx_FadeInCurrentScreenFromBlack(TrainingInfoPaletteRGB4, 32);
@@ -4400,20 +4433,18 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
         upNow = Input_Up(); downNow = Input_Down();
 
         if ((upNow && !prevUp) || (downNow && !prevDown)) {
-            if (downNow && !prevDown) {
-                if (selected == 0) selected = 1;
-                else if (selected == 1 && pendingSpeed > 0) selected = 2;
-                else selected = 0;
-            } else {
-                if (selected == 0) selected = (pendingSpeed > 0) ? 2 : 1;
-                else if (selected == 2) selected = 1;
-                else selected = 0;
-            }
+            UWORD next = selected;
+            do {
+                if (downNow && !prevDown) next = (UWORD)((next + 1) % 4);
+                else next = (UWORD)((next + 3) % 4);
+            } while ((next == 1 && pendingControl != RANGE_CONTROL_MOUSE) ||
+                     (next == 3 && pendingSpeed == 0));
+            selected = next;
             selectedVisible = TRUE;
             blinkTicks = MENU_VISIBLE_TICKS;
             WaitTOF();
             DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                               pendingSpeed, pendingDirection, &background);
+                               pendingSensitivity, pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
 
@@ -4423,10 +4454,14 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
                     pendingControl = (pendingControl == RANGE_CONTROL_LINKED) ? RANGE_CONTROL_JOYSTICK : (RangeControlMode)(pendingControl + 1);
                 else
                     pendingControl = (pendingControl == RANGE_CONTROL_JOYSTICK) ? RANGE_CONTROL_LINKED : (RangeControlMode)(pendingControl - 1);
-            } else if (selected == 1) {
+            } else if (selected == 1 && pendingControl == RANGE_CONTROL_MOUSE) {
+                if (rightNow && !prevRight) {
+                    if (pendingSensitivity < 100) pendingSensitivity += 5;
+                } else if (pendingSensitivity > 5) pendingSensitivity -= 5;
+            } else if (selected == 2) {
                 if (rightNow && !prevRight) { if (pendingSpeed < 30) pendingSpeed += 10; }
                 else { if (pendingSpeed > 0) pendingSpeed -= 10; }
-                if (pendingSpeed == 0 && selected == 2) selected = 1;
+                
             } else if (pendingSpeed > 0) {
                 if (rightNow && !prevRight)
                     pendingDirection = (pendingDirection == RANGE_WIND_HALF_RIGHT) ? RANGE_WIND_FULL_LEFT : (RangeWindDirection)(pendingDirection + 1);
@@ -4437,7 +4472,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             blinkTicks = MENU_VISIBLE_TICKS;
             WaitTOF();
             DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                               pendingSpeed, pendingDirection, &background);
+                               pendingSensitivity, pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
         prevLeft = leftNow; prevRight = rightNow;
@@ -4445,6 +4480,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
 
         if (adv) {
             Range_SetPrimaryControl(pendingControl);
+            Range_SetMouseSensitivity(pendingSensitivity);
             Range_SetWindSpeed(pendingSpeed);
             Range_SetWindDirection(pendingDirection);
             WaitForAdvanceRelease();
@@ -4459,7 +4495,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             blinkTicks = selectedVisible ? MENU_VISIBLE_TICKS : MENU_HIDDEN_TICKS;
             WaitTOF();
             DrawSettingsRow(rp, font, selected, selectedVisible, pendingControl,
-                            pendingSpeed, pendingDirection, &background);
+                            pendingSensitivity, pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
 
