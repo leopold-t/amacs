@@ -133,13 +133,14 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define LEVEL_INFO_FRAME_X1 32
 #define LEVEL_INFO_FRAME_Y1 60
 #define LEVEL_INFO_FRAME_X2 287
-#define LEVEL_INFO_FRAME_Y2 170
+#define LEVEL_INFO_FRAME_Y2 181
 #define LEVEL_INFO_TITLE_Y 76
 #define LEVEL_INFO_LINE1_Y 96
 #define LEVEL_INFO_LINE2_Y 109
 #define LEVEL_INFO_LINE3_Y 122
 #define LEVEL_INFO_LINE4_Y 135
 #define LEVEL_INFO_LINE5_Y 148
+#define LEVEL_INFO_LINE6_Y 161
 #define LEVEL_INFO_PROMPT_Y 214
 #define TARGET100_RAW "gfx/Target100.raw"
 #define TARGET100_MASK "gfx/Target100.mask"
@@ -2279,7 +2280,7 @@ static WaitResult WaitForAdvanceOnlyQuitConfirm(void) {
     }
 }
 
-static void DrawLevelInfoFrame(struct RastPort *rp) {
+static void DrawLevelInfoFrame(struct RastPort *rp, WORD frameBottom) {
     /* Seven nested outlines reproduce the blue -> grey -> white -> grey -> blue
      * bevel/gradient from the supplied mock-up, using only Performance palette pens. */
     static const UWORD framePens[7] = {1, 15, 28, 31, 28, 15, 1};
@@ -2293,7 +2294,7 @@ static void DrawLevelInfoFrame(struct RastPort *rp) {
         WORD x1 = (WORD)(LEVEL_INFO_FRAME_X1 + i);
         WORD y1 = (WORD)(LEVEL_INFO_FRAME_Y1 + i);
         WORD x2 = (WORD)(LEVEL_INFO_FRAME_X2 - i);
-        WORD y2 = (WORD)(LEVEL_INFO_FRAME_Y2 - i);
+        WORD y2 = (WORD)(frameBottom - i);
 
         SetAPen(rp, framePens[i]);
         RectFill(rp, x1, y1, x2, y1);
@@ -2308,6 +2309,7 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
     struct RastPort *rp;
     struct TextFont *font = NULL;
     WaitResult waitResult;
+    WORD frameBottom = fullCoursePreview ? (LEVEL_INFO_FRAME_Y2 + 2) : (LEVEL_INFO_FRAME_Y2 - 24);
 
     scr = Gfx_GetScreen();
     if (!scr || !scr->RastPort.BitMap) {
@@ -2324,8 +2326,8 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
 
     SetAPen(rp, LEVEL_INFO_PANEL_PEN);
     RectFill(rp, LEVEL_INFO_FRAME_X1 + 7, LEVEL_INFO_FRAME_Y1 + 7,
-             LEVEL_INFO_FRAME_X2 - 7, LEVEL_INFO_FRAME_Y2 - 7);
-    DrawLevelInfoFrame(rp);
+             LEVEL_INFO_FRAME_X2 - 7, frameBottom - 7);
+    DrawLevelInfoFrame(rp, frameBottom);
 
     font = OpenFont(&gSummaryFontAttr);
 
@@ -2341,20 +2343,22 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
                                        LEVEL_INFO_SHADOW_PEN, "AT EACH RANGE");
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
-                                       LEVEL_INFO_SHADOW_PEN, "AMMO: 30 RDS, ONE MAG");
+                                       LEVEL_INFO_SHADOW_PEN,
+                                       Range_GetSupportedPosition() ? "POSITION: SUPPORTED" : "POSITION: UNSUPPORTED");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE6_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, "AMMO: ONE 30RD MAG");
     } else {
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
                                        LEVEL_INFO_SHADOW_PEN, "TEN SHOT CHALLENGE");
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
-                                       LEVEL_INFO_SHADOW_PEN, "10 TARGETS");
+                                       LEVEL_INFO_SHADOW_PEN, "TEN ROUNDS, TEN TARGETS");
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
-                                       LEVEL_INFO_SHADOW_PEN, "50 TO 300 METERS");
-        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
                                        LEVEL_INFO_SHADOW_PEN, "TARGETS ARE UNTIMED");
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN,
+                                       Range_GetSupportedPosition() ? "POSITION: SUPPORTED" : "POSITION: UNSUPPORTED");
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
-                                       LEVEL_INFO_SHADOW_PEN, "TEN ROUNDS");
-        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
-                                       LEVEL_INFO_SHADOW_PEN, "TWO 5-ROUND MAGAZINES");
+                                       LEVEL_INFO_SHADOW_PEN, "AMMO: TWO 5RD MAGS");
     }
 
     /* Match Summary's prompt treatment: yellow text, dark one-pixel shadow,
@@ -2388,7 +2392,7 @@ static BOOL ShowLevelRefireScreen(void) {
     SetAPen(rp, LEVEL_INFO_PANEL_PEN);
     RectFill(rp, LEVEL_INFO_FRAME_X1 + 7, LEVEL_INFO_FRAME_Y1 + 7,
              LEVEL_INFO_FRAME_X2 - 7, LEVEL_INFO_FRAME_Y2 - 7);
-    DrawLevelInfoFrame(rp);
+    DrawLevelInfoFrame(rp, LEVEL_INFO_FRAME_Y2);
     font = OpenFont(&gSummaryFontAttr);
     DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y,
                                    LEVEL_INFO_TEXT_PEN, LEVEL_INFO_SHADOW_PEN,
@@ -4186,13 +4190,14 @@ static const char *PrimaryControlName(RangeControlMode mode) {
 }
 
 #define SETTINGS_TITLE_Y 66
-#define SETTINGS_CONTROL_Y 91
-#define SETTINGS_MOUSE_Y 108
-#define SETTINGS_WIND_Y 125
-#define SETTINGS_SPEED_Y 142
-#define SETTINGS_DIRECTION_Y 159
+#define SETTINGS_POSITION_Y 83
+#define SETTINGS_CONTROL_Y 100
+#define SETTINGS_MOUSE_Y 117
+#define SETTINGS_WIND_Y 134
+#define SETTINGS_SPEED_Y 151
+#define SETTINGS_DIRECTION_Y 168
 #define SETTINGS_TEXT_AREA_Y 72
-#define SETTINGS_TEXT_AREA_H 100
+#define SETTINGS_TEXT_AREA_H 108
 #define SETTINGS_PANEL_Y1 49
 #define SETTINGS_PANEL_Y2 207
 #define SETTINGS_RETURN_PROMPT_Y 184
@@ -4247,9 +4252,10 @@ static void DrawSettingsText(struct RastPort *rp, struct TextFont *font, WORD y,
                              text, (UWORD)strlen(text));
 }
 static WORD SettingsLineY(UWORD selected) {
-    if (selected == 0) return SETTINGS_CONTROL_Y;
-    if (selected == 1) return SETTINGS_MOUSE_Y;
-    if (selected == 2) return SETTINGS_SPEED_Y;
+    if (selected == 0) return SETTINGS_POSITION_Y;
+    if (selected == 1) return SETTINGS_CONTROL_Y;
+    if (selected == 2) return SETTINGS_MOUSE_Y;
+    if (selected == 3) return SETTINGS_SPEED_Y;
     return SETTINGS_DIRECTION_Y;
 }
 
@@ -4269,7 +4275,7 @@ static void RestoreSettingsLine(struct RastPort *rp, struct BitMap *background, 
 
 static void DrawSettingsRow(struct RastPort *rp, struct TextFont *font,
                             UWORD selected, BOOL selectedVisible,
-                            RangeControlMode control, UWORD sensitivity, UWORD windSpeed,
+                            RangeControlMode control, BOOL supportedPosition, UWORD sensitivity, UWORD windSpeed,
                             RangeWindDirection windDirection,
                             struct BitMap *background) {
     char line[40];
@@ -4283,15 +4289,17 @@ static void DrawSettingsRow(struct RastPort *rp, struct TextFont *font,
     if (!selectedVisible) return;
 
     if (selected == 0) {
-        BuildSettingsLine(line, "PRIMARY CONTROL: ", PrimaryControlName(control));
+        BuildSettingsLine(line, "POSITION: ", supportedPosition ? "SUPPORTED" : "UNSUPPORTED");
     } else if (selected == 1) {
+        BuildSettingsLine(line, "PRIMARY CONTROL: ", PrimaryControlName(control));
+    } else if (selected == 2) {
         MouseSensitivityName(sens, sensitivity);
         BuildSettingsLine(line, "MOUSE SENSITIVITY: ", sens);
         if (control != RANGE_CONTROL_MOUSE) {
             pen = SETTINGS_DISABLED_PEN;
             shadow = SETTINGS_DISABLED_SHADOW_PEN;
         }
-    } else if (selected == 2) {
+    } else if (selected == 3) {
         BuildSettingsLine(line, "SPEED: ", WindSpeedName(windSpeed));
     } else {
         BuildSettingsLine(line, "DIRECTION: ", WindDirectionName(windDirection));
@@ -4302,7 +4310,7 @@ static void DrawSettingsRow(struct RastPort *rp, struct TextFont *font,
 
 static void DrawSettingsScreen(struct RastPort *rp, struct TextFont *font,
                                UWORD selected, BOOL selectedVisible,
-                               RangeControlMode control, UWORD sensitivity, UWORD windSpeed,
+                               RangeControlMode control, BOOL supportedPosition, UWORD sensitivity, UWORD windSpeed,
                                RangeWindDirection windDirection,
                                struct BitMap *background) {
     char line[40];
@@ -4317,33 +4325,36 @@ static void DrawSettingsScreen(struct RastPort *rp, struct TextFont *font,
     DrawCenteredTextWithShadowMain(rp, font, SETTINGS_TITLE_Y, MENU_TEXT_PEN,
                                    MENU_SHADOW_PEN, "SETTINGS");
     if (selected != 0 || selectedVisible) {
-        BuildSettingsLine(line, "PRIMARY CONTROL: ", PrimaryControlName(control));
-        DrawSettingsText(rp, font, SETTINGS_CONTROL_Y, MENU_TEXT_PEN, MENU_SHADOW_PEN,
+        BuildSettingsLine(line, "POSITION: ", supportedPosition ? "SUPPORTED" : "UNSUPPORTED");
+        DrawSettingsText(rp, font, SETTINGS_POSITION_Y, MENU_TEXT_PEN, MENU_SHADOW_PEN,
                          selected == 0, line);
     }
-
     if (selected != 1 || selectedVisible) {
+        BuildSettingsLine(line, "PRIMARY CONTROL: ", PrimaryControlName(control));
+        DrawSettingsText(rp, font, SETTINGS_CONTROL_Y, MENU_TEXT_PEN, MENU_SHADOW_PEN,
+                         selected == 1, line);
+    }
+    if (selected != 2 || selectedVisible) {
         MouseSensitivityName(sens, sensitivity);
         BuildSettingsLine(line, "MOUSE SENSITIVITY: ", sens);
         DrawSettingsText(rp, font, SETTINGS_MOUSE_Y,
                          control == RANGE_CONTROL_MOUSE ? MENU_TEXT_PEN : SETTINGS_DISABLED_PEN,
                          control == RANGE_CONTROL_MOUSE ? MENU_SHADOW_PEN : SETTINGS_DISABLED_SHADOW_PEN,
-                         selected == 1, line);
+                         selected == 2, line);
     }
     DrawCenteredTextWithShadowMain(rp, font, SETTINGS_WIND_Y, MENU_TEXT_PEN,
                                    MENU_SHADOW_PEN, "WIND OPTIONS");
-    if (selected != 2 || selectedVisible) {
+    if (selected != 3 || selectedVisible) {
         BuildSettingsLine(line, "SPEED: ", WindSpeedName(windSpeed));
         DrawSettingsText(rp, font, SETTINGS_SPEED_Y, MENU_TEXT_PEN, MENU_SHADOW_PEN,
-                         selected == 2, line);
+                         selected == 3, line);
     }
-
     directionPen = windSpeed ? MENU_TEXT_PEN : SETTINGS_DISABLED_PEN;
     directionShadow = windSpeed ? MENU_SHADOW_PEN : SETTINGS_DISABLED_SHADOW_PEN;
-    if (selected != 3 || selectedVisible) {
+    if (selected != 4 || selectedVisible) {
         BuildSettingsLine(line, "DIRECTION: ", WindDirectionName(windDirection));
         DrawSettingsText(rp, font, SETTINGS_DIRECTION_Y, directionPen, directionShadow,
-                         selected == 3, line);
+                         selected == 4, line);
     }
 }
 
@@ -4361,6 +4372,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     RangeControlMode pendingControl = Range_GetPrimaryControl();
     UWORD pendingSpeed = Range_GetWindSpeed();
     UWORD pendingSensitivity = Range_GetMouseSensitivity();
+    BOOL pendingSupportedPosition = Range_GetSupportedPosition();
     RangeWindDirection pendingDirection = Range_GetWindDirection();
     UWORD black[32] = {0};
 
@@ -4406,7 +4418,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     }
 
     DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                       pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                       pendingSupportedPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
     WaitBlit();
     SettleDisplay(1);
     Gfx_FadeInCurrentScreenFromBlack(TrainingInfoPaletteRGB4, 32);
@@ -4435,30 +4447,32 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
         if ((upNow && !prevUp) || (downNow && !prevDown)) {
             UWORD next = selected;
             do {
-                if (downNow && !prevDown) next = (UWORD)((next + 1) % 4);
-                else next = (UWORD)((next + 3) % 4);
-            } while ((next == 1 && pendingControl != RANGE_CONTROL_MOUSE) ||
-                     (next == 3 && pendingSpeed == 0));
+                if (downNow && !prevDown) next = (UWORD)((next + 1) % 5);
+                else next = (UWORD)((next + 4) % 5);
+            } while ((next == 2 && pendingControl != RANGE_CONTROL_MOUSE) ||
+                     (next == 4 && pendingSpeed == 0));
             selected = next;
             selectedVisible = TRUE;
             blinkTicks = MENU_VISIBLE_TICKS;
             WaitTOF();
             DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                               pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                               pendingSupportedPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
 
         if ((leftNow && !prevLeft) || (rightNow && !prevRight)) {
             if (selected == 0) {
+                pendingSupportedPosition = pendingSupportedPosition ? FALSE : TRUE;
+            } else if (selected == 1) {
                 if (rightNow && !prevRight)
                     pendingControl = (pendingControl == RANGE_CONTROL_LINKED) ? RANGE_CONTROL_JOYSTICK : (RangeControlMode)(pendingControl + 1);
                 else
                     pendingControl = (pendingControl == RANGE_CONTROL_JOYSTICK) ? RANGE_CONTROL_LINKED : (RangeControlMode)(pendingControl - 1);
-            } else if (selected == 1 && pendingControl == RANGE_CONTROL_MOUSE) {
+            } else if (selected == 2 && pendingControl == RANGE_CONTROL_MOUSE) {
                 if (rightNow && !prevRight) {
                     if (pendingSensitivity < 100) pendingSensitivity += 5;
                 } else if (pendingSensitivity > 5) pendingSensitivity -= 5;
-            } else if (selected == 2) {
+            } else if (selected == 3) {
                 if (rightNow && !prevRight) { if (pendingSpeed < 30) pendingSpeed += 10; }
                 else { if (pendingSpeed > 0) pendingSpeed -= 10; }
                 
@@ -4472,13 +4486,14 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             blinkTicks = MENU_VISIBLE_TICKS;
             WaitTOF();
             DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                               pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                               pendingSupportedPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
         prevLeft = leftNow; prevRight = rightNow;
         prevUp = upNow; prevDown = downNow;
 
         if (adv) {
+            Range_SetSupportedPosition(pendingSupportedPosition);
             Range_SetPrimaryControl(pendingControl);
             Range_SetMouseSensitivity(pendingSensitivity);
             Range_SetWindSpeed(pendingSpeed);
@@ -4495,7 +4510,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             blinkTicks = selectedVisible ? MENU_VISIBLE_TICKS : MENU_HIDDEN_TICKS;
             WaitTOF();
             DrawSettingsRow(rp, font, selected, selectedVisible, pendingControl,
-                            pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                            pendingSupportedPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
 

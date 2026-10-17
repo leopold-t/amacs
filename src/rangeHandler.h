@@ -12,6 +12,8 @@ typedef enum RangeControlMode {
 
 RangeControlMode Range_GetPrimaryControl(void);
 void Range_SetPrimaryControl(RangeControlMode mode);
+BOOL Range_GetSupportedPosition(void);
+void Range_SetSupportedPosition(BOOL supported);
 UWORD Range_GetMouseSensitivity(void);
 void Range_SetMouseSensitivity(UWORD percent);
 

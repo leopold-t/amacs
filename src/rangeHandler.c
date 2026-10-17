@@ -38,6 +38,7 @@ extern BOOL Input_Down(void);
 static RangeControlMode gPrimaryControl = RANGE_CONTROL_JOYSTICK;
 static UWORD gWindSpeed = 0;
 static UWORD gMouseSensitivity = 100;
+static BOOL gSupportedPosition = FALSE; /* Default: unsupported, with hand sway. */
 static RangeWindDirection gWindDirection = RANGE_WIND_FULL_LEFT;
 
 RangeControlMode Range_GetPrimaryControl(void) {
@@ -49,6 +50,9 @@ void Range_SetPrimaryControl(RangeControlMode mode) {
         gPrimaryControl = mode;
     }
 }
+
+BOOL Range_GetSupportedPosition(void) { return gSupportedPosition; }
+void Range_SetSupportedPosition(BOOL supported) { gSupportedPosition = supported ? TRUE : FALSE; }
 
 UWORD Range_GetMouseSensitivity(void) { return gMouseSensitivity; }
 
@@ -529,7 +533,7 @@ static WORD UpdateHandSway(RangeSessionState *state, BOOL joystickMoving) {
         return 0;
     }
 
-    if (joystickMoving) {
+    if (joystickMoving || gSupportedPosition) {
         state->handSwayPhase = HAND_SWAY_PHASE_REST;
         state->handSwayOffsetX = 0;
         state->handSwayRearOffsetX = 0;
@@ -2037,7 +2041,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                      * no extra timing model or change to the sight motion. */
                     if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO) {
                         breathFeedbackOK = (state.breathPhase == BREATH_PHASE_REST);
-                        positionFeedbackStable = (state.handSwayPhase == HAND_SWAY_PHASE_REST);
+                        positionFeedbackStable = (gSupportedPosition || state.handSwayPhase == HAND_SWAY_PHASE_REST);
                         breathFeedbackModal = TRUE;
                         breathFeedbackArmed = FALSE;
                         TargetsHandler_SetPaused(TRUE);
