@@ -1775,6 +1775,12 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         /* The shot which opened this modal is never its acknowledgement.
          * One fresh Fire edge after release advances, as on Summary. */
         if (breathFeedbackModal) {
+            /* Freeze range simulation, not audio: pending target-hit SFX and
+             * Speech_Hit need Sound_Update(), and ambient must keep running
+             * while the player reads the post-shot assessment. */
+            Sound_Update();
+            UpdateBirdAmbient(&state);
+            Sound_UpdateWindAmbient();
             BOOL down = RangeControlFireDown();
             BOOL pressed = RangeControlFirePressed();
             if (!breathFeedbackArmed && !down) {
@@ -1809,9 +1815,12 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             rangeRefireModal = TRUE;
             rangeRefireArmed = FALSE;
             TargetsHandler_SetPaused(TRUE);
-            Sound_SetPaused(TRUE);
+            /* Refire prompt freezes gameplay, not audio (as shot feedback). */
         }
         if (rangeRefireModal) {
+            Sound_Update();
+            UpdateBirdAmbient(&state);
+            Sound_UpdateWindAmbient();
             BOOL down = RangeControlFireDown();
             BOOL pressed = RangeControlFirePressed();
             /* Same release-then-advance handshake as Summary: discard the
@@ -2011,7 +2020,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         breathFeedbackModal = TRUE;
                         breathFeedbackArmed = FALSE;
                         TargetsHandler_SetPaused(TRUE);
-                        Sound_SetPaused(TRUE);
+                        /* Feedback pauses gameplay only; audio keeps running. */
                     }
 
                     ammoCount--;
