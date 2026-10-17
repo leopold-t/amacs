@@ -887,6 +887,23 @@ static void BuildSummaryTimeBonusLine(char *buf, UWORD bonus) {
     AppendUnsignedMain(buf, pos, bonus);
 }
 
+static void BuildSummaryPenaltiesLine(char *buf, UWORD penalties) {
+    static const char prefix[] = "PENALTIES: ";
+    UWORD i = 0;
+    UWORD pos = 0;
+
+    if (!buf) {
+        return;
+    }
+
+    while (prefix[i] != '\0') {
+        buf[pos++] = prefix[i++];
+    }
+
+    buf[pos] = '\0';
+    AppendUnsignedMain(buf, pos, penalties);
+}
+
 static void BuildSummaryAccuracyLine(char *buf, UWORD accuracy) {
     static const char prefix[] = "ACCURACY: ";
     UWORD i = 0;
@@ -2740,14 +2757,23 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_HIT_SCORE_Y,
                                      31, 24, line, (UWORD)strlen(line));
 
-            BuildSummaryTimeBonusLine(line, timeBonus);
+            if (fullCoursePreview) {
+                /* Per-level Full Course summaries report tactical penalties, not time. */
+                BuildSummaryPenaltiesLine(line, summary ? summary->penalties : 0);
+            } else {
+                BuildSummaryTimeBonusLine(line, timeBonus);
+            }
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_TIME_BONUS_Y,
                                      31, 24, line, (UWORD)strlen(line));
 
-            BuildSummaryTotalScoreLine(line, totalScore);
-            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_TOTAL_SCORE_Y,
-                                     SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN, line,
-                                     (UWORD)strlen(line));
+            /* The Full Course total score belongs to the final course summary
+             * after Level 9, not the individual level summaries. */
+            if (!fullCoursePreview) {
+                BuildSummaryTotalScoreLine(line, totalScore);
+                DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_TOTAL_SCORE_Y,
+                                         SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN, line,
+                                         (UWORD)strlen(line));
+            }
 
             BuildSummaryAccuracyLine(line, acc);
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_RIGHT_X, SUMMARY_ACCURACY_Y,

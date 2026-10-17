@@ -30,6 +30,7 @@ typedef struct RangeSummaryData {
     UWORD accuracy;
     UWORD totalTime;
     UWORD timeBonus;
+    UWORD penalties; /* Tactical target-priority errors (none in Level 1). */
     BOOL summaryLastShotHit;
     UBYTE summaryLastShotScore;
     BOOL abortedToTitle;

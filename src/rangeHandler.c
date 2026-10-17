@@ -1976,10 +1976,14 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                             outSummary->score = ScaleSummaryScore(state.sessionScore);
                             outSummary->accuracy = CalculateAccuracyPercent(state.sessionScore);
                             outSummary->totalTime = totalTime;
+                            /* Full Course levels do not award time bonuses. */
                             outSummary->timeBonus =
+                                LevelManager_GetMode() == LEVEL_MANAGER_MODE_DEMO &&
                                 state.sessionScore > 0
                                     ? CalculateTimeBonus(totalTime, outSummary->accuracy)
                                     : 0;
+                            /* Level 1 has no simultaneous targets, so no tactical penalties. */
+                            outSummary->penalties = 0;
                             outSummary->summaryLastShotHit = state.finalShotHitSnap;
                             outSummary->summaryLastShotScore = state.finalShotScoreSnap;
                         }
