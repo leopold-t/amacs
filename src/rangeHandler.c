@@ -1480,6 +1480,28 @@ static void DrawCenteredTextWithShadow(struct RastPort *rp, struct TextFont *fon
     DrawTextWithShadowEx(rp, font, x, y, pen, shadowPenValue, text, len);
 }
 
+/* In-range Level 1 refire notice. Drawn over the live range without
+ * changing the screen palette, background asset or double-buffer setup. */
+static void DrawRangeRefirePrompt(struct RastPort *rp, struct TextFont *font) {
+    /* 278x136 panel, centered on the 320x256 range.  Range palette:
+     * pen 4 = light grey, pen 31 = near-white, pen 26 = dark grey. */
+    if (!rp) return;
+    SetDrMd(rp, JAM1);
+    SetAPen(rp, 0);
+    RectFill(rp, 21, 60, 298, 195);
+
+    /* 2-pixel inner outline, inset by 3 pixels. */
+    SetAPen(rp, 4);
+    RectFill(rp, 24, 63, 295, 64);
+    RectFill(rp, 24, 191, 295, 192);
+    RectFill(rp, 24, 63, 25, 192);
+    RectFill(rp, 294, 63, 295, 192);
+
+    DrawCenteredTextWithShadow(rp, font, 105, 31, 26, "STANDARD NOT MET");
+    DrawCenteredTextWithShadow(rp, font, 120, 31, 26, "PREPARE TO REFIRE");
+    DrawCenteredTextWithShadow(rp, font, 160, 31, 26, "PULL TRIGGER TO CONTINUE");
+}
+
 static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL levelCompleted,
                                 BOOL lastShotHit, UBYTE lastShotScore, UWORD sessionScore) {
     const char *qualityText;
@@ -1679,6 +1701,11 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         }
     }
 
+    /* Refire is a modal range overlay, not a firing-range shot. */
+    BOOL rangeRefireModal = FALSE;
+    BOOL rangeRefireArmed = FALSE;
+
+    /* Keep the notice visible for at least ~0.5 s at 50 Hz. */
     for (;;) {
         Input_PollWindow(Gfx_GetWindow());
 
@@ -1695,6 +1722,55 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             gPrimaryControl = RANGE_CONTROL_LINKED;
         }
         RangeDiscardInactiveFireEdges();
+
+        if (!rangeRefireModal && !roundEnding && ammoCount > 0 &&
+            TargetsHandler_RefirePromptReady()) {
+            rangeRefireModal = TRUE;
+            rangeRefireArmed = FALSE;
+            TargetsHandler_SetPaused(TRUE);
+            Sound_SetPaused(TRUE);
+        }
+        if (rangeRefireModal) {
+            BOOL down = RangeControlFireDown();
+            BOOL pressed = RangeControlFirePressed();
+            /* Same release-then-advance handshake as Summary: discard the
+             * shot which opened the modal, wait for its release, and accept
+             * the first subsequent Fire press without a timed lockout.
+             * Acknowledge on press, not release, to avoid a sluggish feel. */
+            if (!rangeRefireArmed) {
+                if (!down) {
+                    rangeRefireArmed = TRUE;
+                    (void)pressed; /* discard any stale edge */
+                }
+            }
+            if (rangeRefireArmed && down && pressed) {
+                TargetsHandler_AcknowledgeRefire();
+                TargetsHandler_SetPaused(FALSE);
+                Sound_SetPaused(FALSE);
+                rangeRefireModal = FALSE;
+                shotNeedsRelease = TRUE;
+                (void)RangeControlFirePressed();
+            } else {
+                /* Render into the normal DRAW buffer, then swap as with
+                 * every range frame.  Never write to the visible Screen RP
+                 * while double buffering: that caused flicker and invisible
+                 * modal prompts after buffer flips. */
+                struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort()
+                                              : &Gfx_GetScreen()->RastPort;
+                if (rp) {
+                    if (haveBg) {
+                        WaitBlit();
+                        BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0,
+                                  SCR_W, SCR_H, 0xC0, 0xFF, NULL);
+                        WaitBlit();
+                    }
+                    DrawRangeRefirePrompt(rp, hudFont);
+                    if (useDBuf) Gfx_SwapBuffers();
+                }
+                WaitTOF();
+                continue;
+            }
+        }
 
         if (!paused) {
             Sound_Update();
@@ -1885,8 +1961,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     TargetsHandler_RecordShot(lastShotHit);
                     targetsComplete = TargetsHandler_IsComplete();
 
-                    if (targetsComplete ||
-                        (!LevelManager_GetConfig()->sequentialDistances && ammoCount == 0)) {
+                    /* A single-magazine Level 1 ends when its 30 rounds are spent,
+                     * even if a distance refire would otherwise be pending. */
+                    if (targetsComplete || ammoCount == 0) {
                         levelCompleted = targetsComplete;
                         state.finalShotValid = TRUE;
                         state.finalShotHitSnap = lastShotHit;
@@ -1969,17 +2046,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             }
 
             if (!roundEnding && !showFinalScore) {
-                {
-                    UBYTE previousReloadState = reloadState;
-                    UpdateReloadFinishing(&state);
-                    /* Level 1 has unlimited spare magazines: keep the manual
-                     * reload gesture, then seat a fresh 30-round magazine. */
-                    if (LevelManager_GetConfig()->sequentialDistances &&
-                        previousReloadState == RELOAD_STATE_FINISHING &&
-                        reloadState == RELOAD_STATE_NONE && ammoCount == 0) {
-                        ammoCount = LevelManager_GetConfig()->magazineSize;
-                    }
-                }
+                UpdateReloadFinishing(&state);
                 UpdateReloadSpeech(&state);
             }
 

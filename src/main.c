@@ -83,6 +83,8 @@ static const UWORD SummaryPaletteRGB4[32] = {
 #define SUMMARY_TEXT_PEN 25
 #define SUMMARY_SHADOW_PEN 24
 #define SUMMARY_BACKGROUND_PEN 3
+#define SUMMARY_STANDARD_MET_PEN 22 /* existing vivid green: RGB4 0x1F0 */
+#define SUMMARY_STANDARD_NOT_MET_PEN 7 /* existing red: RGB4 0xC00 */
 #define SUMMARY_TITLE_Y 18
 #define SUMMARY_TABLE_HEADER_Y 40
 #define SUMMARY_TABLE_FIRST_ROW_Y 56
@@ -2636,7 +2638,9 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
                     case 5: rangeHits = hits300; break;
                 }
                 DrawCenteredTextWithShadowMain(&summaryRP, font, 177,
-                                               SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN,
+                                               rangeHits >= 2 ? SUMMARY_STANDARD_MET_PEN
+                                                              : SUMMARY_STANDARD_NOT_MET_PEN,
+                                               SUMMARY_SHADOW_PEN,
                                                rangeHits >= 2 ? "STANDARD MET"
                                                               : "STANDARD NOT MET");
             }
@@ -2763,7 +2767,11 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
                 BuildSummaryRankLine(line, acc);
             }
             DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_RIGHT_X, SUMMARY_RANK_Y,
-                                     SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN, line,
+                                     fullCoursePreview
+                                         ? (fullCourseStandardMet ? SUMMARY_STANDARD_MET_PEN
+                                                                  : SUMMARY_STANDARD_NOT_MET_PEN)
+                                         : SUMMARY_DISTANCE_PEN,
+                                     SUMMARY_SHADOW_PEN, line,
                                      (UWORD)strlen(line));
         }
 

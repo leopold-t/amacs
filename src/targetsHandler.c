@@ -118,6 +118,7 @@ static UWORD gLevel1ShotsAtDistance = 0;
 static UWORD gLevel1HitsAtDistance = 0;
 static BOOL gLevel1Failed = FALSE;
 static BOOL gLevel1Completed = FALSE;
+static BOOL gLevel1RefirePending = FALSE;
 
 static TargetSeries gSeries050;
 static TargetSeries gSeries100;
@@ -779,6 +780,7 @@ BOOL TargetsHandler_Init(void) {
     gLevel1HitsAtDistance = 0;
     gLevel1Failed = FALSE;
     gLevel1Completed = FALSE;
+    gLevel1RefirePending = FALSE;
     if (LevelManager_GetConfig()->sequentialDistances) {
         SpawnSeries(GetLevel1Series(0), 0);
     } else {
@@ -859,6 +861,7 @@ void TargetsHandler_Reset(void) {
     gLevel1HitsAtDistance = 0;
     gLevel1Failed = FALSE;
     gLevel1Completed = FALSE;
+    gLevel1RefirePending = FALSE;
     if (LevelManager_GetConfig()->sequentialDistances) {
         SpawnSeries(GetLevel1Series(0), 0);
     } else {
@@ -955,7 +958,7 @@ void TargetsHandler_Tick(void) {
     TickSeries(&gSeries250);
     TickSeries(&gSeries300);
     if (LevelManager_GetConfig()->sequentialDistances && gLevel1PendingSpawn &&
-        !gLevel1Failed && !gLevel1Completed) {
+        !gLevel1Failed && !gLevel1Completed && !gLevel1RefirePending) {
         TargetSeries *next = GetLevel1Series(gLevel1DistanceIndex);
         TargetSeries *previous = gLevel1DistanceIndex > 0
             ? GetLevel1Series((UWORD)(gLevel1DistanceIndex - 1)) : NULL;
@@ -1118,19 +1121,21 @@ void TargetsHandler_RecordShot(BOOL hit) {
     if (hit) {
         gLevel1HitsAtDistance++;
     }
-    if (gLevel1HitsAtDistance >= 2) {
-        /* Two hits qualify this distance; skip its unused third target. */
-        gLevel1DistanceIndex++;
-        gLevel1ShotsAtDistance = 0;
-        gLevel1HitsAtDistance = 0;
-        if (gLevel1DistanceIndex >= 6) {
-            gLevel1Completed = TRUE;
-            gLevel1PendingSpawn = FALSE;
-            return;
+    /* A complete group always contains three presentations, even if the
+     * first two shots were hits. Evaluate only after shot number three. */
+    if (gLevel1ShotsAtDistance >= 3) {
+        if (gLevel1HitsAtDistance >= 2) {
+            gLevel1DistanceIndex++;
+            if (gLevel1DistanceIndex >= 6) {
+                gLevel1Completed = TRUE;
+                gLevel1PendingSpawn = FALSE;
+                return;
+            }
+        } else {
+            /* Do not spawn the next group until the refire prompt is
+             * explicitly acknowledged by a fresh trigger press. */
+            gLevel1RefirePending = TRUE;
         }
-    } else if (gLevel1ShotsAtDistance >= 3) {
-        /* Refire: repeat a fresh three-target group at the same distance.
-         * The player advances only after two hits within one group. */
         gLevel1ShotsAtDistance = 0;
         gLevel1HitsAtDistance = 0;
     }
@@ -1143,4 +1148,19 @@ BOOL TargetsHandler_IsUnqualified(void) {
 
 UWORD TargetsHandler_GetPresentedCount(void) {
     return gSpawnedTargets;
+}
+
+BOOL TargetsHandler_RefirePromptReady(void) {
+    TargetSeries *current;
+    if (!gReady || !LevelManager_GetConfig()->sequentialDistances ||
+        !gLevel1RefirePending) return FALSE;
+    current = GetLevel1Series(gLevel1DistanceIndex);
+    return (BOOL)(current && !current->hit);
+}
+
+void TargetsHandler_AcknowledgeRefire(void) {
+    if (gReady && gLevel1RefirePending) {
+        gLevel1RefirePending = FALSE;
+        /* Tick() will now spawn the first target of the new group. */
+    }
 }

@@ -58,6 +58,8 @@ BOOL TargetsHandler_IsComplete(void);
 BOOL TargetsHandler_IsUnqualified(void);
 void TargetsHandler_RecordShot(BOOL hit);
 UWORD TargetsHandler_GetPresentedCount(void);
+BOOL TargetsHandler_RefirePromptReady(void);
+void TargetsHandler_AcknowledgeRefire(void);
 UWORD TargetsHandler_GetSlotCount(TargetDistance distance);
 BOOL TargetsHandler_SelectSlot(TargetDistance distance, UWORD slotIndex);
 BOOL TargetsHandler_GetTargetInfo(TargetDistance distance, TargetInfo *outInfo);
