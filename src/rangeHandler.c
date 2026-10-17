@@ -1502,6 +1502,36 @@ static void DrawRangeRefirePrompt(struct RastPort *rp, struct TextFont *font) {
     DrawCenteredTextWithShadow(rp, font, 160, 31, 26, "PULL TRIGGER TO CONTINUE");
 }
 
+/* Full Course shot-by-shot instruction.  Keep the normal HUD and palette
+ * untouched; the notice uses existing range pens and the draw buffer. */
+static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font, BOOL breathOK) {
+    const char *label = "BREATH CONTROL: ";
+    const char *rating = breathOK ? "OK" : "CHECK";
+    UWORD labelLen = TextLen(label);
+    UWORD ratingLen = TextLen(rating);
+    WORD labelWidth, ratingWidth, x;
+
+    if (!rp) return;
+    SetDrMd(rp, JAM1);
+    SetAPen(rp, 0);
+    RectFill(rp, 21, 12, 298, 83);
+    SetAPen(rp, 4);
+    RectFill(rp, 24, 15, 295, 16);
+    RectFill(rp, 24, 79, 295, 80);
+    RectFill(rp, 24, 15, 25, 80);
+    RectFill(rp, 294, 15, 295, 80);
+
+    if (font) SetFont(rp, font);
+    labelWidth = TextLength(rp, (STRPTR)label, labelLen);
+    ratingWidth = TextLength(rp, (STRPTR)rating, ratingLen);
+    x = (WORD)((SCR_W - labelWidth - ratingWidth) / 2);
+    DrawTextWithShadowEx(rp, font, x, 30, 31, 26, label, labelLen);
+    DrawTextWithShadowEx(rp, font, (WORD)(x + labelWidth), 30,
+                         breathOK ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR,
+                         26, rating, ratingLen);
+    DrawCenteredTextWithShadow(rp, font, 56, 31, 26, "PULL TRIGGER TO CONTINUE");
+}
+
 static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL levelCompleted,
                                 BOOL lastShotHit, UBYTE lastShotScore, UWORD sessionScore) {
     const char *qualityText;
@@ -1704,6 +1734,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     /* Refire is a modal range overlay, not a firing-range shot. */
     BOOL rangeRefireModal = FALSE;
     BOOL rangeRefireArmed = FALSE;
+    BOOL breathFeedbackModal = FALSE;
+    BOOL breathFeedbackArmed = FALSE;
+    BOOL breathFeedbackOK = FALSE;
 
     /* Keep the notice visible for at least ~0.5 s at 50 Hz. */
     for (;;) {
@@ -1722,6 +1755,38 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             gPrimaryControl = RANGE_CONTROL_LINKED;
         }
         RangeDiscardInactiveFireEdges();
+
+        /* The shot which opened this modal is never its acknowledgement.
+         * One fresh Fire edge after release advances, as on Summary. */
+        if (breathFeedbackModal) {
+            BOOL down = RangeControlFireDown();
+            BOOL pressed = RangeControlFirePressed();
+            if (!breathFeedbackArmed && !down) {
+                breathFeedbackArmed = TRUE;
+            }
+            if (breathFeedbackArmed && down && pressed) {
+                breathFeedbackModal = FALSE;
+                shotNeedsRelease = TRUE;
+                (void)RangeControlFirePressed();
+                TargetsHandler_SetPaused(FALSE);
+                Sound_SetPaused(FALSE);
+            } else {
+                struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort()
+                                              : &Gfx_GetScreen()->RastPort;
+                if (rp) {
+                    if (haveBg) {
+                        WaitBlit();
+                        BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0,
+                                  SCR_W, SCR_H, 0xC0, 0xFF, NULL);
+                        WaitBlit();
+                    }
+                    DrawBreathFeedback(rp, hudFont, breathFeedbackOK);
+                    if (useDBuf) Gfx_SwapBuffers();
+                }
+                WaitTOF();
+                continue;
+            }
+        }
 
         if (!rangeRefireModal && !roundEnding && ammoCount > 0 &&
             TargetsHandler_RefirePromptReady()) {
@@ -1921,6 +1986,16 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     UBYTE hitScore = SCORE_MISS;
                     UBYTE hitVolume = 64;
                     BOOL targetsComplete = FALSE;
+
+                    /* Sample the very same phase used to animate breathing;
+                     * no extra timing model or change to the sight motion. */
+                    if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO) {
+                        breathFeedbackOK = (state.breathPhase == BREATH_PHASE_REST);
+                        breathFeedbackModal = TRUE;
+                        breathFeedbackArmed = FALSE;
+                        TargetsHandler_SetPaused(TRUE);
+                        Sound_SetPaused(TRUE);
+                    }
 
                     ammoCount--;
                     Sound_PlayShot();
