@@ -1504,32 +1504,47 @@ static void DrawRangeRefirePrompt(struct RastPort *rp, struct TextFont *font) {
 
 /* Full Course shot-by-shot instruction.  Keep the normal HUD and palette
  * untouched; the notice uses existing range pens and the draw buffer. */
-static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font, BOOL breathOK) {
-    const char *label = "BREATH CONTROL: ";
-    const char *rating = breathOK ? "OK" : "CHECK";
-    UWORD labelLen = TextLen(label);
-    UWORD ratingLen = TextLen(rating);
-    WORD labelWidth, ratingWidth, x;
+static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
+                               BOOL breathOK, BOOL positionStable, UBYTE shotScore) {
+    const char *positionLabel = "STEADY POSITION: ";
+    const char *positionRating = positionStable ? "GOOD" : "POOR";
+    const char *breathLabel = "BREATH CONTROL: ";
+    const char *breathRating = breathOK ? "OK" : "CHECK";
+    const char *shotLabel = "SHOT LOCATION: ";
+    const char *shotRating = GetScoreText(shotScore);
+    UWORD shotPen = (shotScore == SCORE_MISS) ? 31 : GetScoreTextPen(shotScore);
+    WORD x, labelWidth, ratingWidth;
 
     if (!rp) return;
+    if (!shotRating) {
+        shotRating = "MISS";
+        shotPen = 31; /* White text for MISS on the black feedback panel. */
+    }
     SetDrMd(rp, JAM1);
     SetAPen(rp, 0);
-    RectFill(rp, 21, 12, 298, 83);
+    RectFill(rp, 21, 8, 298, 105);
     SetAPen(rp, 4);
-    RectFill(rp, 24, 15, 295, 16);
-    RectFill(rp, 24, 79, 295, 80);
-    RectFill(rp, 24, 15, 25, 80);
-    RectFill(rp, 294, 15, 295, 80);
+    RectFill(rp, 24, 11, 295, 12);
+    RectFill(rp, 24, 101, 295, 102);
+    RectFill(rp, 24, 11, 25, 102);
+    RectFill(rp, 294, 11, 295, 102);
 
     if (font) SetFont(rp, font);
-    labelWidth = TextLength(rp, (STRPTR)label, labelLen);
-    ratingWidth = TextLength(rp, (STRPTR)rating, ratingLen);
-    x = (WORD)((SCR_W - labelWidth - ratingWidth) / 2);
-    DrawTextWithShadowEx(rp, font, x, 30, 31, 26, label, labelLen);
-    DrawTextWithShadowEx(rp, font, (WORD)(x + labelWidth), 30,
-                         breathOK ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR,
-                         26, rating, ratingLen);
-    DrawCenteredTextWithShadow(rp, font, 56, 31, 26, "PULL TRIGGER TO CONTINUE");
+#define DRAW_FEEDBACK_LINE(label, rating, y, pen) do { \
+    labelWidth = TextLength(rp, (STRPTR)(label), TextLen(label)); \
+    ratingWidth = TextLength(rp, (STRPTR)(rating), TextLen(rating)); \
+    x = (WORD)((SCR_W - labelWidth - ratingWidth) / 2); \
+    DrawTextWithShadowEx(rp, font, x, (y), 31, 26, (label), TextLen(label)); \
+    DrawTextWithShadowEx(rp, font, (WORD)(x + labelWidth), (y), (pen), 26, \
+                         (rating), TextLen(rating)); \
+} while (0)
+    DRAW_FEEDBACK_LINE(positionLabel, positionRating, 30,
+                       positionStable ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR);
+    DRAW_FEEDBACK_LINE(breathLabel, breathRating, 46,
+                       breathOK ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR);
+    DRAW_FEEDBACK_LINE(shotLabel, shotRating, 62, shotPen);
+#undef DRAW_FEEDBACK_LINE
+    DrawCenteredTextWithShadow(rp, font, 88, 31, 26, "PULL TRIGGER TO CONTINUE");
 }
 
 static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL levelCompleted,
@@ -1737,6 +1752,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     BOOL breathFeedbackModal = FALSE;
     BOOL breathFeedbackArmed = FALSE;
     BOOL breathFeedbackOK = FALSE;
+    BOOL positionFeedbackStable = FALSE;
 
     /* Keep the notice visible for at least ~0.5 s at 50 Hz. */
     for (;;) {
@@ -1780,7 +1796,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                                   SCR_W, SCR_H, 0xC0, 0xFF, NULL);
                         WaitBlit();
                     }
-                    DrawBreathFeedback(rp, hudFont, breathFeedbackOK);
+                    DrawBreathFeedback(rp, hudFont, breathFeedbackOK, positionFeedbackStable, lastShotScore);
                     if (useDBuf) Gfx_SwapBuffers();
                 }
                 WaitTOF();
@@ -1991,6 +2007,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                      * no extra timing model or change to the sight motion. */
                     if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO) {
                         breathFeedbackOK = (state.breathPhase == BREATH_PHASE_REST);
+                        positionFeedbackStable = (state.handSwayPhase == HAND_SWAY_PHASE_REST);
                         breathFeedbackModal = TRUE;
                         breathFeedbackArmed = FALSE;
                         TargetsHandler_SetPaused(TRUE);
