@@ -2198,6 +2198,14 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             }
         }
 
+        if (paused) {
+            /* Fire during PAUSED is never a deferred shot.  Drain the active
+             * control's press edge each frame; a held Fire must be released
+             * after resuming before another shot can be accepted. */
+            (void)RangeControlFirePressed();
+            if (RangeControlFireDown()) shotNeedsRelease = TRUE;
+        }
+
         if (!paused) {
             /* Fire/LMB events may accumulate in Intuition while the sight
              * bitmaps are being loaded from slow media.  Until the first
