@@ -1518,6 +1518,43 @@ static void DrawRangeRefirePrompt(struct RastPort *rp, struct TextFont *font) {
     DrawCenteredTextWithShadow(rp, font, 160, 31, 26, "PULL TRIGGER TO CONTINUE");
 }
 
+/* Three seconds of actual front-sight tip positions at PAL 50 Hz.
+ * Ring storage overwrites the oldest sample without moving memory. */
+#define SIGHT_REPLAY_SAMPLES 100
+typedef struct SightReplayPoint {
+    WORD x, y;
+} SightReplayPoint;
+typedef struct SightReplay {
+    SightReplayPoint points[SIGHT_REPLAY_SAMPLES];
+    UWORD next;
+    UWORD count;
+    UWORD playback;
+    UWORD first;
+} SightReplay;
+
+static void SightReplay_Add(SightReplay *replay, WORD x, WORD y) {
+    replay->points[replay->next].x = x;
+    replay->points[replay->next].y = y;
+    replay->next = (UWORD)((replay->next + 1) % SIGHT_REPLAY_SAMPLES);
+    if (replay->count < SIGHT_REPLAY_SAMPLES) replay->count++;
+}
+
+static void SightReplay_Freeze(SightReplay *replay) {
+    replay->first = (UWORD)((replay->next + SIGHT_REPLAY_SAMPLES - replay->count) % SIGHT_REPLAY_SAMPLES);
+    replay->playback = 0;
+}
+
+static void SightReplay_Advance(SightReplay *replay) {
+    if (replay->playback + 1 < replay->count) replay->playback++;
+}
+
+static const SightReplayPoint *SightReplay_Current(const SightReplay *replay) {
+    UWORD index;
+    if (!replay->count) return NULL;
+    index = (UWORD)((replay->first + replay->playback) % SIGHT_REPLAY_SAMPLES);
+    return &replay->points[index];
+}
+
 /* Static Level 1-3 shot snapshot.  Capture BEFORE CheckHit/RecordShot,
  * which can hide the target even on a miss. */
 typedef struct ShotSightSnapshot {
@@ -1578,7 +1615,8 @@ static void CaptureShotSight(ShotSightSnapshot *snap, WORD tipX, WORD tipY) {
 /* Draw in an inset below the three ratings.  Both target and sight use
  * the shot-time coordinates, translated by the SAME origin. */
 static void DrawShotSightDiagram(struct RastPort *rp, const ShotSightSnapshot *snap,
-                                 const AmacsBob *sight, const AmacsBob *targets) {
+                                 const AmacsBob *sight, const AmacsBob *targets,
+                                 const SightReplayPoint *replayPoint) {
     WORD targetCenterX, targetCenterY, originX, originY;
     WORD sx, sy, tx, ty, cx, cy;
     const AmacsBob *target;
@@ -1591,8 +1629,8 @@ static void DrawShotSightDiagram(struct RastPort *rp, const ShotSightSnapshot *s
     originY = (WORD)(138 - targetCenterY);
     tx = (WORD)(snap->targetX + originX);
     ty = (WORD)(snap->targetY + originY);
-    sx = (WORD)(snap->sightX + originX - 41);
-    sy = (WORD)(snap->sightY + originY - 10);
+    sx = (WORD)((replayPoint ? replayPoint->x : snap->sightX) + originX - 41);
+    sy = (WORD)((replayPoint ? replayPoint->y : snap->sightY) + originY - 10);
     Bob_DrawMaskedToRastPort(target, rp, tx, ty);
     if (snap->correctValid) {
         cx = (WORD)(snap->correctX + originX - 41);
@@ -1619,7 +1657,7 @@ static void DrawShotSightDiagram(struct RastPort *rp, const ShotSightSnapshot *s
 static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
                                BOOL breathOK, BOOL positionStable, UBYTE shotScore,
                                const ShotSightSnapshot *snapshot, const AmacsBob *sight,
-                               const AmacsBob *targets) {
+                               const AmacsBob *targets, const SightReplayPoint *replayPoint) {
     const char *positionLabel = "STEADY POSITION: ";
     const char *positionRating = positionStable ? "GOOD" : "POOR";
     const char *breathLabel = "BREATH CONTROL: ";
@@ -1658,7 +1696,7 @@ static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
                        breathOK ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR);
     DRAW_FEEDBACK_LINE(shotLabel, shotRating, 62, shotPen);
 #undef DRAW_FEEDBACK_LINE
-    DrawShotSightDiagram(rp, snapshot, sight, targets);
+    DrawShotSightDiagram(rp, snapshot, sight, targets, replayPoint);
     /* Legend squares centred vertically on the text line, not above it. */
     SetAPen(rp, SCORE_FLASH_GOOD_COLOR); RectFill(rp, 56, 208, 63, 215);
     DrawTextWithShadowEx(rp, font, 69, 209, 31, 26, "= CORRECT", 9);
@@ -1708,6 +1746,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     AmacsBob feedbackSight;
     AmacsBob feedbackTargets[6];
     ShotSightSnapshot shotSnapshot;
+    SightReplay sightReplay;
     BOOL feedbackGraphicsReady = FALSE;
     UWORD feedbackTargetLoaded = 0;
     UWORD feedbackIndex;
@@ -1769,6 +1808,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #define finalScoreStampValid state.finalScoreStampValid
 
     memset(&feedbackSight, 0, sizeof(feedbackSight));
+    memset(&sightReplay, 0, sizeof(sightReplay));
     memset(feedbackTargets, 0, sizeof(feedbackTargets));
     memset(&shotSnapshot, 0, sizeof(shotSnapshot));
     if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO) {
@@ -1953,6 +1993,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             }
             if (breathFeedbackArmed && down && pressed) {
                 breathFeedbackModal = FALSE;
+                sightReplay.next = 0;
+                sightReplay.count = 0;
                 shotNeedsRelease = TRUE;
                 (void)RangeControlFirePressed();
                 TargetsHandler_SetPaused(FALSE);
@@ -1969,7 +2011,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     }
                     DrawBreathFeedback(rp, hudFont, breathFeedbackOK, positionFeedbackStable, lastShotScore,
                                        &shotSnapshot, feedbackGraphicsReady ? &feedbackSight : NULL,
-                                       feedbackGraphicsReady ? feedbackTargets : NULL);
+                                       feedbackGraphicsReady ? feedbackTargets : NULL,
+                                       SightReplay_Current(&sightReplay));
+                    SightReplay_Advance(&sightReplay);
                     if (useDBuf) Gfx_SwapBuffers();
                 }
                 WaitTOF();
@@ -2208,6 +2252,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     if (breathFeedbackModal) {
                         CaptureShotSight(&shotSnapshot, (WORD)(aimX + sightOffsetX),
                                          (WORD)(aimY + sightOffsetY));
+                        /* The final sample must be the exact impact-calculation
+                         * tip, not a position from the preceding video frame. */
+                        SightReplay_Add(&sightReplay, shotSnapshot.sightX, shotSnapshot.sightY);
+                        SightReplay_Freeze(&sightReplay);
                     }
                     if (TargetsHandler_CheckHit(aimX, aimY, sightOffsetX, sightOffsetY,
                                                 &hitDelayTicks, &hitScore, &hitVolume)) {
@@ -2575,6 +2623,15 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             rearRecoilY = currentRearRecoilY;
             frontX = (WORD)(ringX - RING_OFFSET_X + (leadX / 256));
             frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) + frontRecoilY);
+            /* Record only live aiming frames, not recoil, pause or overlays.
+             * FRONT_AIM is the same tip origin used when resolving a shot. */
+            if (!paused && !roundEnding && !showFinalScore &&
+                reloadState == RELOAD_STATE_NONE && !recoilActive &&
+                LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO) {
+                SightReplay_Add(&sightReplay,
+                                (WORD)(frontX + FRONT_AIM_X),
+                                (WORD)(frontY + FRONT_AIM_Y));
+            }
 
             if (haveBg) {
                 WaitBlit();
