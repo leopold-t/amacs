@@ -3494,26 +3494,31 @@ static void DrawZeroingTargetFragment(struct RastPort *rp) {
     zeroRange = TargetScoring_GetZeroRange();
     SetAPen(rp, ZEROING_TARGET_PEN);
 
+    /* Both fragments sit on top of the front-sight post and share the same
+     * bottom row (y=131), i.e. the last row of ZEROING_TARGET_AREA
+     * (x=68..74, y=124..131).  Keeping them fully inside that area lets
+     * DrawZeroingTargetPreview() erase the previous fragment completely
+     * when BZO changes. */
     if (zeroRange == 250) {
         /*
-         * 250 m target fragment, anchored by its bottom-left pixel at (68,146):
+         * 250 m target fragment (wider/taller - closer target):
          *
-         *   3x3  : x=70..72, y=139..141
-         *   5x1  : x=69..73, y=142
-         *   7x4  : x=68..74, y=143..146
+         *   3x3  : x=70..72, y=124..126
+         *   5x1  : x=69..73, y=127
+         *   7x4  : x=68..74, y=128..131
          */
-        RectFill(rp, 70, 129, 72, 131);
-        RectFill(rp, 69, 132, 73, 132);
-        RectFill(rp, 68, 133, 74, 136);
+        RectFill(rp, 70, 124, 72, 126);
+        RectFill(rp, 69, 127, 73, 127);
+        RectFill(rp, 68, 128, 74, 131);
     } else {
         /*
-         * 300 m target fragment, anchored by its bottom-left pixel at (69,146):
+         * 300 m target fragment:
          *
-         *   3x2  : x=70..72, y=142..143
-         *   5x3  : x=69..73, y=144..146
+         *   3x2  : x=70..72, y=127..128
+         *   5x3  : x=69..73, y=129..131
          */
-        RectFill(rp, 70, 132, 72, 133);
-        RectFill(rp, 69, 134, 73, 136);
+        RectFill(rp, 70, 127, 72, 128);
+        RectFill(rp, 69, 129, 73, 131);
     }
 }
 
