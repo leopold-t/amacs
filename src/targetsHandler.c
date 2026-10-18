@@ -119,6 +119,7 @@ static UWORD gLevel1HitsAtDistance = 0;
 static BOOL gLevel1Failed = FALSE;
 static BOOL gLevel1Completed = FALSE;
 static BOOL gLevel1RefirePending = FALSE;
+static UWORD gExpiredPresentations = 0;
 
 static TargetSeries gSeries050;
 static TargetSeries gSeries100;
@@ -696,7 +697,16 @@ static void TickSeries(TargetSeries *s) {
         return;
     }
 
-    /* Once spawned, the target stays in its slot until hit. */
+    /* Level 2: a presentation expires after six active seconds.
+     * Never count an expiration as a shot or consume ammunition. */
+    if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2 &&
+        t >= s->startDelayTicks + (6UL * TICKS_PER_SEC)) {
+        s->visible = FALSE;
+        s->respawnAllowed = FALSE;
+        ++gExpiredPresentations;
+        TargetsHandler_RecordShot(FALSE);
+    }
+    /* Untimed levels keep the target visible until a shot. */
 }
 
 static void DrawSeries(TargetSeries *s, struct RastPort *rp) {
@@ -781,6 +791,7 @@ BOOL TargetsHandler_Init(void) {
     gLevel1Failed = FALSE;
     gLevel1Completed = FALSE;
     gLevel1RefirePending = FALSE;
+    gExpiredPresentations = 0;
     if (LevelManager_GetConfig()->sequentialDistances) {
         SpawnSeries(GetLevel1Series(0), 0);
     } else {
@@ -862,6 +873,7 @@ void TargetsHandler_Reset(void) {
     gLevel1Failed = FALSE;
     gLevel1Completed = FALSE;
     gLevel1RefirePending = FALSE;
+    gExpiredPresentations = 0;
     if (LevelManager_GetConfig()->sequentialDistances) {
         SpawnSeries(GetLevel1Series(0), 0);
     } else {
@@ -1163,4 +1175,10 @@ void TargetsHandler_AcknowledgeRefire(void) {
         gLevel1RefirePending = FALSE;
         /* Tick() will now spawn the first target of the new group. */
     }
+}
+
+UWORD TargetsHandler_ConsumeExpiredPresentations(void) {
+    UWORD count = gExpiredPresentations;
+    gExpiredPresentations = 0;
+    return count;
 }

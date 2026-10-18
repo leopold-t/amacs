@@ -65,4 +65,7 @@ BOOL TargetsHandler_SelectSlot(TargetDistance distance, UWORD slotIndex);
 BOOL TargetsHandler_GetTargetInfo(TargetDistance distance, TargetInfo *outInfo);
 WORD TargetsHandler_GetWindDriftOffset(UWORD distance);
 
+/* Consume presentations which expired without a shot in Level 2. */
+UWORD TargetsHandler_ConsumeExpiredPresentations(void);
+
 #endif

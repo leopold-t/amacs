@@ -1861,7 +1861,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
     /* Ensure a clean session state even when coming back from a previous run */
     TargetsHandler_Reset();
-    TargetsHandler_SetPaused(FALSE);
+    /* The first six-second exposure must start only after the player sees
+     * the first complete sight picture, not during disk I/O. */
+    TargetsHandler_SetPaused(LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2);
     Sound_SetPaused(FALSE);
     DateStamp(&state.roundStartStamp);
     ScheduleBirdAmbient(&state);
@@ -2376,6 +2378,32 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
             if (!roundEnding) {
                 TargetsHandler_Tick();
+                /* Level 2 timeout is a missed presentation, not a fired shot.
+                 * End normally when the last target expires. */
+                if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2 &&
+                    TargetsHandler_ConsumeExpiredPresentations() != 0 &&
+                    TargetsHandler_IsComplete()) {
+                    levelCompleted = TRUE;
+                    state.finalShotValid = TRUE;
+                    state.finalShotHitSnap = FALSE;
+                    state.finalShotScoreSnap = SCORE_MISS;
+                    if (outSummary) {
+                        UWORD totalTime = (UWORD)ElapsedSecondsSince(&state.roundStartStamp);
+                        outSummary->levelQualified = TRUE;
+                        outSummary->score = ScaleSummaryScore(state.sessionScore);
+                        outSummary->accuracy = CalculateAccuracyPercent(state.sessionScore);
+                        outSummary->totalTime = totalTime;
+                        outSummary->timeBonus = 0;
+                        outSummary->penalties = 0;
+                        outSummary->summaryLastShotHit = FALSE;
+                        outSummary->summaryLastShotScore = SCORE_MISS;
+                    }
+                    StopBirdAmbient(&state);
+                    roundEnding = TRUE;
+                    sessionComplete = TRUE;
+                    DateStamp(&finalScoreStamp);
+                    finalScoreStampValid = TRUE;
+                }
             }
 
             {
@@ -2702,6 +2730,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 /* Input becomes live only after a complete sight picture has
                  * been drawn (and, with double buffering, swapped on screen).
                  */
+                if (!sightPresented && LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2)
+                    TargetsHandler_SetPaused(FALSE);
                 sightPresented = TRUE;
             } else if (!endScreenDrawn) {
                 if (haveBg) {
