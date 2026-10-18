@@ -32,6 +32,7 @@
 void TargetScoring_SetZeroRange(UWORD meters);
 UWORD TargetScoring_GetZeroRange(void);
 BYTE TargetScoring_GetZeroOffset(UWORD distance);
+BOOL TargetScoring_GetExcellentPoint(UWORD distance, WORD *outX, WORD *outY);
 WORD TargetScoring_GetParallaxOffset(UWORD distance, WORD sightOffsetPx);
 UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY);
 void TargetScoring_Reset(void);

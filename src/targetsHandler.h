@@ -63,5 +63,6 @@ void TargetsHandler_AcknowledgeRefire(void);
 UWORD TargetsHandler_GetSlotCount(TargetDistance distance);
 BOOL TargetsHandler_SelectSlot(TargetDistance distance, UWORD slotIndex);
 BOOL TargetsHandler_GetTargetInfo(TargetDistance distance, TargetInfo *outInfo);
+WORD TargetsHandler_GetWindDriftOffset(UWORD distance);
 
 #endif

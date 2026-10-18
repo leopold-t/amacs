@@ -556,7 +556,7 @@ static const UBYTE gWindDrift10Mph[6] = {1, 1, 2, 3, 3, 4};
 static const UBYTE gWindDrift20Mph[6] = {2, 2, 4, 5, 7, 8};
 static const UBYTE gWindDrift30Mph[6] = {2, 4, 6, 8, 10, 11};
 
-static WORD GetWindDriftOffset(UWORD distance) {
+WORD TargetsHandler_GetWindDriftOffset(UWORD distance) {
     const UBYTE *table;
     RangeWindDirection direction;
     UWORD speed;
@@ -623,7 +623,7 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, WORD sightOffsetX, W
     zeroOffsetY = TargetScoring_GetZeroOffset(distance);
     parallaxX = TargetScoring_GetParallaxOffset(distance, sightOffsetX);
     parallaxY = TargetScoring_GetParallaxOffset(distance, sightOffsetY);
-    windOffsetX = GetWindDriftOffset(distance);
+    windOffsetX = TargetsHandler_GetWindDriftOffset(distance);
 
     /*
      * Apply sight-derived ballistic adjustments before hit detection,

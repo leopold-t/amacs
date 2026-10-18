@@ -225,6 +225,39 @@ BYTE TargetScoring_GetZeroOffset(UWORD distance) {
     return GetZeroOffset(table, count, distance);
 }
 
+/* Read-only ideal impact point. Prefer the bottommost EXCELLENT row;
+ * within that row choose the 5-point pixel nearest the horizontal centre. */
+BOOL TargetScoring_GetExcellentPoint(UWORD distance, WORD *outX, WORD *outY) {
+    const UBYTE *map = NULL;
+    UWORD w = 0, h = 0, x, y;
+    WORD bestX = -1, bestY = -1;
+    switch (distance) {
+        case 50: map = &gScoreMap050[0][0]; w = T050_W; h = T050_H; break;
+        case 100: map = &gScoreMap100[0][0]; w = T100_W; h = T100_H; break;
+        case 150: map = &gScoreMap150[0][0]; w = T150_W; h = T150_H; break;
+        case 200: map = &gScoreMap200[0][0]; w = T200_W; h = T200_H; break;
+        case 250: map = &gScoreMap250[0][0]; w = T250_W; h = T250_H; break;
+        case 300: map = &gScoreMap300[0][0]; w = T300_W; h = T300_H; break;
+        default: return FALSE;
+    }
+    for (y = 0; y < h; ++y) {
+        for (x = 0; x < w; ++x) {
+            if (map[(UWORD)(y * w + x)] == SCORE_EXCELLENT) {
+                if (bestY < (WORD)y ||
+                    (bestY == (WORD)y &&
+                     (bestX < 0 || ((2 * (WORD)x - (WORD)w + 1) * (2 * (WORD)x - (WORD)w + 1)) <
+                                    ((2 * bestX - (WORD)w + 1) * (2 * bestX - (WORD)w + 1))))) {
+                    bestX = (WORD)x; bestY = (WORD)y;
+                }
+            }
+        }
+    }
+    if (bestX < 0) return FALSE;
+    if (outX) *outX = bestX;
+    if (outY) *outY = bestY;
+    return TRUE;
+}
+
 static UBYTE GetScoreFromMap(const UBYTE *map, UWORD width, WORD x, WORD y) {
     return map[y * width + x];
 }

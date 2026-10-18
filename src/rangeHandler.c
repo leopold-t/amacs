@@ -1518,10 +1518,108 @@ static void DrawRangeRefirePrompt(struct RastPort *rp, struct TextFont *font) {
     DrawCenteredTextWithShadow(rp, font, 160, 31, 26, "PULL TRIGGER TO CONTINUE");
 }
 
+/* Static Level 1-3 shot snapshot.  Capture BEFORE CheckHit/RecordShot,
+ * which can hide the target even on a miss. */
+typedef struct ShotSightSnapshot {
+    BOOL valid;
+    UWORD distance;
+    WORD targetX, targetY, targetW, targetH;
+    WORD sightX, sightY; /* front sight tip in original range coordinates */
+    WORD correctX, correctY; /* ideal sight tip, captured at shot time */
+    BOOL correctValid;
+} ShotSightSnapshot;
+
+static const UWORD kShotDistances[6] = {50, 100, 150, 200, 250, 300};
+static const char *kShotTargetRaw[6] = {
+    "gfx/Target050.raw", "gfx/Target100.raw", "gfx/Target150.raw",
+    "gfx/Target200.raw", "gfx/Target250.raw", "gfx/Target300.raw"
+};
+static const char *kShotTargetMask[6] = {
+    "gfx/Target050.mask", "gfx/Target100.mask", "gfx/Target150.mask",
+    "gfx/Target200.mask", "gfx/Target250.mask", "gfx/Target300.mask"
+};
+static const UWORD kShotTargetW[6] = {T050_W,T100_W,T150_W,T200_W,T250_W,T300_W};
+static const UWORD kShotTargetH[6] = {T050_H,T100_H,T150_H,T200_H,T250_H,T300_H};
+
+static void CaptureShotSight(ShotSightSnapshot *snap, WORD tipX, WORD tipY) {
+    UWORD i;
+    TargetInfo info;
+    snap->valid = FALSE;
+    snap->correctValid = FALSE;
+    snap->sightX = tipX;
+    snap->sightY = tipY;
+    for (i = 0; i < 6; ++i) {
+        if (TargetsHandler_GetTargetInfo((TargetDistance)kShotDistances[i], &info) &&
+            info.visible && info.loaded && !info.hit && info.width > 0 && info.height > 0) {
+            snap->valid = TRUE;
+            snap->distance = i;
+            snap->targetX = info.x;
+            snap->targetY = info.y;
+            snap->targetW = info.width;
+            snap->targetH = info.height;
+            {
+                WORD excellentX, excellentY;
+                if (TargetScoring_GetExcellentPoint(kShotDistances[i], &excellentX, &excellentY)) {
+                    /* Invert the same impact equation used by CheckSeriesHit:
+                     * impact = sight + wind (X), sight - BZO (Y).
+                     * Ideal placement is the selected 5-point impact pixel. */
+                    snap->correctX = (WORD)(info.x + excellentX -
+                                             TargetsHandler_GetWindDriftOffset(kShotDistances[i]));
+                    snap->correctY = (WORD)(info.y + excellentY +
+                                             TargetScoring_GetZeroOffset(kShotDistances[i]));
+                    snap->correctValid = TRUE;
+                }
+            }
+            break;
+        }
+    }
+}
+
+/* Draw in an inset below the three ratings.  Both target and sight use
+ * the shot-time coordinates, translated by the SAME origin. */
+static void DrawShotSightDiagram(struct RastPort *rp, const ShotSightSnapshot *snap,
+                                 const AmacsBob *sight, const AmacsBob *targets) {
+    WORD targetCenterX, targetCenterY, originX, originY;
+    WORD sx, sy, tx, ty, cx, cy;
+    const AmacsBob *target;
+    if (!rp || !snap->valid || !sight || !sight->mask || !targets) return;
+    target = &targets[snap->distance];
+    if (!target->mask) return;
+    targetCenterX = (WORD)(snap->targetX + snap->targetW / 2);
+    targetCenterY = (WORD)(snap->targetY + snap->targetH / 2);
+    originX = (WORD)(160 - targetCenterX);
+    originY = (WORD)(138 - targetCenterY);
+    tx = (WORD)(snap->targetX + originX);
+    ty = (WORD)(snap->targetY + originY);
+    sx = (WORD)(snap->sightX + originX - 41);
+    sy = (WORD)(snap->sightY + originY - 10);
+    Bob_DrawMaskedToRastPort(target, rp, tx, ty);
+    if (snap->correctValid) {
+        cx = (WORD)(snap->correctX + originX - 41);
+        cy = (WORD)(snap->correctY + originY - 10);
+        if (cx >= 26 && cx + 84 <= 294 && cy >= 83 && cy + 57 <= 202) {
+            SetDrMd(rp, JAM1);
+            SetAPen(rp, SCORE_FLASH_GOOD_COLOR);
+            BltTemplate(sight->mask, 0, 12, rp, cx, cy, 84, 57);
+            WaitBlit();
+        }
+    }
+    /* Prevent any part of the 84x57 sight from overwriting the text panel
+     * or the legend.  Out-of-view sights are intentionally not recentered. */
+    if (sx >= 26 && sx + 84 <= 294 && sy >= 83 && sy + 57 <= 202) {
+        SetDrMd(rp, JAM1);
+        SetAPen(rp, SCORE_FLASH_AVERAGE_COLOR);
+        BltTemplate(sight->mask, 0, 12, rp, sx, sy, 84, 57);
+        WaitBlit();
+    }
+}
+
 /* Full Course shot-by-shot instruction.  Keep the normal HUD and palette
  * untouched; the notice uses existing range pens and the draw buffer. */
 static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
-                               BOOL breathOK, BOOL positionStable, UBYTE shotScore) {
+                               BOOL breathOK, BOOL positionStable, UBYTE shotScore,
+                               const ShotSightSnapshot *snapshot, const AmacsBob *sight,
+                               const AmacsBob *targets) {
     const char *positionLabel = "STEADY POSITION: ";
     const char *positionRating = positionStable ? "GOOD" : "POOR";
     const char *breathLabel = "BREATH CONTROL: ";
@@ -1538,12 +1636,12 @@ static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
     }
     SetDrMd(rp, JAM1);
     SetAPen(rp, 0);
-    RectFill(rp, 21, 8, 298, 105);
+    RectFill(rp, 21, 8, 298, 245);
     SetAPen(rp, 4);
     RectFill(rp, 24, 11, 295, 12);
-    RectFill(rp, 24, 101, 295, 102);
-    RectFill(rp, 24, 11, 25, 102);
-    RectFill(rp, 294, 11, 295, 102);
+    RectFill(rp, 24, 241, 295, 242);
+    RectFill(rp, 24, 11, 25, 242);
+    RectFill(rp, 294, 11, 295, 242);
 
     if (font) SetFont(rp, font);
 #define DRAW_FEEDBACK_LINE(label, rating, y, pen) do { \
@@ -1560,7 +1658,13 @@ static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
                        breathOK ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR);
     DRAW_FEEDBACK_LINE(shotLabel, shotRating, 62, shotPen);
 #undef DRAW_FEEDBACK_LINE
-    DrawCenteredTextWithShadow(rp, font, 88, 31, 26, "PULL TRIGGER TO CONTINUE");
+    DrawShotSightDiagram(rp, snapshot, sight, targets);
+    /* Legend squares centred vertically on the text line, not above it. */
+    SetAPen(rp, SCORE_FLASH_GOOD_COLOR); RectFill(rp, 56, 208, 63, 215);
+    DrawTextWithShadowEx(rp, font, 69, 209, 31, 26, "= CORRECT", 9);
+    SetAPen(rp, SCORE_FLASH_AVERAGE_COLOR); RectFill(rp, 164, 208, 171, 215);
+    DrawTextWithShadowEx(rp, font, 177, 209, 31, 26, "= YOUR SIGHT", 12);
+    DrawCenteredTextWithShadow(rp, font, 226, 31, 26, "PULL TRIGGER TO CONTINUE");
 }
 
 static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL levelCompleted,
@@ -1601,6 +1705,12 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
     AmacsBob frontSight;
     AmacsBob rearSight;
+    AmacsBob feedbackSight;
+    AmacsBob feedbackTargets[6];
+    ShotSightSnapshot shotSnapshot;
+    BOOL feedbackGraphicsReady = FALSE;
+    UWORD feedbackTargetLoaded = 0;
+    UWORD feedbackIndex;
     struct TextFont *hudFont = NULL;
 
     const LONG V_MAX = 13312;
@@ -1658,13 +1768,34 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 #define finalScoreStamp state.finalScoreStamp
 #define finalScoreStampValid state.finalScoreStampValid
 
+    memset(&feedbackSight, 0, sizeof(feedbackSight));
+    memset(feedbackTargets, 0, sizeof(feedbackTargets));
+    memset(&shotSnapshot, 0, sizeof(shotSnapshot));
+    if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO) {
+        if (Bob_LoadRawAndMask(&feedbackSight, "gfx/FrontSightZero.raw",
+                               "gfx/FrontSightZero.mask", 84, 57, 5)) {
+            for (feedbackIndex = 0; feedbackIndex < 6; ++feedbackIndex) {
+                if (!Bob_LoadRawAndMask(&feedbackTargets[feedbackIndex],
+                                        kShotTargetRaw[feedbackIndex], kShotTargetMask[feedbackIndex],
+                                        kShotTargetW[feedbackIndex], kShotTargetH[feedbackIndex], 5)) break;
+                feedbackTargetLoaded++;
+            }
+            feedbackGraphicsReady = (feedbackTargetLoaded == 6);
+        }
+    }
     if (!Bob_LoadRawAndMask(&frontSight, FRONTSIGHT_RAW, FRONTSIGHT_MASK, FRONTSIGHT_W,
                             FRONTSIGHT_H, 5)) {
+        Bob_Free(&feedbackSight);
+        for (feedbackIndex = 0; feedbackIndex < feedbackTargetLoaded; ++feedbackIndex)
+            Bob_Free(&feedbackTargets[feedbackIndex]);
         return FALSE;
     }
 
     if (!Bob_LoadRawAndMask(&rearSight, REARSIGHT_RAW, REARSIGHT_MASK, REARSIGHT_W, REARSIGHT_H,
                             5)) {
+        Bob_Free(&feedbackSight);
+        for (feedbackIndex = 0; feedbackIndex < feedbackTargetLoaded; ++feedbackIndex)
+            Bob_Free(&feedbackTargets[feedbackIndex]);
         Bob_Free(&frontSight);
         return FALSE;
     }
@@ -1676,6 +1807,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             CloseFont(hudFont);
         }
 
+        Bob_Free(&feedbackSight);
+        for (feedbackIndex = 0; feedbackIndex < feedbackTargetLoaded; ++feedbackIndex)
+            Bob_Free(&feedbackTargets[feedbackIndex]);
         Bob_Free(&frontSight);
         Bob_Free(&rearSight);
         return FALSE;
@@ -1704,6 +1838,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             CloseFont(hudFont);
         }
 
+        Bob_Free(&feedbackSight);
+        for (feedbackIndex = 0; feedbackIndex < feedbackTargetLoaded; ++feedbackIndex)
+            Bob_Free(&feedbackTargets[feedbackIndex]);
         Bob_Free(&frontSight);
         Bob_Free(&rearSight);
         return FALSE;
@@ -1744,7 +1881,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     CloseFont(hudFont);
                 }
 
-                Bob_Free(&frontSight);
+                Bob_Free(&feedbackSight);
+        for (feedbackIndex = 0; feedbackIndex < feedbackTargetLoaded; ++feedbackIndex)
+            Bob_Free(&feedbackTargets[feedbackIndex]);
+        Bob_Free(&frontSight);
                 Bob_Free(&rearSight);
                 return FALSE;
             }
@@ -1827,7 +1967,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                                   SCR_W, SCR_H, 0xC0, 0xFF, NULL);
                         WaitBlit();
                     }
-                    DrawBreathFeedback(rp, hudFont, breathFeedbackOK, positionFeedbackStable, lastShotScore);
+                    DrawBreathFeedback(rp, hudFont, breathFeedbackOK, positionFeedbackStable, lastShotScore,
+                                       &shotSnapshot, feedbackGraphicsReady ? &feedbackSight : NULL,
+                                       feedbackGraphicsReady ? feedbackTargets : NULL);
                     if (useDBuf) Gfx_SwapBuffers();
                 }
                 WaitTOF();
@@ -2063,6 +2205,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     sightOffsetX = (WORD)(leadX / 256);
                     sightOffsetY = (WORD)(leadY / 256);
 
+                    if (breathFeedbackModal) {
+                        CaptureShotSight(&shotSnapshot, (WORD)(aimX + sightOffsetX),
+                                         (WORD)(aimY + sightOffsetY));
+                    }
                     if (TargetsHandler_CheckHit(aimX, aimY, sightOffsetX, sightOffsetY,
                                                 &hitDelayTicks, &hitScore, &hitVolume)) {
                         RegisterHit();
@@ -2550,7 +2696,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         CloseFont(hudFont);
     }
 
-    Bob_Free(&frontSight);
+    Bob_Free(&feedbackSight);
+        for (feedbackIndex = 0; feedbackIndex < feedbackTargetLoaded; ++feedbackIndex)
+            Bob_Free(&feedbackTargets[feedbackIndex]);
+        Bob_Free(&frontSight);
     Bob_Free(&rearSight);
 
 #undef ringX
