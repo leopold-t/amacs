@@ -2332,16 +2332,17 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
     font = OpenFont(&gSummaryFontAttr);
 
     if (fullCoursePreview) {
-        BOOL level2 = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2;
+        BOOL timedLevel = !LevelManager_GetConfig()->untimedTargets;
+        BOOL level3 = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3;
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
-                                       LEVEL_INFO_SHADOW_PEN, level2 ? "LEVEL 2" : "LEVEL 1");
-        if (level2) {
+                                       LEVEL_INFO_SHADOW_PEN, level3 ? "LEVEL 3" : (timedLevel ? "LEVEL 2" : "LEVEL 1"));
+        if (timedLevel) {
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, "INTRODUCTION TO TIMED TARGETS");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "EXPOSURE TIME: 6 SEC");
+                                           LEVEL_INFO_SHADOW_PEN, level3 ? "EXPOSURE TIME: 7 SEC" : "EXPOSURE TIME: 8 SEC");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "HIT 2 OF 3 TARGETS");
+                                           LEVEL_INFO_SHADOW_PEN, level3 ? "HIT 3 OF 4 TARGETS" : "HIT 2 OF 3 TARGETS");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, "AT EACH RANGE");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
@@ -2355,7 +2356,7 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, "TARGETS ARE UNTIMED");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "HIT 2 OF 3 TARGETS");
+                                           LEVEL_INFO_SHADOW_PEN, level3 ? "HIT 3 OF 4 TARGETS" : "HIT 2 OF 3 TARGETS");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, "AT EACH RANGE");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
@@ -2790,7 +2791,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
 
             /* The Full Course total score belongs to the final course summary
              * after Level 9, not the individual level summaries. */
-            if (!fullCoursePreview || LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2) {
+            if (!fullCoursePreview || LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3) {
                 ULONG cumulative = (ULONG)totalScore + (ULONG)priorLevelScore;
                 BuildSummaryTotalScoreLine(line, (UWORD)(cumulative > 65535UL ? 65535UL : cumulative));
                 DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_TOTAL_SCORE_Y,
@@ -2908,8 +2909,8 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
         }
 
         if (fullCoursePreview && fullCourseStandardMet &&
-            LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL1) {
-            /* Continue straight to Level 2; no title-screen detour. */
+            LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL3) {
+            /* Continue directly to the next Full Course level. */
             Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
         } else if (fullCoursePreview && fullCourseStandardMet) {
             struct Screen *titleScreen;
@@ -4974,7 +4975,7 @@ typedef enum { ATTR_TRAINING_INFO = 0, ATTR_FUNDAMENTALS } AttractScreen;
 int main(void) {
     BOOL engaged = FALSE;
     BOOL fullCoursePreview = FALSE;
-    UWORD level1ScoreCarry = 0;
+    UWORD priorLevelScoreCarry = 0;
     UWORD currentLoPal[32];
     UWORD nextLoPal[32];
 
@@ -5130,7 +5131,7 @@ show_title:
             if (menuResult == MENU_RESULT_TEN_SHOT || menuResult == MENU_RESULT_FULL_COURSE) {
                 fullCoursePreview = (menuResult == MENU_RESULT_FULL_COURSE);
                 LevelManager_SetMode(fullCoursePreview ? LEVEL_MANAGER_MODE_LEVEL1 : LEVEL_MANAGER_MODE_DEMO);
-                level1ScoreCarry = 0;
+                priorLevelScoreCarry = 0;
                 engaged = TRUE;
                 /* Reuse the existing pre-range path beginning at Target Ranges. */
                 attr = ATTR_FUNDAMENTALS;
@@ -5399,13 +5400,14 @@ show_title:
                 {
                     BOOL standardMet = FALSE;
                     if (!ShowSummaryScreen(&summaryData, fullCoursePreview,
-                                           level1ScoreCarry, &standardMet)) {
+                                           priorLevelScoreCarry, &standardMet)) {
                         goto exit_ok;
                     }
                     if (fullCoursePreview && standardMet &&
-                        LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL1) {
-                        level1ScoreCarry = summaryData.score;
-                        LevelManager_SetMode(LEVEL_MANAGER_MODE_LEVEL2);
+                        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL3) {
+                        priorLevelScoreCarry = (UWORD)(priorLevelScoreCarry + summaryData.score);
+                        LevelManager_SetMode(LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL1
+                            ? LEVEL_MANAGER_MODE_LEVEL2 : LEVEL_MANAGER_MODE_LEVEL3);
                         IS_NEW_GAME_SESSION = TRUE;
                         for (int i = 0; i < 32; i++) currentLoPal[i] = PerformancePaletteRGB4[i];
                         goto retry_full_course_level;

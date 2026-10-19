@@ -9,7 +9,8 @@ extern BOOL IS_NEW_GAME_SESSION;
 typedef enum LevelManagerMode {
     LEVEL_MANAGER_MODE_DEMO = 0,
     LEVEL_MANAGER_MODE_LEVEL1,
-    LEVEL_MANAGER_MODE_LEVEL2
+    LEVEL_MANAGER_MODE_LEVEL2,
+    LEVEL_MANAGER_MODE_LEVEL3
 } LevelManagerMode;
 
 typedef struct LevelConfig {

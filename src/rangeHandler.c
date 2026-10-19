@@ -1861,9 +1861,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
     /* Ensure a clean session state even when coming back from a previous run */
     TargetsHandler_Reset();
-    /* The first six-second exposure must start only after the player sees
+    /* The first timed exposure must start only after the player sees
      * the first complete sight picture, not during disk I/O. */
-    TargetsHandler_SetPaused(LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2);
+    TargetsHandler_SetPaused(!LevelManager_GetConfig()->untimedTargets);
     Sound_SetPaused(FALSE);
     DateStamp(&state.roundStartStamp);
     ScheduleBirdAmbient(&state);
@@ -2386,9 +2386,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
             if (!roundEnding) {
                 TargetsHandler_Tick();
-                /* Level 2 timeout is a missed presentation, not a fired shot.
+                /* Timed target expiration is a missed presentation, not a fired shot.
                  * End normally when the last target expires. */
-                if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2 &&
+                if (!LevelManager_GetConfig()->untimedTargets &&
                     TargetsHandler_ConsumeExpiredPresentations() != 0 &&
                     TargetsHandler_IsComplete()) {
                     levelCompleted = TRUE;
@@ -2738,7 +2738,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 /* Input becomes live only after a complete sight picture has
                  * been drawn (and, with double buffering, swapped on screen).
                  */
-                if (!sightPresented && LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2)
+                if (!sightPresented && !LevelManager_GetConfig()->untimedTargets)
                     TargetsHandler_SetPaused(FALSE);
                 sightPresented = TRUE;
             } else if (!endScreenDrawn) {

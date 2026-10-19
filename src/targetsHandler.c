@@ -697,10 +697,10 @@ static void TickSeries(TargetSeries *s) {
         return;
     }
 
-    /* Level 2: a presentation expires after six active seconds.
-     * Never count an expiration as a shot or consume ammunition. */
-    if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2 &&
-        t >= s->startDelayTicks + (6UL * TICKS_PER_SEC)) {
+    /* Timed presentations expire without consuming ammunition. */
+    if (!LevelManager_GetConfig()->untimedTargets &&
+        t >= s->startDelayTicks +
+            ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ? 7UL : 8UL) * TICKS_PER_SEC)) {
         s->visible = FALSE;
         s->respawnAllowed = FALSE;
         ++gExpiredPresentations;
@@ -1133,10 +1133,11 @@ void TargetsHandler_RecordShot(BOOL hit) {
     if (hit) {
         gLevel1HitsAtDistance++;
     }
-    /* A complete group always contains three presentations, even if the
-     * first two shots were hits. Evaluate only after shot number three. */
-    if (gLevel1ShotsAtDistance >= 3) {
-        if (gLevel1HitsAtDistance >= 2) {
+    /* Evaluate the entire distance group, including expired presentations. */
+    if (gLevel1ShotsAtDistance >=
+        (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ? 4 : 3)) {
+        if (gLevel1HitsAtDistance >=
+            (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ? 3 : 2)) {
             gLevel1DistanceIndex++;
             if (gLevel1DistanceIndex >= 6) {
                 gLevel1Completed = TRUE;
