@@ -42,6 +42,7 @@ typedef struct AudioVoice {
 #define WIND_SAMPLE_TICKS 200UL /* 64000 bytes at 16 kHz, 50 ticks/s */
 
 #define SHOT_VOLUME 64
+#define REPLAY_SHOT_VOLUME 40
 #define SHOT_CYCLES 1
 
 #define HIT_VOLUME 64
@@ -1811,7 +1812,7 @@ void Sound_SetPaused(BOOL paused) {
     gSoundPaused = FALSE;
 }
 
-void Sound_PlayShot(void) {
+static void Sound_PlayShotAtVolume(UBYTE volume) {
     if (!gSoundInited || !gShotVoice.io || !gShot.data || gShot.length == 0) {
         return;
     }
@@ -1821,7 +1822,15 @@ void Sound_PlayShot(void) {
         return;
     }
 
-    StartVoiceSample(&gShotVoice, &gShot, SOUND_11KHZ_PERIOD, SHOT_VOLUME, SHOT_CYCLES);
+    StartVoiceSample(&gShotVoice, &gShot, SOUND_11KHZ_PERIOD, volume, SHOT_CYCLES);
+}
+
+void Sound_PlayShot(void) {
+    Sound_PlayShotAtVolume(SHOT_VOLUME);
+}
+
+void Sound_PlayReplayShot(void) {
+    Sound_PlayShotAtVolume(REPLAY_SHOT_VOLUME);
 }
 
 void Sound_PlayHit(UWORD delayTicks, UBYTE volume) {

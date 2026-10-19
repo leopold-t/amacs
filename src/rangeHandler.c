@@ -1702,6 +1702,9 @@ static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
     DrawTextWithShadowEx(rp, font, 69, 209, 31, 26, "= CORRECT", 9);
     SetAPen(rp, SCORE_FLASH_AVERAGE_COLOR); RectFill(rp, 164, 208, 171, 215);
     DrawTextWithShadowEx(rp, font, 177, 209, 31, 26, "= YOUR SIGHT", 12);
+    /* SNES-style replay caption, right-aligned above YOUR SIGHT. */
+    DrawTextWithShadowEx(rp, font, (WORD)(274 - TextLength(rp, (STRPTR)"REPLAY", 6)),
+                             193, SCORE_FLASH_AVERAGE_COLOR, 26, "REPLAY", 6);
     DrawCenteredTextWithShadow(rp, font, 226, 31, 26, "PULL TRIGGER TO CONTINUE");
 }
 
@@ -1747,6 +1750,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     AmacsBob feedbackTargets[6];
     ShotSightSnapshot shotSnapshot;
     SightReplay sightReplay;
+    BOOL replayEndSoundPlayed = FALSE;
     BOOL feedbackGraphicsReady = FALSE;
     UWORD feedbackTargetLoaded = 0;
     UWORD feedbackIndex;
@@ -2015,6 +2019,14 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                                        &shotSnapshot, feedbackGraphicsReady ? &feedbackSight : NULL,
                                        feedbackGraphicsReady ? feedbackTargets : NULL,
                                        SightReplay_Current(&sightReplay));
+                    /* Play Shot.raw once when the final recorded sight
+                     * position has actually been drawn. Skipping with Fire
+                     * does not trigger the replay sound. */
+                    if (!replayEndSoundPlayed && sightReplay.count > 0 &&
+                        sightReplay.playback + 1 >= sightReplay.count) {
+                        Sound_PlayReplayShot();
+                        replayEndSoundPlayed = TRUE;
+                    }
                     SightReplay_Advance(&sightReplay);
                     if (useDBuf) Gfx_SwapBuffers();
                 }
@@ -2266,6 +2278,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                          * tip, not a position from the preceding video frame. */
                         SightReplay_Add(&sightReplay, shotSnapshot.sightX, shotSnapshot.sightY);
                         SightReplay_Freeze(&sightReplay);
+                        replayEndSoundPlayed = FALSE;
                     }
                     if (TargetsHandler_CheckHit(aimX, aimY, sightOffsetX, sightOffsetY,
                                                 &hitDelayTicks, &hitScore, &hitVolume)) {

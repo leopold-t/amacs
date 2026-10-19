@@ -19,6 +19,7 @@ BOOL Sound_IsEnhancedAudioEnabled(void);
 void Sound_Shutdown(void);
 void Sound_Update(void);
 void Sound_PlayShot(void);
+void Sound_PlayReplayShot(void);
 void Sound_PlayHit(UWORD delayTicks, UBYTE volume);
 void Sound_SetPaused(BOOL paused);
 

@@ -2776,27 +2776,36 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
                                                tableY, SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN,
                                                line);
 
-            BuildSummaryScoreLine(line, score);
-            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_HIT_SCORE_Y,
-                                     31, 24, line, (UWORD)strlen(line));
-
             if (fullCoursePreview) {
-                /* Per-level Full Course summaries report tactical penalties, not time. */
-                BuildSummaryPenaltiesLine(line, summary ? summary->penalties : 0);
-            } else {
-                BuildSummaryTimeBonusLine(line, timeBonus);
-            }
-            DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_TIME_BONUS_Y,
-                                     31, 24, line, (UWORD)strlen(line));
-
-            /* The Full Course total score belongs to the final course summary
-             * after Level 9, not the individual level summaries. */
-            if (!fullCoursePreview || LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3) {
                 ULONG cumulative = (ULONG)totalScore + (ULONG)priorLevelScore;
+
+                /* Full Course: penalties, hit score, then cumulative total. */
+                BuildSummaryPenaltiesLine(line, summary ? summary->penalties : 0);
+                DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X,
+                                         SUMMARY_HIT_SCORE_Y, 31, 24, line, (UWORD)strlen(line));
+
+                BuildSummaryScoreLine(line, score);
+                DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X,
+                                         SUMMARY_TIME_BONUS_Y, 31, 24, line, (UWORD)strlen(line));
+
                 BuildSummaryTotalScoreLine(line, (UWORD)(cumulative > 65535UL ? 65535UL : cumulative));
-                DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X, SUMMARY_TOTAL_SCORE_Y,
-                                         SUMMARY_DISTANCE_PEN, SUMMARY_SHADOW_PEN, line,
-                                         (UWORD)strlen(line));
+                DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X,
+                                         SUMMARY_TOTAL_SCORE_Y, SUMMARY_DISTANCE_PEN,
+                                         SUMMARY_SHADOW_PEN, line, (UWORD)strlen(line));
+            } else {
+                /* Ten Shot Challenge keeps its existing summary layout. */
+                BuildSummaryScoreLine(line, score);
+                DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X,
+                                         SUMMARY_HIT_SCORE_Y, 31, 24, line, (UWORD)strlen(line));
+
+                BuildSummaryTimeBonusLine(line, timeBonus);
+                DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X,
+                                         SUMMARY_TIME_BONUS_Y, 31, 24, line, (UWORD)strlen(line));
+
+                BuildSummaryTotalScoreLine(line, totalScore);
+                DrawTextWithShadowExMain(&summaryRP, font, SUMMARY_SCORE_LEFT_X,
+                                         SUMMARY_TOTAL_SCORE_Y, SUMMARY_DISTANCE_PEN,
+                                         SUMMARY_SHADOW_PEN, line, (UWORD)strlen(line));
             }
 
             BuildSummaryAccuracyLine(line, acc);
