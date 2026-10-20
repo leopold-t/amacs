@@ -1665,7 +1665,7 @@ static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
     const char *shotLabel = "SHOT LOCATION: ";
     const char *shotRating = GetScoreText(shotScore);
     UWORD shotPen = (shotScore == SCORE_MISS) ? 31 : GetScoreTextPen(shotScore);
-    WORD x, labelWidth, ratingWidth;
+    WORD x, labelWidth, ratingWidth, ratingX;
 
     if (!rp) return;
     if (!shotRating) {
@@ -1682,20 +1682,31 @@ static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
     RectFill(rp, 294, 11, 295, 242);
 
     if (font) SetFont(rp, font);
-#define DRAW_FEEDBACK_LINE(label, rating, y, pen) do { \
-    labelWidth = TextLength(rp, (STRPTR)(label), TextLen(label)); \
-    ratingWidth = TextLength(rp, (STRPTR)(rating), TextLen(rating)); \
-    x = (WORD)((SCR_W - labelWidth - ratingWidth) / 2); \
-    DrawTextWithShadowEx(rp, font, x, (y), 31, 26, (label), TextLen(label)); \
-    DrawTextWithShadowEx(rp, font, (WORD)(x + labelWidth), (y), (pen), 26, \
-                         (rating), TextLen(rating)); \
-} while (0)
-    DRAW_FEEDBACK_LINE(positionLabel, positionRating, 30,
-                       positionStable ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR);
-    DRAW_FEEDBACK_LINE(breathLabel, breathRating, 46,
-                       breathOK ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR);
-    DRAW_FEEDBACK_LINE(shotLabel, shotRating, 62, shotPen);
-#undef DRAW_FEEDBACK_LINE
+    /* Keep SHOT LOCATION in its original centered position.  Align the
+     * other two colons and rating starts with that reference line. */
+    labelWidth = TextLength(rp, (STRPTR)shotLabel, TextLen(shotLabel));
+    ratingWidth = TextLength(rp, (STRPTR)shotRating, TextLen(shotRating));
+    x = (WORD)((SCR_W - labelWidth - ratingWidth) / 2);
+    ratingX = (WORD)(x + labelWidth);
+
+    labelWidth = TextLength(rp, (STRPTR)positionLabel, TextLen(positionLabel));
+    DrawTextWithShadowEx(rp, font, (WORD)(ratingX - labelWidth), 30, 31, 26,
+                         positionLabel, TextLen(positionLabel));
+    DrawTextWithShadowEx(rp, font, ratingX, 30,
+                         positionStable ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR,
+                         26, positionRating, TextLen(positionRating));
+
+    labelWidth = TextLength(rp, (STRPTR)breathLabel, TextLen(breathLabel));
+    DrawTextWithShadowEx(rp, font, (WORD)(ratingX - labelWidth), 46, 31, 26,
+                         breathLabel, TextLen(breathLabel));
+    DrawTextWithShadowEx(rp, font, ratingX, 46,
+                         breathOK ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR,
+                         26, breathRating, TextLen(breathRating));
+
+    DrawTextWithShadowEx(rp, font, x, 62, 31, 26,
+                         shotLabel, TextLen(shotLabel));
+    DrawTextWithShadowEx(rp, font, ratingX, 62, shotPen, 26,
+                         shotRating, TextLen(shotRating));
     DrawShotSightDiagram(rp, snapshot, sight, targets, replayPoint);
     /* Legend squares centred vertically on the text line, not above it. */
     SetAPen(rp, SCORE_FLASH_GOOD_COLOR); RectFill(rp, 56, 208, 63, 215);
