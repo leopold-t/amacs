@@ -2387,6 +2387,10 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
     WaitBlit();
     Gfx_FadeInCurrentScreenFromBlack(PerformancePaletteRGB4, 32);
 
+    /* Ambient samples are released after each range run. Preload bird and
+     * wind on every level briefing, including Level 2/3 and refires. */
+    Sound_InitBirdAmbient();
+
     waitResult = WaitForAdvanceOnly();
 
     if (font) {

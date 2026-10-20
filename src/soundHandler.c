@@ -38,7 +38,7 @@ typedef struct AudioVoice {
 #define SOUND_11KHZ_PERIOD 321
 #define SOUND_16KHZ_PERIOD 222
 #define SOUND_22KHZ_PERIOD 161
-#define WIND_FILE "audio/enhanced/Wind.raw"
+#define WIND_FILE "audio/Wind.raw"
 #define WIND_SAMPLE_TICKS 200UL /* 64000 bytes at 16 kHz, 50 ticks/s */
 
 #define SHOT_VOLUME 64
@@ -1485,11 +1485,10 @@ BOOL Sound_InitBirdAmbient(void) {
      * the firing range so the random ambient loop never performs floppy I/O
      * during active gameplay.
      */
-    /* Both cues are optional and loaded before entering the range. */
+    /* Both standard ambient cues are optional and preloaded before the range.
+     * Wind is available on 512 KB Chip RAM systems as well. */
     gBirdAmbientAvailable = LoadSample(BIRD_CALL_FILE, &gBirdCall);
-    if (Sound_IsEnhancedAudioEnabled()) {
-        LoadSample(WIND_FILE, &gWind);
-    }
+    LoadSample(WIND_FILE, &gWind);
     gBirdAmbientInited = TRUE;
     gLastError = SOUND_OK;
     return TRUE;
