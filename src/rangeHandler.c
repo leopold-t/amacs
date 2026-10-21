@@ -1652,12 +1652,19 @@ static void DrawShotSightDiagram(struct RastPort *rp, const ShotSightSnapshot *s
     }
 }
 
+/* Share the exact end-of-round status with the final shot feedback. */
+static const char *GetEndRoundStatusText(BOOL levelCompleted) {
+    return levelCompleted ? "LEVEL COMPLETED" :
+           (TargetsHandler_IsUnqualified() ? "UNQUALIFIED" : "OUT OF AMMO");
+}
+
 /* Full Course shot-by-shot instruction.  Keep the normal HUD and palette
  * untouched; the notice uses existing range pens and the draw buffer. */
 static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
                                BOOL breathOK, BOOL positionStable, UBYTE shotScore,
                                const ShotSightSnapshot *snapshot, const AmacsBob *sight,
-                               const AmacsBob *targets, const SightReplayPoint *replayPoint) {
+                               const AmacsBob *targets, const SightReplayPoint *replayPoint,
+                               const char *endRoundStatus) {
     const char *positionLabel = "STEADY POSITION: ";
     const char *positionRating = positionStable ? "GOOD" : "POOR";
     const char *breathLabel = "BREATH CONTROL: ";
@@ -1707,6 +1714,9 @@ static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
                          shotLabel, TextLen(shotLabel));
     DrawTextWithShadowEx(rp, font, ratingX, 62, shotPen, 26,
                          shotRating, TextLen(shotRating));
+    if (endRoundStatus) {
+        DrawCenteredTextWithShadow(rp, font, 78, 31, 26, endRoundStatus);
+    }
     DrawShotSightDiagram(rp, snapshot, sight, targets, replayPoint);
     /* Legend squares centred vertically on the text line, not above it. */
     SetAPen(rp, SCORE_FLASH_GOOD_COLOR); RectFill(rp, 56, 208, 63, 215);
@@ -1728,8 +1738,7 @@ static void DrawEndRoundOverlay(struct RastPort *rp, struct TextFont *font, BOOL
     }
 
     DrawCenteredTextWithShadow(rp, font, ENDROUND_TITLE_Y, HUD_TEXT_PEN, HUD_SHADOW_PEN,
-                               levelCompleted ? "LEVEL COMPLETED" :
-                               (TargetsHandler_IsUnqualified() ? "UNQUALIFIED" : "OUT OF AMMO"));
+                               GetEndRoundStatusText(levelCompleted));
 
     DrawHitCounter(rp, font);
 
@@ -2029,7 +2038,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     DrawBreathFeedback(rp, hudFont, breathFeedbackOK, positionFeedbackStable, lastShotScore,
                                        &shotSnapshot, feedbackGraphicsReady ? &feedbackSight : NULL,
                                        feedbackGraphicsReady ? feedbackTargets : NULL,
-                                       SightReplay_Current(&sightReplay));
+                                       SightReplay_Current(&sightReplay),
+                                       roundEnding ? GetEndRoundStatusText(levelCompleted) : NULL);
                     /* Play Shot.raw once when the final recorded sight
                      * position has actually been drawn. Skipping with Fire
                      * does not trigger the replay sound. */
