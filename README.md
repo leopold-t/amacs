@@ -14,29 +14,29 @@ The game uses sampled sound effects and narration generated with ElevenLabs. Mus
 ### Features
 - Multiple target types and engagement distances
 - Distance-based target scaling and scoring
+- Full Course Levels 1-3 with shot-by-shot training feedback and sight replay
+- Ten Shot Challenge and Zeroing modes
 - Detailed hit visualisation and performance summaries
 - Configurable joystick, keyboard and mouse controls
 - Wind drift simulation with selectable wind conditions
 - Night Vision, Red Room and Amber firing range colour schemes
-- Ambient range sounds, including wind effects with Enhanced Audio
+- Standard bird and wind ambience, including on 512 KB Chip RAM systems
 - OCS/ECS/AGA compatibility
 - Workbench-friendly operation
 - Floppy disk compatible distribution
 - Real hardware focused development
 
 ### Requirements
-- AmigaOS 3.x
-- lowlevel.library
+- AmigaOS / Kickstart 2.x or 3.x
 - Motorola 68000 CPU or higher
-- 1 MB RAM minimum
+- 1 MB total RAM minimum (512 KB Chip RAM supported)
 
-AMACS adapts its audio configuration to the available physical Chip RAM. Systems with 1 MB or more of Chip RAM can use Enhanced Audio when the required samples are present in `audio/enhanced/`. On 512 KB Chip RAM systems, Enhanced Audio is automatically disabled to preserve memory and stability.
+AMACS adapts its audio configuration to the available physical Chip RAM. Systems with 1 MB or more of Chip RAM can use Enhanced Audio when the required samples are present in `audio/enhanced/`. On 512 KB Chip RAM systems, Enhanced Audio is automatically disabled to preserve memory and stability. Standard bird and wind ambience remain available and are preloaded before each firing range session.
 A faster CPU and additional Fast RAM are recommended for improved performance. Hard disk installation is also recommended, as it provides enough storage for the complete audio content.
 
 ## Installation
 ### HDD Installation
-Extract the downloaded archive and copy its contents to any location on your Amiga hard disk.
-Make sure that `lowlevel.library` is present in the system `LIBS:` directory. Once installed, AMACS can be launched directly from its program directory.
+Extract the downloaded archive and copy its contents to any location on your Amiga hard disk. Once installed, AMACS can be launched directly from its program directory.
 
 ### Floppy Disk Edition
 The floppy disk must be writable in order to save the high-score table. AMACS stores high scores in the `Scores.dat` file on the game disk. Due to the limited capacity of a standard Amiga floppy disk, the music in the floppy edition is limited to the in-menu drum excerpt from **"Yankee Doodle"**.
@@ -58,6 +58,42 @@ The floppy disk must be writable in order to save the high-score table. AMACS st
 - **F1 / F2 / F3** – Toggle Night Vision / Red Room / Amber colour schemes.
 - **Esc** – Request to leave the firing range (with confirmation).
 
+## Full Course (Levels 1-3)
+Full Course is a basic rifle marksmanship training programme covering targets at
+50, 100, 150, 200, 250 and 300 metres. Each level starts with a fresh
+30-round magazine. Distances that do not meet the required hit standard must
+be attempted again (REFIRE). Only passed levels contribute to the cumulative
+course score.
+
+| Level | Targets per distance | Required hits | Target exposure |
+| --- | --- | --- | --- |
+| 1 | 3 | 2 of 3 | Unlimited |
+| 2 | 3 | 2 of 3 | 8 seconds |
+| 3 | 4 | 3 of 4 | 7 seconds |
+
+### Feedback in Full Course (Levels 1-3)
+After each shot, AMACS displays feedback relative to the engaged target,
+including Steady Position, Breath Control and Shot Location. It shows the
+correct sight position and replays approximately two seconds of the player's
+actual sight movement before the shot.
+
+If a shot is fired while no target is visible (e.g. between target
+presentations), it is counted as a MISS. In this case, the feedback screen
+does not display a target or sight positions, since there was no engaged
+target to use as a reference.
+
+The final feedback screen also displays LEVEL COMPLETED when the planned
+target sequence has ended, or OUT OF AMMO if ammunition runs out first.
+These messages describe the end condition, not whether the level's hit
+standard was achieved.
+
+### Training Tips
+- When engaging successive targets at the same distance, consider waiting a
+  moment after a high-scoring hit (4/5 or 5/5): the next target may appear
+  in the same position.
+- In timed levels, when the final target at one distance disappears, raise
+  the sights towards the next distance before its targets appear.
+
 ## Acknowledgments
 The floppy disk edition of AMACS uses **GoWB**, a utility written by **Oliver Wagner**, to automatically load Workbench before launching the game. This ensures that the required Workbench environment and system libraries are available while keeping the startup process simple and transparent for the user.
 
@@ -69,14 +105,28 @@ AMACS includes excerpts from the following public domain recordings performed by
 These recordings are public domain works of the United States federal government and are available through Wikimedia Commons.
 
 ### Current Version
-AMACS v0.649
+AMACS v0.701
+
+### What's New in v0.701
+- Introduced Full Course Levels 1-3 with timed target presentations,
+  qualification standards, REFIRE and level summaries.
+- Added shot-by-shot training feedback with Steady Position, Breath Control,
+  Shot Location, correct sight position and sight-movement Replay.
+- Removed the dependency on `lowlevel.library`.
+- Added fallback paths for Kickstart / AmigaOS 2.x compatibility.
+- Extended performance assessment and control options.
+- Made wind ambience part of the standard audio set, including on 512 KB
+  Chip RAM systems, with bird and wind samples preloaded before each level.
+- Improved audio continuity while feedback and REFIRE prompts are displayed.
+- Added end-of-level status messages to the final Full Course feedback.
+- Refined feedback layout and pause behaviour during timed target exposure.
 
 ### What's New in v0.649
 - Added a Settings screen for selecting the primary control method and configuring wind speed and direction.
 - Added mouse aiming, mouse wheel reloading and Space/Enter firing support, alongside joystick and WASD controls.
 - Added an active control method indicator to the Firing Range HUD.
 - Added wind drift to the ballistic simulation, based on **FM 3-22.9 C1, Rifle Marksmanship: M16-/M4-Series Weapons**, with wind speed and direction displayed on the Firing Range HUD.
-- Added ambient wind audio in Enhanced Audio mode, with smooth volume transitions and alternating bird calls.
+- Added ambient wind audio (initially in Enhanced Audio mode), with smooth volume transitions and alternating bird calls.
 - Added Night Vision (F1), Red Room (F2) and Amber (F3) colour schemes, including a firing range vignette and improved Red Room visibility.
 - Added confirmation prompts when leaving the Firing Range or quitting to Workbench.
 - Prevented firing before the iron sights are displayed.
@@ -94,8 +144,8 @@ AMACS v0.649
 - Added WASD keyboard controls alongside joystick input for menu navigation, aiming and reloading.
 
 ## FAQ
-**Q: Why doesn't the AMACS distribution include the required lowlevel.library?**  
-**A:** lowlevel.library is part of AmigaOS and is copyrighted software. It cannot be redistributed as part of AMACS. The library must be present in LIBS: either in the user's AmigaOS installation or on the AMACS floppy disk.
+**Q: Does AMACS require lowlevel.library?**  
+**A:** No. Since v0.701, AMACS no longer depends on `lowlevel.library` and provides fallback support for Kickstart / AmigaOS 2.x.
 
 **Q: Why doesn't AMACS support a light gun?**  
 **A:** There is no readily available light gun that can simply be connected to an Amiga. Supporting one would require uncommon hardware or a custom adapter, while classic light guns such as the NES Zapper also depend on CRT displays and generally do not work with modern LCDs. AMACS therefore focuses on standard, widely available controllers.
@@ -104,10 +154,10 @@ AMACS v0.649
 **A:** No. AMACS supports joystick, keyboard and mouse controls. Aiming can be performed using WASD or the mouse, while firing is available through the Space or Enter keys and the left mouse button. A joystick is fully supported and recommended, however, as its grip is the closest of these control methods to the M16 pistol grip.
 
 **Q: Why are some sounds missing on an Amiga with 512 KB of Chip RAM?**  
-**A:** AMACS automatically disables Enhanced Audio on 512 KB Chip RAM systems to preserve enough memory for stable operation. The basic audio set is used instead.
+**A:** AMACS automatically disables Enhanced Audio on 512 KB Chip RAM systems to preserve enough memory for stable operation. The standard audio set, including wind and bird ambience, is used instead.
 
 **Q: Why do I hear the narrator — the Drill Sergeant — on one Amiga but not another?**  
-**A:** Enhanced Audio requires at least 1 MB of physical Chip RAM and the required samples in `audio/enhanced/`. With only 512 KB of Chip RAM, or when those samples are unavailable, AMACS uses the standard audio set.
+**A:** Enhanced Audio requires at least 1 MB of physical Chip RAM and the required samples in `audio/enhanced/`. With only 512 KB of Chip RAM, or when those samples are unavailable, AMACS uses the standard audio set; wind and bird ambience remain available.
 
 **Q: Why does AMACS return to Workbench when there is not enough free memory instead of disabling more features?**  
 **A:** AMACS selects its feature set from the detected hardware configuration. If memory allocation still fails during startup, it is treated as an initialization error rather than triggering additional dynamic feature degradation.
