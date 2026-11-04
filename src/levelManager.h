@@ -11,7 +11,8 @@ typedef enum LevelManagerMode {
     LEVEL_MANAGER_MODE_LEVEL1,
     LEVEL_MANAGER_MODE_LEVEL2,
     LEVEL_MANAGER_MODE_LEVEL3,
-    LEVEL_MANAGER_MODE_LEVEL4
+    LEVEL_MANAGER_MODE_LEVEL4,
+    LEVEL_MANAGER_MODE_LEVEL5
 } LevelManagerMode;
 
 typedef struct LevelConfig {

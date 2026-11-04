@@ -12,6 +12,14 @@ typedef enum RangeControlMode {
 
 RangeControlMode Range_GetPrimaryControl(void);
 void Range_SetPrimaryControl(RangeControlMode mode);
+typedef enum RangePositionMode {
+    RANGE_POSITION_AS_TRAINED = 0,
+    RANGE_POSITION_SUPPORTED,
+    RANGE_POSITION_UNSUPPORTED
+} RangePositionMode;
+RangePositionMode Range_GetPositionMode(void);
+void Range_SetPositionMode(RangePositionMode mode);
+const char *Range_PositionModeName(RangePositionMode mode);
 BOOL Range_GetSupportedPosition(void);
 void Range_SetSupportedPosition(BOOL supported);
 UWORD Range_GetMouseSensitivity(void);

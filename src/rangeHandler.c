@@ -38,7 +38,8 @@ extern BOOL Input_Down(void);
 static RangeControlMode gPrimaryControl = RANGE_CONTROL_JOYSTICK;
 static UWORD gWindSpeed = 0;
 static UWORD gMouseSensitivity = 100;
-static BOOL gSupportedPosition = FALSE; /* Default: unsupported, with hand sway. */
+static RangePositionMode gPositionMode = RANGE_POSITION_AS_TRAINED;
+static BOOL gSupportedPosition = FALSE; /* Effective position, not the menu setting. */
 static RangeWindDirection gWindDirection = RANGE_WIND_FULL_LEFT;
 
 RangeControlMode Range_GetPrimaryControl(void) {
@@ -51,8 +52,28 @@ void Range_SetPrimaryControl(RangeControlMode mode) {
     }
 }
 
+RangePositionMode Range_GetPositionMode(void) { return gPositionMode; }
+void Range_SetPositionMode(RangePositionMode mode) {
+    if (mode <= RANGE_POSITION_UNSUPPORTED) gPositionMode = mode;
+}
+const char *Range_PositionModeName(RangePositionMode mode) {
+    return mode == RANGE_POSITION_SUPPORTED ? "SUPPORTED" :
+           mode == RANGE_POSITION_UNSUPPORTED ? "UNSUPPORTED" : "AS TRAINED";
+}
 BOOL Range_GetSupportedPosition(void) { return gSupportedPosition; }
-void Range_SetSupportedPosition(BOOL supported) { gSupportedPosition = supported ? TRUE : FALSE; }
+void Range_SetSupportedPosition(BOOL supported) {
+    Range_SetPositionMode(supported ? RANGE_POSITION_SUPPORTED : RANGE_POSITION_UNSUPPORTED);
+}
+/* Manual selection overrides the position prescribed by the course. */
+static void UpdateEffectivePosition(void) {
+    LevelManagerMode level = LevelManager_GetMode();
+    BOOL trainedSupported = (level == LEVEL_MANAGER_MODE_LEVEL1 ||
+                             level == LEVEL_MANAGER_MODE_LEVEL3 ||
+                             (level == LEVEL_MANAGER_MODE_LEVEL5 &&
+                              TargetsHandler_GetPresentedCount() <= 20));
+    gSupportedPosition = gPositionMode == RANGE_POSITION_SUPPORTED ||
+        (gPositionMode == RANGE_POSITION_AS_TRAINED && trainedSupported);
+}
 
 UWORD Range_GetMouseSensitivity(void) { return gMouseSensitivity; }
 
@@ -335,7 +356,7 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
 
     state->ringX = (SCR_W - REARSIGHT_W) / 2;
     state->ringY = (SCR_H - REARSIGHT_H) / 2;
-    state->ammoCount = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4 ? 40 :
+    state->ammoCount = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ? 40 :
         LevelManager_GetConfig()->magazineSize * LevelManager_GetConfig()->magazineCount;
     state->reloadState = RELOAD_STATE_NONE;
     state->reloadNeedsNeutral = FALSE;
@@ -1236,7 +1257,7 @@ static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD amm
         ammoCount = maxAmmo;
     }
 
-    blocksVisible = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4
+    blocksVisible = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5
         ? (ammoCount > 10 ? 2 : (ammoCount > 0 ? 1 : 0))
         : (UWORD)((ammoCount + cfg->magazineSize - 1) / cfg->magazineSize);
 
@@ -1839,7 +1860,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     memset(feedbackTargets, 0, sizeof(feedbackTargets));
     memset(&shotSnapshot, 0, sizeof(shotSnapshot));
     if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
-        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4) {
+        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5) {
         if (Bob_LoadRawAndMask(&feedbackSight, "gfx/FrontSightZero.raw",
                                "gfx/FrontSightZero.mask", 84, 57, 5)) {
             for (feedbackIndex = 0; feedbackIndex < 6; ++feedbackIndex) {
@@ -1983,6 +2004,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     /* Keep the notice visible for at least ~0.5 s at 50 Hz. */
     for (;;) {
         Input_PollWindow(Gfx_GetWindow());
+        UpdateEffectivePosition();
 
         /* Range control is exclusive. J/K/M/L changes the persistent primary
          * device immediately; menus and all non-Range screens keep their
@@ -2292,7 +2314,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     /* Sample the very same phase used to animate breathing;
                      * no extra timing model or change to the sight motion. */
                     if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
-                        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4) {
+                        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5) {
                         breathFeedbackOK = (state.breathPhase == BREATH_PHASE_REST);
                         positionFeedbackStable = (gSupportedPosition || state.handSwayPhase == HAND_SWAY_PHASE_REST);
                         breathFeedbackModal = TRUE;
@@ -2382,8 +2404,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                         DateStamp(&finalScoreStamp);
                         finalScoreStampValid = TRUE;
-                    } else if ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4 && ammoCount == 10) ||
-                               (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4 &&
+                    } else if ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 && ammoCount == 10) ||
+                               (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
                                 (ammoCount % LevelManager_GetConfig()->magazineSize) == 0)) {
                         StartReloadPrompt(&state);
                         shotNeedsRelease = TRUE;
@@ -2723,7 +2745,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             if (!paused && !roundEnding && !showFinalScore &&
                 reloadState == RELOAD_STATE_NONE && !recoilActive &&
                 LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
-                LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4) {
+                LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5) {
                 SightReplay_Add(&sightReplay,
                                 (WORD)(frontX + FRONT_AIM_X),
                                 (WORD)(frontY + FRONT_AIM_Y));

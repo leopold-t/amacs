@@ -127,7 +127,7 @@ static UBYTE gRecordOrder[40];
 static UWORD gRecordNext = 0;
 static BOOL gRecordPending = FALSE;
 static BOOL IsRecordFire(void) {
-    return LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4;
+    return LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5;
 }
 static void BuildRecordOrder(void) {
     UWORD i, j;
@@ -731,7 +731,7 @@ static void TickSeries(TargetSeries *s) {
     /* Timed presentations expire without consuming ammunition. */
     if (!LevelManager_GetConfig()->untimedTargets &&
         t >= s->startDelayTicks +
-            ((IsRecordFire() ? 6UL : (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ? 7UL : 8UL)) * TICKS_PER_SEC)) {
+            ((IsRecordFire() ? 7UL : 8UL) * TICKS_PER_SEC)) {
         s->visible = FALSE;
         s->respawnAllowed = FALSE;
         ++gExpiredPresentations;
@@ -1189,9 +1189,13 @@ void TargetsHandler_RecordShot(BOOL hit) {
     }
     /* Evaluate the entire distance group, including expired presentations. */
     if (gLevel1ShotsAtDistance >=
-        (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ? 4 : 3)) {
+        (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ||
+         LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4 ? 4 : 3)) {
         if (gLevel1HitsAtDistance >=
-            (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ? 3 : 2)) {
+            ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ||
+              LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4) &&
+             !(LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4 &&
+               gLevel1DistanceIndex >= 4) ? 3 : 2)) {
             gLevel1DistanceIndex++;
             if (gLevel1DistanceIndex >= 6) {
                 gLevel1Completed = TRUE;

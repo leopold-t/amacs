@@ -2304,6 +2304,8 @@ static void DrawLevelInfoFrame(struct RastPort *rp, WORD frameBottom) {
     }
 }
 
+static void BuildSettingsLine(char *dst, const char *label, const char *value);
+
 static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
     struct Screen *scr;
     struct RastPort *rp;
@@ -2332,57 +2334,56 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
     font = OpenFont(&gSummaryFontAttr);
 
     if (fullCoursePreview) {
-        BOOL timedLevel = !LevelManager_GetConfig()->untimedTargets;
-        BOOL level3 = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3;
-        BOOL level4 = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4;
-        if (level4) {
-            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "LEVEL 4");
-            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "PRACTICE RECORD FIRE I");
+        LevelManagerMode level = LevelManager_GetMode();
+        const char *number = level == LEVEL_MANAGER_MODE_LEVEL1 ? "LEVEL 1" :
+                             level == LEVEL_MANAGER_MODE_LEVEL2 ? "LEVEL 2" :
+                             level == LEVEL_MANAGER_MODE_LEVEL3 ? "LEVEL 3" :
+                             level == LEVEL_MANAGER_MODE_LEVEL4 ? "LEVEL 4" : "LEVEL 5";
+        const char *subtitle1 = level == LEVEL_MANAGER_MODE_LEVEL1 ||
+                                level == LEVEL_MANAGER_MODE_LEVEL2 ? "INTRODUCTION" :
+                                level == LEVEL_MANAGER_MODE_LEVEL5 ? "PRACTICE RECORD FIRE I" :
+                                "TIMED TARGETS";
+        const char *subtitle2 = level == LEVEL_MANAGER_MODE_LEVEL1 ? "TO SUPPORTED POSITION" :
+                                level == LEVEL_MANAGER_MODE_LEVEL2 ? "TO UNSUPPORTED POSITION" :
+                                level == LEVEL_MANAGER_MODE_LEVEL3 ? "IN SUPPORTED POSITION" :
+                                level == LEVEL_MANAGER_MODE_LEVEL4 ? "IN UNSUPPORTED POSITION" : NULL;
+        const char *position = Range_PositionModeName(Range_GetPositionMode());
+        char positionLine[40];
+        BuildSettingsLine(positionLine, "POSITION SET: ", position);
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, number);
+        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
+                                       LEVEL_INFO_SHADOW_PEN, subtitle1);
+        if (level == LEVEL_MANAGER_MODE_LEVEL5) {
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "EXPOSURE TIME: 6 SEC");
+                                           LEVEL_INFO_SHADOW_PEN, "EXPOSURE TIME: 7 SEC");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, "HIT 30 OF 40 TARGETS");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, Range_GetSupportedPosition()
-                                           ? "POSITION: SUPPORTED" : "POSITION: UNSUPPORTED");
+                                           LEVEL_INFO_SHADOW_PEN, positionLine);
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, "AMMO: TWO MAGS, 40 RDS");
         } else {
-        DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
-                                       LEVEL_INFO_SHADOW_PEN, level3 ? "LEVEL 3" : (timedLevel ? "LEVEL 2" : "LEVEL 1"));
-        if (timedLevel) {
-            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "INTRODUCTION TO TIMED TARGETS");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, level3 ? "EXPOSURE TIME: 7 SEC" : "EXPOSURE TIME: 8 SEC");
+                                           LEVEL_INFO_SHADOW_PEN, subtitle2);
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, level3 ? "HIT 3 OF 4 TARGETS" : "HIT 2 OF 3 TARGETS");
+                                           LEVEL_INFO_SHADOW_PEN, level <= LEVEL_MANAGER_MODE_LEVEL2 ?
+                                           "TARGETS ARE UNTIMED" : "EXPOSURE TIME: 8 SEC");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "AT EACH RANGE");
+                                           LEVEL_INFO_SHADOW_PEN, level <= LEVEL_MANAGER_MODE_LEVEL2 ?
+                                           "HIT 2 OF 3 AT EACH RANGE" :
+                                           level == LEVEL_MANAGER_MODE_LEVEL3 ?
+                                           "HIT 3 OF 4 AT EACH RANGE" :
+                                           "HIT 3/4; 2/4 AT 250-300M");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN,
-                                           Range_GetSupportedPosition() ? "POSITION: SUPPORTED" : "POSITION: UNSUPPORTED");
+                                           LEVEL_INFO_SHADOW_PEN, positionLine);
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE6_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, "AMMO: ONE 30RD MAG");
-        } else {
-            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "INTRODUCTION");
-            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "TARGETS ARE UNTIMED");
-            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, level3 ? "HIT 3 OF 4 TARGETS" : "HIT 2 OF 3 TARGETS");
-            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "AT EACH RANGE");
-            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN,
-                                           Range_GetSupportedPosition() ? "POSITION: SUPPORTED" : "POSITION: UNSUPPORTED");
-            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE6_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "AMMO: ONE 30RD MAG");
-        }
         }
     } else {
+        char positionLine[40];
+        BuildSettingsLine(positionLine, "POSITION SET: ",
+                          Range_PositionModeName(Range_GetPositionMode()));
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
                                        LEVEL_INFO_SHADOW_PEN, "TEN SHOT CHALLENGE");
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
@@ -2390,8 +2391,7 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
                                        LEVEL_INFO_SHADOW_PEN, "TARGETS ARE UNTIMED");
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
-                                       LEVEL_INFO_SHADOW_PEN,
-                                       Range_GetSupportedPosition() ? "POSITION: SUPPORTED" : "POSITION: UNSUPPORTED");
+                                       LEVEL_INFO_SHADOW_PEN, positionLine);
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
                                        LEVEL_INFO_SHADOW_PEN, "AMMO: TWO 5RD MAGS");
     }
@@ -2611,7 +2611,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
      * The overall shooting rank remains exclusive to TEN SHOT CHALLENGE. */
     fullCourseStandardMet = (summary && summary->forceLevelPass) ||
         (summary && summary->levelQualified &&
-                             hitsTotal >= (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4 ? 30 : 1) &&
+                             hitsTotal >= (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ? 30 : 1) &&
                              (ULONG)perfTotal * 100UL >
                                  (ULONG)hitsTotal * 5UL * 40UL);
 
@@ -2940,7 +2940,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
         }
 
         if (fullCoursePreview && fullCourseStandardMet &&
-            LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4) {
+            LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5) {
             /* Continue directly to the next Full Course level. */
             Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
         } else if (fullCoursePreview && fullCourseStandardMet) {
@@ -4335,7 +4335,7 @@ static void RestoreSettingsLine(struct RastPort *rp, struct BitMap *background, 
 
 static void DrawSettingsRow(struct RastPort *rp, struct TextFont *font,
                             UWORD selected, BOOL selectedVisible,
-                            RangeControlMode control, BOOL supportedPosition, UWORD sensitivity, UWORD windSpeed,
+                            RangeControlMode control, RangePositionMode position, UWORD sensitivity, UWORD windSpeed,
                             RangeWindDirection windDirection,
                             struct BitMap *background) {
     char line[40];
@@ -4349,7 +4349,7 @@ static void DrawSettingsRow(struct RastPort *rp, struct TextFont *font,
     if (!selectedVisible) return;
 
     if (selected == 0) {
-        BuildSettingsLine(line, "POSITION: ", supportedPosition ? "SUPPORTED" : "UNSUPPORTED");
+        BuildSettingsLine(line, "POSITION: ", Range_PositionModeName(position));
     } else if (selected == 1) {
         BuildSettingsLine(line, "PRIMARY CONTROL: ", PrimaryControlName(control));
     } else if (selected == 2) {
@@ -4370,7 +4370,7 @@ static void DrawSettingsRow(struct RastPort *rp, struct TextFont *font,
 
 static void DrawSettingsScreen(struct RastPort *rp, struct TextFont *font,
                                UWORD selected, BOOL selectedVisible,
-                               RangeControlMode control, BOOL supportedPosition, UWORD sensitivity, UWORD windSpeed,
+                               RangeControlMode control, RangePositionMode position, UWORD sensitivity, UWORD windSpeed,
                                RangeWindDirection windDirection,
                                struct BitMap *background) {
     char line[40];
@@ -4385,7 +4385,7 @@ static void DrawSettingsScreen(struct RastPort *rp, struct TextFont *font,
     DrawCenteredTextWithShadowMain(rp, font, SETTINGS_TITLE_Y, MENU_TEXT_PEN,
                                    MENU_SHADOW_PEN, "SETTINGS");
     if (selected != 0 || selectedVisible) {
-        BuildSettingsLine(line, "POSITION: ", supportedPosition ? "SUPPORTED" : "UNSUPPORTED");
+        BuildSettingsLine(line, "POSITION: ", Range_PositionModeName(position));
         DrawSettingsText(rp, font, SETTINGS_POSITION_Y, MENU_TEXT_PEN, MENU_SHADOW_PEN,
                          selected == 0, line);
     }
@@ -4432,7 +4432,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     RangeControlMode pendingControl = Range_GetPrimaryControl();
     UWORD pendingSpeed = Range_GetWindSpeed();
     UWORD pendingSensitivity = Range_GetMouseSensitivity();
-    BOOL pendingSupportedPosition = Range_GetSupportedPosition();
+    RangePositionMode pendingPosition = Range_GetPositionMode();
     RangeWindDirection pendingDirection = Range_GetWindDirection();
     UWORD black[32] = {0};
 
@@ -4478,7 +4478,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     }
 
     DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                       pendingSupportedPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                       pendingPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
     WaitBlit();
     SettleDisplay(1);
     Gfx_FadeInCurrentScreenFromBlack(TrainingInfoPaletteRGB4, 32);
@@ -4516,13 +4516,16 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             blinkTicks = MENU_VISIBLE_TICKS;
             WaitTOF();
             DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                               pendingSupportedPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                               pendingPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
 
         if ((leftNow && !prevLeft) || (rightNow && !prevRight)) {
             if (selected == 0) {
-                pendingSupportedPosition = pendingSupportedPosition ? FALSE : TRUE;
+                if (rightNow && !prevRight)
+                    pendingPosition = (RangePositionMode)((pendingPosition + 1) % 3);
+                else
+                    pendingPosition = (RangePositionMode)((pendingPosition + 2) % 3);
             } else if (selected == 1) {
                 if (rightNow && !prevRight)
                     pendingControl = (pendingControl == RANGE_CONTROL_LINKED) ? RANGE_CONTROL_JOYSTICK : (RangeControlMode)(pendingControl + 1);
@@ -4546,14 +4549,14 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             blinkTicks = MENU_VISIBLE_TICKS;
             WaitTOF();
             DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                               pendingSupportedPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                               pendingPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
         prevLeft = leftNow; prevRight = rightNow;
         prevUp = upNow; prevDown = downNow;
 
         if (adv) {
-            Range_SetSupportedPosition(pendingSupportedPosition);
+            Range_SetPositionMode(pendingPosition);
             Range_SetPrimaryControl(pendingControl);
             Range_SetMouseSensitivity(pendingSensitivity);
             Range_SetWindSpeed(pendingSpeed);
@@ -4570,7 +4573,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             blinkTicks = selectedVisible ? MENU_VISIBLE_TICKS : MENU_HIDDEN_TICKS;
             WaitTOF();
             DrawSettingsRow(rp, font, selected, selectedVisible, pendingControl,
-                            pendingSupportedPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                            pendingPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
 
@@ -5435,12 +5438,14 @@ show_title:
                         goto exit_ok;
                     }
                     if (fullCoursePreview && standardMet &&
-                        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4) {
+                        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5) {
                         priorLevelScoreCarry = (UWORD)(priorLevelScoreCarry + summaryData.score);
                         LevelManager_SetMode(LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL1
                             ? LEVEL_MANAGER_MODE_LEVEL2 :
                             (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2
-                                ? LEVEL_MANAGER_MODE_LEVEL3 : LEVEL_MANAGER_MODE_LEVEL4));
+                                ? LEVEL_MANAGER_MODE_LEVEL3 :
+                                (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3
+                                    ? LEVEL_MANAGER_MODE_LEVEL4 : LEVEL_MANAGER_MODE_LEVEL5)));
                         IS_NEW_GAME_SESSION = TRUE;
                         for (int i = 0; i < 32; i++) currentLoPal[i] = PerformancePaletteRGB4[i];
                         goto retry_full_course_level;
