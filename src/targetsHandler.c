@@ -120,6 +120,29 @@ static BOOL gLevel1Failed = FALSE;
 static BOOL gLevel1Completed = FALSE;
 static BOOL gLevel1RefirePending = FALSE;
 static UWORD gExpiredPresentations = 0;
+/* Record Fire I: fixed 7/7/7/7/6/6 distribution, shuffled for each attempt.
+ * A presentation is consumed by a hit or timeout, never by a missed shot. */
+static ULONG NextRandom(void);
+static UBYTE gRecordOrder[40];
+static UWORD gRecordNext = 0;
+static BOOL gRecordPending = FALSE;
+static BOOL IsRecordFire(void) {
+    return LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4;
+}
+static void BuildRecordOrder(void) {
+    UWORD i, j;
+    for (i = 0; i < 40; ++i) gRecordOrder[i] = (UBYTE)(i < 28 ? i / 7 : 4 + (i - 28) / 6);
+    for (i = 39; i > 0; --i) {
+        UBYTE tmp;
+        j = (UWORD)(NextRandom() % (i + 1));
+        tmp = gRecordOrder[i];
+        gRecordOrder[i] = gRecordOrder[j];
+        gRecordOrder[j] = tmp;
+    }
+    gRecordNext = 0;
+    gRecordPending = FALSE;
+}
+
 
 static TargetSeries gSeries050;
 static TargetSeries gSeries100;
@@ -380,6 +403,13 @@ static TargetSeries *PickRandomFreeSeries(void) {
     }
 
     return candidates[NextRandom() % count];
+}
+
+static void SpawnNextRecord(void) {
+    if (gRecordNext < 40 && SpawnSeries(GetLevel1Series(gRecordOrder[gRecordNext]), 0)) {
+        ++gRecordNext;
+    }
+    gRecordPending = FALSE;
 }
 
 static BOOL SpawnRandomFreeSeries(ULONG delayTicks) {
@@ -658,9 +688,10 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, WORD sightOffsetX, W
 
     s->hit = TRUE;
     s->visible = FALSE;
-    s->respawnAllowed = LevelManager_GetConfig()->sequentialDistances ? FALSE :
+    s->respawnAllowed = (LevelManager_GetConfig()->sequentialDistances || IsRecordFire()) ? FALSE :
         ((gKilledTargets >= TARGET_RESPAWN_AFTER_KILLS) ? TRUE : FALSE);
     DateStamp(&s->startStamp);
+    if (IsRecordFire()) gRecordPending = TRUE;
     return TRUE;
 }
 
@@ -700,11 +731,12 @@ static void TickSeries(TargetSeries *s) {
     /* Timed presentations expire without consuming ammunition. */
     if (!LevelManager_GetConfig()->untimedTargets &&
         t >= s->startDelayTicks +
-            ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ? 7UL : 8UL) * TICKS_PER_SEC)) {
+            ((IsRecordFire() ? 6UL : (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ? 7UL : 8UL)) * TICKS_PER_SEC)) {
         s->visible = FALSE;
         s->respawnAllowed = FALSE;
         ++gExpiredPresentations;
-        TargetsHandler_RecordShot(FALSE);
+        if (IsRecordFire()) gRecordPending = TRUE;
+        else TargetsHandler_RecordShot(FALSE);
     }
     /* Untimed levels keep the target visible until a shot. */
 }
@@ -792,7 +824,10 @@ BOOL TargetsHandler_Init(void) {
     gLevel1Completed = FALSE;
     gLevel1RefirePending = FALSE;
     gExpiredPresentations = 0;
-    if (LevelManager_GetConfig()->sequentialDistances) {
+    if (IsRecordFire()) {
+        BuildRecordOrder();
+        SpawnNextRecord();
+    } else if (LevelManager_GetConfig()->sequentialDistances) {
         SpawnSeries(GetLevel1Series(0), 0);
     } else {
         SpawnSeries(&gSeries050, SERIES050_DELAY);
@@ -874,7 +909,10 @@ void TargetsHandler_Reset(void) {
     gLevel1Completed = FALSE;
     gLevel1RefirePending = FALSE;
     gExpiredPresentations = 0;
-    if (LevelManager_GetConfig()->sequentialDistances) {
+    if (IsRecordFire()) {
+        BuildRecordOrder();
+        SpawnNextRecord();
+    } else if (LevelManager_GetConfig()->sequentialDistances) {
         SpawnSeries(GetLevel1Series(0), 0);
     } else {
         SpawnSeries(&gSeries050, SERIES050_DELAY);
@@ -969,6 +1007,14 @@ void TargetsHandler_Tick(void) {
     TickSeries(&gSeries200);
     TickSeries(&gSeries250);
     TickSeries(&gSeries300);
+    if (IsRecordFire() && gRecordPending) {
+        TargetSeries *all[6] = {&gSeries050, &gSeries100, &gSeries150,
+                                &gSeries200, &gSeries250, &gSeries300};
+        UWORD i;
+        BOOL busy = FALSE;
+        for (i = 0; i < 6; ++i) if (all[i]->visible || all[i]->hit) busy = TRUE;
+        if (!busy) SpawnNextRecord();
+    }
     if (LevelManager_GetConfig()->sequentialDistances && gLevel1PendingSpawn &&
         !gLevel1Failed && !gLevel1Completed && !gLevel1RefirePending) {
         TargetSeries *next = GetLevel1Series(gLevel1DistanceIndex);
@@ -997,6 +1043,14 @@ void TargetsHandler_Draw(struct RastPort *rp) {
 
 
 BOOL TargetsHandler_IsComplete(void) {
+    if (IsRecordFire()) {
+        TargetSeries *all[6] = {&gSeries050, &gSeries100, &gSeries150,
+                                &gSeries200, &gSeries250, &gSeries300};
+        UWORD i;
+        if (!gReady || gRecordNext < 40) return FALSE;
+        for (i = 0; i < 6; ++i) if (all[i]->visible) return FALSE;
+        return TRUE;
+    }
     if (LevelManager_GetConfig()->sequentialDistances) {
         return (BOOL)(gReady && gLevel1Completed);
     }

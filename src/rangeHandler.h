@@ -39,6 +39,7 @@ typedef struct RangeSummaryData {
     UBYTE summaryLastShotScore;
     BOOL abortedToTitle;
     BOOL levelQualified;
+    BOOL forceLevelPass; /* Testing shortcut: bypass qualification, never add points. */
 } RangeSummaryData;
 
 /* Runs the range loop with a movable front sight.

@@ -335,7 +335,8 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
 
     state->ringX = (SCR_W - REARSIGHT_W) / 2;
     state->ringY = (SCR_H - REARSIGHT_H) / 2;
-    state->ammoCount = LevelManager_GetConfig()->magazineSize * LevelManager_GetConfig()->magazineCount;
+    state->ammoCount = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4 ? 40 :
+        LevelManager_GetConfig()->magazineSize * LevelManager_GetConfig()->magazineCount;
     state->reloadState = RELOAD_STATE_NONE;
     state->reloadNeedsNeutral = FALSE;
     state->reloadSpeechStampValid = FALSE;
@@ -1235,7 +1236,9 @@ static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD amm
         ammoCount = maxAmmo;
     }
 
-    blocksVisible = (UWORD)((ammoCount + cfg->magazineSize - 1) / cfg->magazineSize);
+    blocksVisible = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4
+        ? (ammoCount > 10 ? 2 : (ammoCount > 0 ? 1 : 0))
+        : (UWORD)((ammoCount + cfg->magazineSize - 1) / cfg->magazineSize);
 
     if (font) {
         SetFont(rp, font);
@@ -1835,7 +1838,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     memset(&sightReplay, 0, sizeof(sightReplay));
     memset(feedbackTargets, 0, sizeof(feedbackTargets));
     memset(&shotSnapshot, 0, sizeof(shotSnapshot));
-    if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO) {
+    if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
+        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4) {
         if (Bob_LoadRawAndMask(&feedbackSight, "gfx/FrontSightZero.raw",
                                "gfx/FrontSightZero.mask", 84, 57, 5)) {
             for (feedbackIndex = 0; feedbackIndex < 6; ++feedbackIndex) {
@@ -1983,14 +1987,33 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         /* Range control is exclusive. J/K/M/L changes the persistent primary
          * device immediately; menus and all non-Range screens keep their
          * existing parallel joystick/keyboard handling. */
-        if (Input_KeyPressed(RAWKEY_J)) {
-            gPrimaryControl = RANGE_CONTROL_JOYSTICK;
-        } else if (Input_KeyPressed(RAWKEY_K)) {
-            gPrimaryControl = RANGE_CONTROL_KEYBOARD;
-        } else if (Input_KeyPressed(RAWKEY_M)) {
-            gPrimaryControl = RANGE_CONTROL_MOUSE;
-        } else if (Input_KeyPressed(RAWKEY_L)) {
-            gPrimaryControl = RANGE_CONTROL_LINKED;
+        {
+            BOOL forcePassKey = Input_ForceLevelPassPressed();
+            if (Input_KeyPressed(RAWKEY_J)) {
+                gPrimaryControl = RANGE_CONTROL_JOYSTICK;
+            } else if (Input_KeyPressed(RAWKEY_K)) {
+                gPrimaryControl = RANGE_CONTROL_KEYBOARD;
+            } else if (Input_KeyPressed(RAWKEY_M)) {
+                gPrimaryControl = RANGE_CONTROL_MOUSE;
+            } else if (Input_KeyPressed(RAWKEY_L) && !forcePassKey) {
+                gPrimaryControl = RANGE_CONTROL_LINKED;
+            }
+            if (forcePassKey && LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
+                !roundEnding && !breathFeedbackModal && !rangeRefireModal) {
+                if (outSummary) {
+                    memset(outSummary, 0, sizeof(*outSummary));
+                    outSummary->levelQualified = TRUE;
+                    outSummary->forceLevelPass = TRUE;
+                }
+                StopBirdAmbient(&state);
+                roundEnding = TRUE;
+                levelCompleted = TRUE;
+                sessionComplete = TRUE;
+                recoilActive = FALSE;
+                shotCooldownActive = FALSE;
+                DateStamp(&finalScoreStamp);
+                finalScoreStampValid = TRUE;
+            }
         }
         /* Live mouse sensitivity shortcuts, shared by both game modes. */
         if (gPrimaryControl == RANGE_CONTROL_MOUSE) {
@@ -2268,7 +2291,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                     /* Sample the very same phase used to animate breathing;
                      * no extra timing model or change to the sight motion. */
-                    if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO) {
+                    if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
+                        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4) {
                         breathFeedbackOK = (state.breathPhase == BREATH_PHASE_REST);
                         positionFeedbackStable = (gSupportedPosition || state.handSwayPhase == HAND_SWAY_PHASE_REST);
                         breathFeedbackModal = TRUE;
@@ -2358,8 +2382,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                         DateStamp(&finalScoreStamp);
                         finalScoreStampValid = TRUE;
-                    } else if (ammoCount == 0 ||
-                               (ammoCount % LevelManager_GetConfig()->magazineSize) == 0) {
+                    } else if ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4 && ammoCount == 10) ||
+                               (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4 &&
+                                (ammoCount % LevelManager_GetConfig()->magazineSize) == 0)) {
                         StartReloadPrompt(&state);
                         shotNeedsRelease = TRUE;
                     }
@@ -2697,7 +2722,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
              * FRONT_AIM is the same tip origin used when resolving a shot. */
             if (!paused && !roundEnding && !showFinalScore &&
                 reloadState == RELOAD_STATE_NONE && !recoilActive &&
-                LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO) {
+                LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
+                LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4) {
                 SightReplay_Add(&sightReplay,
                                 (WORD)(frontX + FRONT_AIM_X),
                                 (WORD)(frontY + FRONT_AIM_Y));

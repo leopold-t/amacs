@@ -129,6 +129,7 @@ static BOOL joyFirePressedEdge = FALSE;
 static BOOL keyboardFirePressedEdge = FALSE;
 static BOOL mouseFirePressedEdge = FALSE;
 static BOOL quitPressedEdge = FALSE;
+static BOOL forceLevelPassEdge = FALSE;
 static BOOL joyFireDown = FALSE;
 static BOOL mouseFireDown = FALSE;
 static LONG mouseDeltaX = 0;
@@ -145,6 +146,13 @@ static LONG mouseDeltaY = 0;
 #define RAWKEY_F2 0x51
 #define RAWKEY_F3 0x52
 #define RAWKEY_Q 0x10
+#define RAWKEY_L 0x28
+#ifndef IEQUALIFIER_LSHIFT
+#define IEQUALIFIER_LSHIFT 0x0001
+#endif
+#ifndef IEQUALIFIER_RSHIFT
+#define IEQUALIFIER_RSHIFT 0x0002
+#endif
 #define RAWKEY_W 0x11
 #define RAWKEY_P 0x19
 #define RAWKEY_A 0x20
@@ -181,6 +189,7 @@ BOOL Input_Init(void) {
     keyboardFirePressedEdge = FALSE;
     mouseFirePressedEdge = FALSE;
     quitPressedEdge = FALSE;
+    forceLevelPassEdge = FALSE;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;
     mouseDeltaX = 0;
@@ -242,6 +251,11 @@ void Input_PollWindow(struct Window *win) {
                 UBYTE downCode = (UBYTE)(code & 0x7F);
                 keyDown[downCode] = 0;
             } else {
+                if (code == RAWKEY_L && !keyDown[code] &&
+                    IsAmigaQualifier(msg->Qualifier) &&
+                    (msg->Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))) {
+                    forceLevelPassEdge = TRUE;
+                }
                 if (code == RAWKEY_Q && IsAmigaQualifier(msg->Qualifier)) {
                     quitPressedEdge = TRUE;
                 }
@@ -305,6 +319,12 @@ void Input_PollWindow(struct Window *win) {
 
         ReplyMsg((struct Message *)msg);
     }
+}
+
+BOOL Input_ForceLevelPassPressed(void) {
+    BOOL pressed = forceLevelPassEdge;
+    forceLevelPassEdge = FALSE;
+    return pressed;
 }
 
 BOOL Input_KeyPressed(UBYTE rawCode) {
@@ -398,6 +418,7 @@ void Input_ResetState(void) {
     keyboardFirePressedEdge = FALSE;
     mouseFirePressedEdge = FALSE;
     quitPressedEdge = FALSE;
+    forceLevelPassEdge = FALSE;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;
     mouseDeltaX = 0;

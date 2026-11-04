@@ -2334,6 +2334,22 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
     if (fullCoursePreview) {
         BOOL timedLevel = !LevelManager_GetConfig()->untimedTargets;
         BOOL level3 = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3;
+        BOOL level4 = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4;
+        if (level4) {
+            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
+                                           LEVEL_INFO_SHADOW_PEN, "LEVEL 4");
+            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
+                                           LEVEL_INFO_SHADOW_PEN, "PRACTICE RECORD FIRE I");
+            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
+                                           LEVEL_INFO_SHADOW_PEN, "EXPOSURE TIME: 6 SEC");
+            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
+                                           LEVEL_INFO_SHADOW_PEN, "HIT 30 OF 40 TARGETS");
+            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
+                                           LEVEL_INFO_SHADOW_PEN, Range_GetSupportedPosition()
+                                           ? "POSITION: SUPPORTED" : "POSITION: UNSUPPORTED");
+            DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
+                                           LEVEL_INFO_SHADOW_PEN, "AMMO: TWO MAGS, 40 RDS");
+        } else {
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
                                        LEVEL_INFO_SHADOW_PEN, level3 ? "LEVEL 3" : (timedLevel ? "LEVEL 2" : "LEVEL 1"));
         if (timedLevel) {
@@ -2364,6 +2380,7 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
                                            Range_GetSupportedPosition() ? "POSITION: SUPPORTED" : "POSITION: UNSUPPORTED");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE6_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, "AMMO: ONE 30RD MAG");
+        }
         }
     } else {
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_TITLE_Y, LEVEL_INFO_TEXT_PEN,
@@ -2592,8 +2609,9 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
 
     /* Level completion and shot placement are independent requirements.
      * The overall shooting rank remains exclusive to TEN SHOT CHALLENGE. */
-    fullCourseStandardMet = (summary && summary->levelQualified &&
-                             hitsTotal > 0 &&
+    fullCourseStandardMet = (summary && summary->forceLevelPass) ||
+        (summary && summary->levelQualified &&
+                             hitsTotal >= (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4 ? 30 : 1) &&
                              (ULONG)perfTotal * 100UL >
                                  (ULONG)hitsTotal * 5UL * 40UL);
 
@@ -2922,7 +2940,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
         }
 
         if (fullCoursePreview && fullCourseStandardMet &&
-            LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL3) {
+            LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4) {
             /* Continue directly to the next Full Course level. */
             Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
         } else if (fullCoursePreview && fullCourseStandardMet) {
@@ -5417,10 +5435,12 @@ show_title:
                         goto exit_ok;
                     }
                     if (fullCoursePreview && standardMet &&
-                        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL3) {
+                        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL4) {
                         priorLevelScoreCarry = (UWORD)(priorLevelScoreCarry + summaryData.score);
                         LevelManager_SetMode(LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL1
-                            ? LEVEL_MANAGER_MODE_LEVEL2 : LEVEL_MANAGER_MODE_LEVEL3);
+                            ? LEVEL_MANAGER_MODE_LEVEL2 :
+                            (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2
+                                ? LEVEL_MANAGER_MODE_LEVEL3 : LEVEL_MANAGER_MODE_LEVEL4));
                         IS_NEW_GAME_SESSION = TRUE;
                         for (int i = 0; i < 32; i++) currentLoPal[i] = PerformancePaletteRGB4[i];
                         goto retry_full_course_level;
