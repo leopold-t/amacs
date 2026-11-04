@@ -2469,9 +2469,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 TargetsHandler_Tick();
                 /* Timed target expiration is a missed presentation, not a fired shot.
                  * End normally when the last target expires. */
-                if (!LevelManager_GetConfig()->untimedTargets &&
-                    TargetsHandler_ConsumeExpiredPresentations() != 0 &&
-                    TargetsHandler_IsComplete()) {
+                if (!LevelManager_GetConfig()->untimedTargets) {
+                    UWORD expired = TargetsHandler_ConsumeExpiredPresentations();
+                    if (expired != 0) Sound_PlayTargetTimeout();
+                    if (expired != 0 && TargetsHandler_IsComplete()) {
                     levelCompleted = TRUE;
                     state.finalShotValid = TRUE;
                     state.finalShotHitSnap = FALSE;
@@ -2492,6 +2493,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     sessionComplete = TRUE;
                     DateStamp(&finalScoreStamp);
                     finalScoreStampValid = TRUE;
+                    }
                 }
             }
 

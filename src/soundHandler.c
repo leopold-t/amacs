@@ -47,6 +47,9 @@ typedef struct AudioVoice {
 
 #define HIT_VOLUME 64
 #define HIT_CYCLES 1
+#define TIMEOUT_BEEP_VOLUME 48
+#define TIMEOUT_BEEP_TICKS 10UL /* 0.2 seconds per tone at 50 Hz */
+#define TIMEOUT_BEEP_LENGTH 32UL
 #define LOOP_FOREVER_CYCLES 0
 
 #define AUDIO_CH_0_RIGHT_SHOT 1
@@ -120,6 +123,12 @@ static AudioVoice gDrumsVoice = {NULL, NULL, FALSE, {AUDIO_CH_0_RIGHT_SHOT}};
 
 static Sample gShot = {NULL, 0};
 static Sample gHit = {NULL, 0};
+static Sample gTimeoutBeep = {NULL, 0};
+static BOOL gTimeoutBeepPlaying = FALSE;
+static UBYTE gTimeoutBeepStage = 0;
+static struct DateStamp gTimeoutBeepStamp;
+/* Four PCM samples per square-wave cycle; PAL Paula clock / 4f. */
+static const UWORD gTimeoutBeepPeriods[3] = {222, 296, 443};
 static Sample gTitleMusic = {NULL, 0};
 static Sample gSpeechLoop = {NULL, 0};
 static Sample gHiScoreFanfare = {NULL, 0};
@@ -180,6 +189,8 @@ static SoundError gLastError = SOUND_OK;
 static void ResetState(void) {
     gSoundInited = FALSE;
     gHitPending = FALSE;
+    gTimeoutBeepPlaying = FALSE;
+    gTimeoutBeepStage = 0;
     gHitPendingVolume = HIT_VOLUME;
     gSoundPaused = FALSE;
     gShotVoice.playing = FALSE;
@@ -1676,6 +1687,18 @@ BOOL Sound_Init(void) {
         return FALSE;
     }
 
+    /* Generate the timeout cue in memory; no audio asset or disk access. */
+    if (!gTimeoutBeep.data) {
+        ULONG i;
+        gTimeoutBeep.data = (BYTE *)AllocMem(TIMEOUT_BEEP_LENGTH, MEMF_CHIP);
+        if (gTimeoutBeep.data) {
+            gTimeoutBeep.length = TIMEOUT_BEEP_LENGTH;
+            for (i = 0; i < TIMEOUT_BEEP_LENGTH; ++i) {
+                gTimeoutBeep.data[i] = (i & 2) ? -100 : 100;
+            }
+        }
+    }
+
     if (!InitVoice(&gShotVoice) || !InitVoice(&gHitVoice)) {
         return FALSE;
     }
@@ -1712,6 +1735,7 @@ void Sound_Shutdown(void) {
 
     FreeSample(&gShot);
     FreeSample(&gHit);
+    FreeSample(&gTimeoutBeep);
     Sound_ShutdownReloadSfx();
     Sound_ShutdownBirdAmbient();
 
@@ -1753,6 +1777,24 @@ void Sound_Update(void) {
     ReapVoice(&gShotVoice);
     ReapVoice(&gHitVoice);
 
+    if (gTimeoutBeepPlaying) {
+        LONG elapsed;
+        DateStamp(&now);
+        elapsed = (LONG)(now.ds_Days - gTimeoutBeepStamp.ds_Days) * 4320000L +
+                  (LONG)(now.ds_Minute - gTimeoutBeepStamp.ds_Minute) * 3000L +
+                  (LONG)(now.ds_Tick - gTimeoutBeepStamp.ds_Tick);
+        if (elapsed >= 3UL * TIMEOUT_BEEP_TICKS) {
+            StopVoice(&gHitVoice);
+            gTimeoutBeepPlaying = FALSE;
+        } else if (elapsed / TIMEOUT_BEEP_TICKS != gTimeoutBeepStage) {
+            gTimeoutBeepStage = (UBYTE)(elapsed / TIMEOUT_BEEP_TICKS);
+            StopVoice(&gHitVoice);
+            StartVoiceSample(&gHitVoice, &gTimeoutBeep,
+                             gTimeoutBeepPeriods[gTimeoutBeepStage],
+                             TIMEOUT_BEEP_VOLUME, LOOP_FOREVER_CYCLES);
+        }
+    }
+
     if (!gHitPending) {
         return;
     }
@@ -1767,6 +1809,7 @@ void Sound_Update(void) {
     }
 
     gHitPending = FALSE;
+    gTimeoutBeepPlaying = FALSE;
     StartVoiceSample(&gHitVoice, &gHit, SOUND_11KHZ_PERIOD, gHitPendingVolume, HIT_CYCLES);
     Sound_PlaySpeechHit();
 }
@@ -1781,6 +1824,7 @@ void Sound_SetPaused(BOOL paused) {
 
     if (paused) {
         DateStamp(&gPauseStamp);
+        if (gTimeoutBeepPlaying) StopVoice(&gHitVoice);
         if (gWindPlaying) {
             StopVoice(&gTitleVoice);
             gWindPlaying = FALSE;
@@ -1807,8 +1851,16 @@ void Sound_SetPaused(BOOL paused) {
     if (gHitPending) {
         AddDateStampDelta(&gHitDueStamp, &delta);
     }
+    if (gTimeoutBeepPlaying) {
+        AddDateStampDelta(&gTimeoutBeepStamp, &delta);
+    }
 
     gSoundPaused = FALSE;
+    if (gTimeoutBeepPlaying) {
+        StartVoiceSample(&gHitVoice, &gTimeoutBeep,
+                         gTimeoutBeepPeriods[gTimeoutBeepStage],
+                         TIMEOUT_BEEP_VOLUME, LOOP_FOREVER_CYCLES);
+    }
 }
 
 static void Sound_PlayShotAtVolume(UBYTE volume) {
@@ -1832,6 +1884,22 @@ void Sound_PlayReplayShot(void) {
     Sound_PlayShotAtVolume(REPLAY_SHOT_VOLUME);
 }
 
+void Sound_PlayTargetTimeout(void) {
+    if (!gSoundInited || gSoundPaused || !gHitVoice.io ||
+        !gTimeoutBeep.data || gHitPending) {
+        return; /* A target hit takes priority over the timeout cue. */
+    }
+    ReapVoice(&gHitVoice);
+    if (gHitVoice.playing) {
+        return; /* Do not interrupt a target-hit sound. */
+    }
+    DateStamp(&gTimeoutBeepStamp);
+    gTimeoutBeepStage = 0;
+    gTimeoutBeepPlaying = TRUE;
+    StartVoiceSample(&gHitVoice, &gTimeoutBeep, gTimeoutBeepPeriods[0],
+                     TIMEOUT_BEEP_VOLUME, LOOP_FOREVER_CYCLES);
+}
+
 void Sound_PlayHit(UWORD delayTicks, UBYTE volume) {
     struct DateStamp now;
 
@@ -1844,6 +1912,7 @@ void Sound_PlayHit(UWORD delayTicks, UBYTE volume) {
     }
 
     ReapVoice(&gHitVoice);
+    gTimeoutBeepPlaying = FALSE;
 
     if (gHitVoice.playing) {
         StopVoice(&gHitVoice);

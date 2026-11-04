@@ -21,6 +21,7 @@ void Sound_Update(void);
 void Sound_PlayShot(void);
 void Sound_PlayReplayShot(void);
 void Sound_PlayHit(UWORD delayTicks, UBYTE volume);
+void Sound_PlayTargetTimeout(void);
 void Sound_SetPaused(BOOL paused);
 
 BOOL Sound_InitTitleMusic(void);
