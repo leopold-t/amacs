@@ -65,6 +65,14 @@ BOOL TargetsHandler_SelectSlot(TargetDistance distance, UWORD slotIndex);
 BOOL TargetsHandler_GetTargetInfo(TargetDistance distance, TargetInfo *outInfo);
 WORD TargetsHandler_GetWindDriftOffset(UWORD distance);
 
+/* Practice Record Fire I: independent 20-target phases and tactical priority. */
+void TargetsHandler_RecordStartPhase(UWORD phase);
+void TargetsHandler_RecordStartPhaseDelayed(UWORD phase, ULONG delayTicks);
+UWORD TargetsHandler_RecordGetPhase(void);
+void TargetsHandler_RecordExhaustAmmo(void);
+BOOL TargetsHandler_RecordPhaseComplete(void);
+UWORD TargetsHandler_RecordTakePenalty(void);
+
 /* Consume presentations which expired without a shot in Level 2. */
 UWORD TargetsHandler_ConsumeExpiredPresentations(void);
 

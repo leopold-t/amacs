@@ -36,6 +36,8 @@ BOOL TargetScoring_GetExcellentPoint(UWORD distance, WORD *outX, WORD *outY);
 WORD TargetScoring_GetParallaxOffset(UWORD distance, WORD sightOffsetPx);
 UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY);
 void TargetScoring_Reset(void);
+void TargetScoring_SaveRecordCheckpoint(void);
+void TargetScoring_RestoreRecordCheckpoint(void);
 UWORD TargetScoring_GetTotalScore(void);
 UWORD TargetScoring_GetPerformance(UWORD distance);
 const UWORD *TargetScoring_GetHitMap050(UWORD *outWidth, UWORD *outHeight);

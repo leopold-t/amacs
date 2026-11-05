@@ -45,6 +45,7 @@ typedef struct RangeSummaryData {
     UWORD penalties; /* Tactical target-priority errors (none in Level 1). */
     BOOL summaryLastShotHit;
     UBYTE summaryLastShotScore;
+    UBYTE debugJumpLevel; /* Test-only direct range jump, 0 if unused. */
     BOOL abortedToTitle;
     BOOL levelQualified;
     BOOL forceLevelPass; /* Testing shortcut: bypass qualification, never add points. */

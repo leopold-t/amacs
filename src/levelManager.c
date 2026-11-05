@@ -17,7 +17,7 @@ static const LevelConfig gLevel2Config = {18, 12, 30, 1, TRUE, TRUE, "LEVEL 2"};
 static const LevelConfig gLevel3Config = {24, 18, 30, 1, TRUE, FALSE, "LEVEL 3"};
 /* 30 rounds in the first magazine, 10 in the second (40 total). */
 static const LevelConfig gLevel4Config = {24, 16, 30, 1, TRUE, FALSE, "LEVEL 4"};
-static const LevelConfig gLevel5Config = {40, 30, 30, 2, FALSE, FALSE, "LEVEL 5"};
+static const LevelConfig gLevel5Config = {40, 30, 20, 1, FALSE, FALSE, "LEVEL 5"};
 
 const LevelConfig *LevelManager_GetConfig(void) {
     return (gLevelManager.mode == LEVEL_MANAGER_MODE_LEVEL5) ? &gLevel5Config :

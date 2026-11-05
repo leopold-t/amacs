@@ -19,6 +19,7 @@ void Input_PollWindow(struct Window *win);
 
 BOOL Input_KeyPressed(UBYTE rawCode);
 BOOL Input_ForceLevelPassPressed(void);
+UBYTE Input_TakeDebugLevelJump(void); /* 0 or level 1..5; consume edge */
 BOOL Input_QuitPressed(void);
 BOOL Input_FirePressed(void);
 BOOL Input_IsFireDown(void);

@@ -2356,13 +2356,13 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
                                        LEVEL_INFO_SHADOW_PEN, subtitle1);
         if (level == LEVEL_MANAGER_MODE_LEVEL5) {
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "EXPOSURE TIME: 7 SEC");
+                                           LEVEL_INFO_SHADOW_PEN, "EXPOSURE TIME: 8 SEC");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "HIT 30 OF 40 TARGETS");
+                                           LEVEL_INFO_SHADOW_PEN, "HIT 15 OF 20 IN EACH POSITION");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE4_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, positionLine);
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE5_Y, LEVEL_INFO_TEXT_PEN,
-                                           LEVEL_INFO_SHADOW_PEN, "AMMO: TWO MAGS, 40 RDS");
+                                           LEVEL_INFO_SHADOW_PEN, "AMMO: ONE 20RD MAG PER PHASE");
         } else {
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, subtitle2);
@@ -5415,6 +5415,18 @@ show_title:
             if (LevelManager_RunCurrent(useDBuf, &summaryData)) {
                 if (useDBuf) {
                     Gfx_DisableDoubleBuffering();
+                }
+
+                if (fullCoursePreview && summaryData.debugJumpLevel >= 1 &&
+                    summaryData.debugJumpLevel <= 5) {
+                    /* Skip Summary and start the selected level at its briefing. */
+                    LevelManager_SetMode((LevelManagerMode)summaryData.debugJumpLevel);
+                    IS_NEW_GAME_SESSION = TRUE;
+                    priorLevelScoreCarry = 0;
+                    Gfx_FadeOutCurrentScreenToBlack(rangePalette, 32);
+                    for (int i = 0; i < 32; i++)
+                        currentLoPal[i] = PerformancePaletteRGB4[i];
+                    goto retry_full_course_level;
                 }
 
                 if (summaryData.abortedToTitle) {

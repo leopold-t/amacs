@@ -1,5 +1,6 @@
 #include "targetScoring.h"
 #include "targetsHandler.h"
+#include <string.h>
 
 static UWORD gHitMap050[T050_H][T050_W];
 static UWORD gHitMap100[T100_H][T100_W];
@@ -357,6 +358,48 @@ UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY) {
     }
 
     return SCORE_MISS;
+}
+
+/* One checkpoint at the start of each Record Fire phase. The scratch
+ * buffers are static (BSS), so there is no additional asset or allocation. */
+static UWORD gSavedHitMap050[T050_H][T050_W];
+static UWORD gSavedHitMap100[T100_H][T100_W];
+static UWORD gSavedHitMap150[T150_H][T150_W];
+static UWORD gSavedHitMap200[T200_H][T200_W];
+static UWORD gSavedHitMap250[T250_H][T250_W];
+static UWORD gSavedHitMap300[T300_H][T300_W];
+static UWORD gSavedScores[7];
+
+void TargetScoring_SaveRecordCheckpoint(void) {
+    memcpy(gSavedHitMap050, gHitMap050, sizeof(gHitMap050));
+    memcpy(gSavedHitMap100, gHitMap100, sizeof(gHitMap100));
+    memcpy(gSavedHitMap150, gHitMap150, sizeof(gHitMap150));
+    memcpy(gSavedHitMap200, gHitMap200, sizeof(gHitMap200));
+    memcpy(gSavedHitMap250, gHitMap250, sizeof(gHitMap250));
+    memcpy(gSavedHitMap300, gHitMap300, sizeof(gHitMap300));
+    gSavedScores[0] = gTotalScore;
+    gSavedScores[1] = gScore050;
+    gSavedScores[2] = gScore100;
+    gSavedScores[3] = gScore150;
+    gSavedScores[4] = gScore200;
+    gSavedScores[5] = gScore250;
+    gSavedScores[6] = gScore300;
+}
+
+void TargetScoring_RestoreRecordCheckpoint(void) {
+    memcpy(gHitMap050, gSavedHitMap050, sizeof(gHitMap050));
+    memcpy(gHitMap100, gSavedHitMap100, sizeof(gHitMap100));
+    memcpy(gHitMap150, gSavedHitMap150, sizeof(gHitMap150));
+    memcpy(gHitMap200, gSavedHitMap200, sizeof(gHitMap200));
+    memcpy(gHitMap250, gSavedHitMap250, sizeof(gHitMap250));
+    memcpy(gHitMap300, gSavedHitMap300, sizeof(gHitMap300));
+    gTotalScore = gSavedScores[0];
+    gScore050 = gSavedScores[1];
+    gScore100 = gSavedScores[2];
+    gScore150 = gSavedScores[3];
+    gScore200 = gSavedScores[4];
+    gScore250 = gSavedScores[5];
+    gScore300 = gSavedScores[6];
 }
 
 void TargetScoring_Reset(void) {

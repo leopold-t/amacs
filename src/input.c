@@ -130,6 +130,7 @@ static BOOL keyboardFirePressedEdge = FALSE;
 static BOOL mouseFirePressedEdge = FALSE;
 static BOOL quitPressedEdge = FALSE;
 static BOOL forceLevelPassEdge = FALSE;
+static UBYTE debugLevelJumpEdge = 0;
 static BOOL joyFireDown = FALSE;
 static BOOL mouseFireDown = FALSE;
 static LONG mouseDeltaX = 0;
@@ -147,6 +148,8 @@ static LONG mouseDeltaY = 0;
 #define RAWKEY_F3 0x52
 #define RAWKEY_Q 0x10
 #define RAWKEY_L 0x28
+#define RAWKEY_1 0x01
+#define RAWKEY_5 0x05
 #ifndef IEQUALIFIER_LSHIFT
 #define IEQUALIFIER_LSHIFT 0x0001
 #endif
@@ -190,6 +193,7 @@ BOOL Input_Init(void) {
     mouseFirePressedEdge = FALSE;
     quitPressedEdge = FALSE;
     forceLevelPassEdge = FALSE;
+    debugLevelJumpEdge = 0;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;
     mouseDeltaX = 0;
@@ -256,6 +260,12 @@ void Input_PollWindow(struct Window *win) {
                     (msg->Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))) {
                     forceLevelPassEdge = TRUE;
                 }
+                /* Secret range shortcut: Amiga + Shift + main-row 1..5. */
+                if (code >= RAWKEY_1 && code <= RAWKEY_5 && !keyDown[code] &&
+                    IsAmigaQualifier(msg->Qualifier) &&
+                    (msg->Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))) {
+                    debugLevelJumpEdge = code;
+                }
                 if (code == RAWKEY_Q && IsAmigaQualifier(msg->Qualifier)) {
                     quitPressedEdge = TRUE;
                 }
@@ -319,6 +329,12 @@ void Input_PollWindow(struct Window *win) {
 
         ReplyMsg((struct Message *)msg);
     }
+}
+
+UBYTE Input_TakeDebugLevelJump(void) {
+    UBYTE level = debugLevelJumpEdge;
+    debugLevelJumpEdge = 0;
+    return level;
 }
 
 BOOL Input_ForceLevelPassPressed(void) {
@@ -419,6 +435,7 @@ void Input_ResetState(void) {
     mouseFirePressedEdge = FALSE;
     quitPressedEdge = FALSE;
     forceLevelPassEdge = FALSE;
+    debugLevelJumpEdge = 0;
     joyFireDown = FALSE;
     mouseFireDown = FALSE;
     mouseDeltaX = 0;

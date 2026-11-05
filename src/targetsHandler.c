@@ -126,11 +126,18 @@ static ULONG NextRandom(void);
 static UBYTE gRecordOrder[40];
 static UWORD gRecordNext = 0;
 static BOOL gRecordPending = FALSE;
+static UWORD gRecordPhase = 0;
+static UWORD gRecordPairFar = 0;
+static BOOL gRecordPairActive = FALSE;
+static BOOL gRecordPairFirstHit = FALSE;
+static UWORD gRecordPenaltyPending = 0;
 static BOOL IsRecordFire(void) {
     return LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5;
 }
 static void BuildRecordOrder(void) {
     UWORD i, j;
+    /* Each attempt has exactly 20 targets; the original 40-target distance
+     * distribution is preserved across the two successful phases. */
     for (i = 0; i < 40; ++i) gRecordOrder[i] = (UBYTE)(i < 28 ? i / 7 : 4 + (i - 28) / 6);
     for (i = 39; i > 0; --i) {
         UBYTE tmp;
@@ -140,7 +147,11 @@ static void BuildRecordOrder(void) {
         gRecordOrder[j] = tmp;
     }
     gRecordNext = 0;
+    gRecordPhase = 0;
     gRecordPending = FALSE;
+    gRecordPairActive = FALSE;
+    gRecordPairFirstHit = FALSE;
+    gRecordPenaltyPending = 0;
 }
 
 
@@ -406,10 +417,115 @@ static TargetSeries *PickRandomFreeSeries(void) {
 }
 
 static void SpawnNextRecord(void) {
-    if (gRecordNext < 40 && SpawnSeries(GetLevel1Series(gRecordOrder[gRecordNext]), 0)) {
-        ++gRecordNext;
-    }
+    UWORD limit = (UWORD)((gRecordPhase + 1) * 20);
+    UWORD first, second;
+    BOOL pair;
     gRecordPending = FALSE;
+    gRecordPairActive = FALSE;
+    gRecordPairFirstHit = FALSE;
+    if (gRecordNext >= limit) return;
+    first = gRecordOrder[gRecordNext];
+    pair = (BOOL)(gRecordNext + 1 < limit && (NextRandom() & 1UL));
+    if (pair) {
+        /* Find a different distance, without crossing the phase boundary. */
+        second = gRecordNext + 1;
+        while (second < limit && gRecordOrder[second] == first) ++second;
+        if (second == limit) pair = FALSE;
+        else {
+            UBYTE tmp = gRecordOrder[gRecordNext + 1];
+            gRecordOrder[gRecordNext + 1] = gRecordOrder[second];
+            gRecordOrder[second] = tmp;
+        }
+    }
+    if (!SpawnSeries(GetLevel1Series(first), 0)) return;
+    ++gRecordNext;
+    if (pair) {
+        second = gRecordOrder[gRecordNext];
+        if (SpawnSeries(GetLevel1Series(second), 0)) {
+            ++gRecordNext;
+            gRecordPairActive = TRUE;
+            gRecordPairFar = first > second ? first : second;
+            /* Identical exposure deadline for both targets. */
+            GetLevel1Series(second)->startStamp = GetLevel1Series(first)->startStamp;
+        }
+    }
+    /* Both series were spawned in the same frame. The 50 Hz clock is shared. */
+}
+
+UWORD TargetsHandler_RecordGetPhase(void) { return gRecordPhase; }
+
+void TargetsHandler_RecordStartPhaseDelayed(UWORD phase, ULONG delayTicks) {
+    TargetSeries *all[6] = {&gSeries050, &gSeries100, &gSeries150,
+                            &gSeries200, &gSeries250, &gSeries300};
+    UWORD i, j, begin, end;
+    if (!gReady || !IsRecordFire() || phase > 1) return;
+    gRecordPhase = phase;
+    begin = (UWORD)(phase * 20);
+    end = (UWORD)(begin + 20);
+    gSpawnedTargets = begin;
+    gRecordNext = begin;
+    gRecordPending = FALSE;
+    gRecordPairActive = FALSE;
+    gRecordPairFirstHit = FALSE;
+    gRecordPenaltyPending = 0;
+    gExpiredPresentations = 0;
+    for (i = 0; i < 6; ++i) {
+        all[i]->visible = FALSE;
+        all[i]->hit = FALSE;
+        all[i]->respawnAllowed = FALSE;
+    }
+    /* A refire uses a fresh random order, but never changes the 20/20 split. */
+    for (i = end - 1; i > begin; --i) {
+        UBYTE tmp;
+        j = (UWORD)(begin + NextRandom() % (i - begin + 1));
+        tmp = gRecordOrder[i];
+        gRecordOrder[i] = gRecordOrder[j];
+        gRecordOrder[j] = tmp;
+    }
+    SpawnNextRecord();
+    /* Only after a completed manual Reload, wait two seconds before the
+     * first target(s) of the new phase/refire become visible. Both targets
+     * in a pair receive the same delay and retain a common exposure timer. */
+    if (delayTicks) {
+        for (i = 0; i < 6; ++i) {
+            if (all[i]->visible) all[i]->startDelayTicks = delayTicks;
+        }
+    }
+}
+
+void TargetsHandler_RecordStartPhase(UWORD phase) {
+    TargetsHandler_RecordStartPhaseDelayed(phase, 0);
+}
+
+void TargetsHandler_RecordExhaustAmmo(void) {
+    UWORD i;
+    TargetSeries *all[6] = {&gSeries050, &gSeries100, &gSeries150,
+                            &gSeries200, &gSeries250, &gSeries300};
+    if (!IsRecordFire()) return;
+    for (i = 0; i < 6; ++i) {
+        all[i]->visible = FALSE;
+        all[i]->hit = FALSE;
+        all[i]->respawnAllowed = FALSE;
+    }
+    gRecordNext = (UWORD)((gRecordPhase + 1) * 20);
+    gSpawnedTargets = gRecordNext;
+    gRecordPending = FALSE;
+    gRecordPairActive = FALSE;
+}
+
+BOOL TargetsHandler_RecordPhaseComplete(void) {
+    UWORD i;
+    TargetSeries *all[6] = {&gSeries050, &gSeries100, &gSeries150,
+                            &gSeries200, &gSeries250, &gSeries300};
+    if (!IsRecordFire() || gRecordNext < (gRecordPhase + 1) * 20) return FALSE;
+    for (i = 0; i < 6; ++i) if (all[i]->visible || all[i]->hit) return FALSE;
+    return TRUE;
+}
+
+UWORD TargetsHandler_RecordTakePenalty(void) {
+    UWORD result = gRecordPenaltyPending;
+    gRecordPenaltyPending = 0;
+    return result;
 }
 
 static BOOL SpawnRandomFreeSeries(ULONG delayTicks) {
@@ -685,6 +801,13 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, WORD sightOffsetX, W
     }
 
     gKilledTargets++;
+    if (IsRecordFire() && gRecordPairActive && !gRecordPairFirstHit) {
+        UWORD hitDistance = GetDistanceForSeries(s);
+        if (hitDistance == (UWORD)(50 + 50 * gRecordPairFar)) {
+            ++gRecordPenaltyPending;
+        }
+        gRecordPairFirstHit = TRUE;
+    }
 
     s->hit = TRUE;
     s->visible = FALSE;
@@ -731,7 +854,7 @@ static void TickSeries(TargetSeries *s) {
     /* Timed presentations expire without consuming ammunition. */
     if (!LevelManager_GetConfig()->untimedTargets &&
         t >= s->startDelayTicks +
-            ((IsRecordFire() ? 7UL : 8UL) * TICKS_PER_SEC)) {
+            (8UL * TICKS_PER_SEC)) {
         s->visible = FALSE;
         s->respawnAllowed = FALSE;
         ++gExpiredPresentations;
@@ -1047,7 +1170,7 @@ BOOL TargetsHandler_IsComplete(void) {
         TargetSeries *all[6] = {&gSeries050, &gSeries100, &gSeries150,
                                 &gSeries200, &gSeries250, &gSeries300};
         UWORD i;
-        if (!gReady || gRecordNext < 40) return FALSE;
+        if (!gReady || gRecordPhase != 1 || gRecordNext < 40) return FALSE;
         for (i = 0; i < 6; ++i) if (all[i]->visible) return FALSE;
         return TRUE;
     }

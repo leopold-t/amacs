@@ -356,7 +356,7 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
 
     state->ringX = (SCR_W - REARSIGHT_W) / 2;
     state->ringY = (SCR_H - REARSIGHT_H) / 2;
-    state->ammoCount = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ? 40 :
+    state->ammoCount = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ? 20 :
         LevelManager_GetConfig()->magazineSize * LevelManager_GetConfig()->magazineCount;
     state->reloadState = RELOAD_STATE_NONE;
     state->reloadNeedsNeutral = FALSE;
@@ -1183,6 +1183,10 @@ static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
 
 static void DrawLevelTitle(struct RastPort *rp, struct TextFont *font) {
     const char *gLevelTitle = LevelManager_GetConfig()->title;
+    if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5) {
+        gLevelTitle = TargetsHandler_RecordGetPhase() == 0
+            ? "LEVEL 5 - PHASE I" : "LEVEL 5 - PHASE II";
+    }
     UWORD len;
     WORD width;
     WORD x;
@@ -1257,9 +1261,13 @@ static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD amm
         ammoCount = maxAmmo;
     }
 
-    blocksVisible = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5
-        ? (ammoCount > 10 ? 2 : (ammoCount > 0 ? 1 : 0))
-        : (UWORD)((ammoCount + cfg->magazineSize - 1) / cfg->magazineSize);
+    /* Record Fire uses exactly one physical magazine. Its pictogram must
+     * reflect remaining rounds, including while a manual Reload is pending. */
+    if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5) {
+        blocksVisible = ammoCount > 0 ? 1 : 0;
+    } else {
+        blocksVisible = (UWORD)((ammoCount + cfg->magazineSize - 1) / cfg->magazineSize);
+    }
 
     if (font) {
         SetFont(rp, font);
@@ -1786,6 +1794,14 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     BOOL sightPresented = FALSE;
     struct DateStamp reloadPauseStamp;
     BOOL reloadPauseStampValid = FALSE;
+    /* Level 5 phase accounting; a failed attempt is rolled back atomically. */
+    UWORD recordPhase = 0;
+    UWORD recordHitsAtStart = 0;
+    UWORD recordScoreAtStart = 0;
+    UWORD recordPenalties = 0;
+    UWORD recordPenaltiesAtStart = 0;
+    BOOL recordReloadPending = FALSE;
+    BOOL recordRefireNotice = FALSE;
     InitRangeSessionState(&state, IS_NEW_GAME_SESSION);
 
     AmacsBob frontSight;
@@ -1907,9 +1923,19 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     if (!Sound_Init()) {
         DebugBeepError(Sound_GetLastError());
     }
+    /* Sound_Shutdown() releases reload samples after every range.
+     * Reload them for every level, not only the first Performance screen. */
+    Sound_InitReloadSfx();
 
     /* Ensure a clean session state even when coming back from a previous run */
     TargetsHandler_Reset();
+    if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5) {
+        /* The initial state is always a clean 20-target Supported phase. */
+        TargetsHandler_RecordStartPhase(0);
+        TargetScoring_SaveRecordCheckpoint();
+        recordHitsAtStart = GetHitCount();
+        recordScoreAtStart = state.sessionScore;
+    }
     /* The first timed exposure must start only after the player sees
      * the first complete sight picture, not during disk I/O. */
     TargetsHandler_SetPaused(!LevelManager_GetConfig()->untimedTargets);
@@ -2005,6 +2031,22 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     for (;;) {
         Input_PollWindow(Gfx_GetWindow());
         UpdateEffectivePosition();
+
+        /* A debug jump exits through normal range cleanup, without Summary.
+         * The main loop will initialize the selected level from scratch. */
+        if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO) {
+            UBYTE jump = Input_TakeDebugLevelJump();
+            if (jump >= 1 && jump <= 5 && !roundEnding) {
+                if (outSummary) {
+                    memset(outSummary, 0, sizeof(*outSummary));
+                    outSummary->debugJumpLevel = jump;
+                }
+                sessionComplete = TRUE;
+                break;
+            }
+        } else {
+            (void)Input_TakeDebugLevelJump();
+        }
 
         /* Range control is exclusive. J/K/M/L changes the persistent primary
          * device immediately; menus and all non-Range screens keep their
@@ -2125,8 +2167,13 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 }
             }
             if (rangeRefireArmed && down && pressed) {
-                TargetsHandler_AcknowledgeRefire();
-                TargetsHandler_SetPaused(FALSE);
+                if (recordRefireNotice) {
+                    recordRefireNotice = FALSE;
+                    /* The pending manual Reload stays active. */
+                } else {
+                    TargetsHandler_AcknowledgeRefire();
+                    TargetsHandler_SetPaused(FALSE);
+                }
                 Sound_SetPaused(FALSE);
                 rangeRefireModal = FALSE;
                 shotNeedsRelease = TRUE;
@@ -2370,10 +2417,17 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     resultFlashTicks = RESULT_FLASH_TICKS;
                     TargetsHandler_RecordShot(lastShotHit);
                     targetsComplete = TargetsHandler_IsComplete();
+                    if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5) {
+                        recordPenalties += TargetsHandler_RecordTakePenalty();
+                        /* No further shots are possible: account for remaining
+                         * targets as misses instead of waiting for empty exposures. */
+                        if (ammoCount == 0) TargetsHandler_RecordExhaustAmmo();
+                    }
 
                     /* A single-magazine Level 1 ends when its 30 rounds are spent,
                      * even if a distance refire would otherwise be pending. */
-                    if (targetsComplete || ammoCount == 0) {
+                    if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
+                        (targetsComplete || ammoCount == 0)) {
                         levelCompleted = targetsComplete;
                         state.finalShotValid = TRUE;
                         state.finalShotHitSnap = lastShotHit;
@@ -2404,9 +2458,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                         DateStamp(&finalScoreStamp);
                         finalScoreStampValid = TRUE;
-                    } else if ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 && ammoCount == 10) ||
-                               (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
-                                (ammoCount % LevelManager_GetConfig()->magazineSize) == 0)) {
+                    } else if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
+                               (ammoCount % LevelManager_GetConfig()->magazineSize) == 0) {
                         StartReloadPrompt(&state);
                         shotNeedsRelease = TRUE;
                     }
@@ -2463,6 +2516,19 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             if (!roundEnding && !showFinalScore) {
                 UpdateReloadFinishing(&state);
                 UpdateReloadSpeech(&state);
+                if (recordReloadPending && reloadState == RELOAD_STATE_NONE) {
+                    /* Only a completed manual magazine change starts a new
+                     * phase/attempt. Never change the forced position setting. */
+                    ammoCount = 20;
+                    TargetsHandler_RecordStartPhaseDelayed(recordPhase, 2 * 50);
+                    TargetScoring_SaveRecordCheckpoint();
+                    recordHitsAtStart = GetHitCount();
+                    recordScoreAtStart = state.sessionScore;
+                    recordPenaltiesAtStart = recordPenalties;
+                    recordReloadPending = FALSE;
+                    TargetsHandler_SetPaused(FALSE);
+                    shotNeedsRelease = TRUE;
+                }
             }
 
             if (!roundEnding) {
@@ -2472,7 +2538,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 if (!LevelManager_GetConfig()->untimedTargets) {
                     UWORD expired = TargetsHandler_ConsumeExpiredPresentations();
                     if (expired != 0) Sound_PlayTargetTimeout();
-                    if (expired != 0 && TargetsHandler_IsComplete()) {
+                    if (expired != 0 && LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
+                        TargetsHandler_IsComplete()) {
                     levelCompleted = TRUE;
                     state.finalShotValid = TRUE;
                     state.finalShotHitSnap = FALSE;
@@ -2494,6 +2561,54 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     DateStamp(&finalScoreStamp);
                     finalScoreStampValid = TRUE;
                     }
+                }
+            }
+
+            /* Level 5: check the 15/20 standard separately for each phase.
+             * No intermediate SUMMARY is displayed. A failed phase starts
+             * REFIRE through the normal manual Reload procedure. */
+            if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 &&
+                !roundEnding && !showFinalScore && !recordReloadPending &&
+                reloadState == RELOAD_STATE_NONE &&
+                TargetsHandler_RecordPhaseComplete()) {
+                UWORD phaseHits = (UWORD)(GetHitCount() - recordHitsAtStart);
+                if (phaseHits < 15) {
+                    TargetScoring_RestoreRecordCheckpoint();
+                    gHitCount = recordHitsAtStart;
+                    state.sessionScore = recordScoreAtStart;
+                    recordPenalties = recordPenaltiesAtStart;
+                    recordRefireNotice = TRUE;
+                    rangeRefireModal = TRUE;
+                    rangeRefireArmed = FALSE;
+                } else if (recordPhase == 0) {
+                    recordPhase = 1;
+                } else {
+                    levelCompleted = TRUE;
+                    state.finalShotValid = TRUE;
+                    state.finalShotHitSnap = lastShotHit;
+                    state.finalShotScoreSnap = lastShotScore;
+                    if (outSummary) {
+                        UWORD totalTime = (UWORD)ElapsedSecondsSince(&state.roundStartStamp);
+                        outSummary->levelQualified = TRUE;
+                        outSummary->score = ScaleSummaryScore(state.sessionScore);
+                        outSummary->accuracy = CalculateAccuracyPercent(state.sessionScore);
+                        outSummary->totalTime = totalTime;
+                        outSummary->timeBonus = 0;
+                        outSummary->penalties = recordPenalties;
+                        outSummary->summaryLastShotHit = state.finalShotHitSnap;
+                        outSummary->summaryLastShotScore = state.finalShotScoreSnap;
+                    }
+                    StopBirdAmbient(&state);
+                    roundEnding = TRUE;
+                    sessionComplete = TRUE;
+                    DateStamp(&finalScoreStamp);
+                    finalScoreStampValid = TRUE;
+                }
+                if (!roundEnding) {
+                    TargetsHandler_SetPaused(TRUE);
+                    recordReloadPending = TRUE;
+                    StartReloadPrompt(&state);
+                    shotNeedsRelease = TRUE;
                 }
             }
 
