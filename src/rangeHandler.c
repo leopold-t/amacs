@@ -1550,6 +1550,21 @@ static void DrawRangeRefirePrompt(struct RastPort *rp, struct TextFont *font) {
     DrawCenteredTextWithShadow(rp, font, 160, 31, 26, "PULL TRIGGER TO CONTINUE");
 }
 
+static void DrawRangePhaseTransitionPrompt(struct RastPort *rp, struct TextFont *font) {
+    if (!rp) return;
+    SetDrMd(rp, JAM1);
+    SetAPen(rp, 0);
+    RectFill(rp, 21, 60, 298, 195);
+    SetAPen(rp, 4);
+    RectFill(rp, 24, 63, 295, 64);
+    RectFill(rp, 24, 191, 295, 192);
+    RectFill(rp, 24, 63, 25, 192);
+    RectFill(rp, 294, 63, 295, 192);
+    DrawCenteredTextWithShadow(rp, font, 105, 31, 26, "PHASE I COMPLETE");
+    DrawCenteredTextWithShadow(rp, font, 120, 31, 26, "PREPARE FOR PHASE II");
+    DrawCenteredTextWithShadow(rp, font, 160, 31, 26, "PULL TRIGGER TO CONTINUE");
+}
+
 /* Three seconds of actual front-sight tip positions at PAL 50 Hz.
  * Ring storage overwrites the oldest sample without moving memory. */
 #define SIGHT_REPLAY_SAMPLES 100
@@ -1802,6 +1817,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     UWORD recordPenaltiesAtStart = 0;
     BOOL recordReloadPending = FALSE;
     BOOL recordRefireNotice = FALSE;
+    BOOL recordPhaseNotice = FALSE;
     InitRangeSessionState(&state, IS_NEW_GAME_SESSION);
 
     AmacsBob frontSight;
@@ -2167,7 +2183,11 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 }
             }
             if (rangeRefireArmed && down && pressed) {
-                if (recordRefireNotice) {
+                if (recordPhaseNotice) {
+                    recordPhaseNotice = FALSE;
+                    recordReloadPending = TRUE;
+                    StartReloadPrompt(&state);
+                } else if (recordRefireNotice) {
                     recordRefireNotice = FALSE;
                     /* The pending manual Reload stays active. */
                 } else {
@@ -2192,7 +2212,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                                   SCR_W, SCR_H, 0xC0, 0xFF, NULL);
                         WaitBlit();
                     }
-                    DrawRangeRefirePrompt(rp, hudFont);
+                    if (recordPhaseNotice) DrawRangePhaseTransitionPrompt(rp, hudFont);
+                    else DrawRangeRefirePrompt(rp, hudFont);
                     if (useDBuf) Gfx_SwapBuffers();
                 }
                 WaitTOF();
@@ -2520,13 +2541,15 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     /* Only a completed manual magazine change starts a new
                      * phase/attempt. Never change the forced position setting. */
                     ammoCount = 20;
+                    /* Unpause before spawning to avoid shifting the new target
+                     * timestamp by the entire preceding reload duration. */
+                    TargetsHandler_SetPaused(FALSE);
                     TargetsHandler_RecordStartPhaseDelayed(recordPhase, 2 * 50);
                     TargetScoring_SaveRecordCheckpoint();
                     recordHitsAtStart = GetHitCount();
                     recordScoreAtStart = state.sessionScore;
                     recordPenaltiesAtStart = recordPenalties;
                     recordReloadPending = FALSE;
-                    TargetsHandler_SetPaused(FALSE);
                     shotNeedsRelease = TRUE;
                 }
             }
@@ -2582,6 +2605,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     rangeRefireArmed = FALSE;
                 } else if (recordPhase == 0) {
                     recordPhase = 1;
+                    recordPhaseNotice = TRUE;
+                    rangeRefireModal = TRUE;
+                    rangeRefireArmed = FALSE;
                 } else {
                     levelCompleted = TRUE;
                     state.finalShotValid = TRUE;
@@ -2606,8 +2632,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 }
                 if (!roundEnding) {
                     TargetsHandler_SetPaused(TRUE);
-                    recordReloadPending = TRUE;
-                    StartReloadPrompt(&state);
+                    if (!recordPhaseNotice) {
+                        recordReloadPending = TRUE;
+                        StartReloadPrompt(&state);
+                    }
                     shotNeedsRelease = TRUE;
                 }
             }
