@@ -370,7 +370,7 @@ static UWORD gSavedHitMap250[T250_H][T250_W];
 static UWORD gSavedHitMap300[T300_H][T300_W];
 static UWORD gSavedScores[7];
 
-void TargetScoring_SaveRecordCheckpoint(void) {
+void TargetScoring_SaveCheckpoint(void) {
     memcpy(gSavedHitMap050, gHitMap050, sizeof(gHitMap050));
     memcpy(gSavedHitMap100, gHitMap100, sizeof(gHitMap100));
     memcpy(gSavedHitMap150, gHitMap150, sizeof(gHitMap150));
@@ -386,7 +386,7 @@ void TargetScoring_SaveRecordCheckpoint(void) {
     gSavedScores[6] = gScore300;
 }
 
-void TargetScoring_RestoreRecordCheckpoint(void) {
+void TargetScoring_RestoreCheckpoint(void) {
     memcpy(gHitMap050, gSavedHitMap050, sizeof(gHitMap050));
     memcpy(gHitMap100, gSavedHitMap100, sizeof(gHitMap100));
     memcpy(gHitMap150, gSavedHitMap150, sizeof(gHitMap150));

@@ -676,6 +676,40 @@ static UWORD GetHitCount(void) {
     return gHitCount;
 }
 
+/* L1-L4 distance group checkpoint.  Only hits from a passed group attempt
+ * count: on refire (or when the level ends mid-attempt) the HUD hit counter,
+ * session score, hit maps/per-distance scores and presented-target count are
+ * rolled back to the start of the failed attempt.  Ammunition is not. */
+typedef struct DistanceGroupCheckpoint {
+    UWORD groupIndex;
+    UWORD hitCount;
+    UWORD sessionScore;
+} DistanceGroupCheckpoint;
+
+static void SaveDistanceGroupCheckpoint(DistanceGroupCheckpoint *cp, UWORD sessionScore) {
+    TargetScoring_SaveCheckpoint();
+    cp->groupIndex = TargetsHandler_GetDistanceGroupIndex();
+    cp->hitCount = GetHitCount();
+    cp->sessionScore = sessionScore;
+}
+
+/* Call after every RecordShot (shot or expired presentation): a new
+ * checkpoint is taken as soon as a distance group has been passed. */
+static void SyncDistanceGroupCheckpoint(DistanceGroupCheckpoint *cp, UWORD sessionScore) {
+    if (LevelManager_GetConfig()->sequentialDistances &&
+        TargetsHandler_GetDistanceGroupIndex() != cp->groupIndex) {
+        SaveDistanceGroupCheckpoint(cp, sessionScore);
+    }
+}
+
+static void RestoreDistanceGroupCheckpoint(const DistanceGroupCheckpoint *cp, UWORD *sessionScore) {
+    if (!LevelManager_GetConfig()->sequentialDistances) return;
+    TargetScoring_RestoreCheckpoint();
+    TargetsHandler_DiscardDistanceGroupAttempt();
+    gHitCount = cp->hitCount;
+    *sessionScore = cp->sessionScore;
+}
+
 static UWORD BuildHitCounterText(char *buf, UWORD value) {
     char digits[5];
     UWORD digitCount = 0;
@@ -1528,8 +1562,9 @@ static void DrawCenteredTextWithShadow(struct RastPort *rp, struct TextFont *fon
     DrawTextWithShadowEx(rp, font, x, y, pen, shadowPenValue, text, len);
 }
 
-/* In-range Level 1 refire notice. Drawn over the live range without
- * changing the screen palette, background asset or double-buffer setup. */
+/* In-range refire notice (L1-L4 distance refire, L5 phase refire). Drawn
+ * over the live range without changing the screen palette, background asset
+ * or double-buffer setup. */
 static void DrawRangeRefirePrompt(struct RastPort *rp, struct TextFont *font) {
     /* 278x136 panel, centered on the 320x256 range.  Range palette:
      * pen 4 = light grey, pen 31 = near-white, pen 26 = dark grey. */
@@ -1602,7 +1637,7 @@ static const SightReplayPoint *SightReplay_Current(const SightReplay *replay) {
     return &replay->points[index];
 }
 
-/* Static Level 1-3 shot snapshot.  Capture BEFORE CheckHit/RecordShot,
+/* Static L1-L4 shot snapshot.  Capture BEFORE CheckHit/RecordShot,
  * which can hide the target even on a miss. */
 typedef struct ShotSightSnapshot {
     BOOL valid;
@@ -1818,6 +1853,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     BOOL recordReloadPending = FALSE;
     BOOL recordRefireNotice = FALSE;
     BOOL recordPhaseNotice = FALSE;
+    DistanceGroupCheckpoint groupCheckpoint;
     InitRangeSessionState(&state, IS_NEW_GAME_SESSION);
 
     AmacsBob frontSight;
@@ -1945,10 +1981,12 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
     /* Ensure a clean session state even when coming back from a previous run */
     TargetsHandler_Reset();
+    /* L1-L4: the first distance group attempt starts with a clean checkpoint. */
+    SaveDistanceGroupCheckpoint(&groupCheckpoint, state.sessionScore);
     if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5) {
         /* The initial state is always a clean 20-target Supported phase. */
         TargetsHandler_RecordStartPhase(0);
-        TargetScoring_SaveRecordCheckpoint();
+        TargetScoring_SaveCheckpoint();
         recordHitsAtStart = GetHitCount();
         recordScoreAtStart = state.sessionScore;
     }
@@ -2164,6 +2202,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             rangeRefireModal = TRUE;
             rangeRefireArmed = FALSE;
             TargetsHandler_SetPaused(TRUE);
+            /* L1-L4 distance refire: discard every hit of the failed attempt
+             * (HUD HITS, score, Summary hit maps).  Remaining ammo is kept. */
+            RestoreDistanceGroupCheckpoint(&groupCheckpoint, &state.sessionScore);
             /* Refire prompt freezes gameplay, not audio (as shot feedback). */
         }
         if (rangeRefireModal) {
@@ -2437,6 +2478,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
                     resultFlashTicks = RESULT_FLASH_TICKS;
                     TargetsHandler_RecordShot(lastShotHit);
+                    SyncDistanceGroupCheckpoint(&groupCheckpoint, state.sessionScore);
                     targetsComplete = TargetsHandler_IsComplete();
                     if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5) {
                         recordPenalties += TargetsHandler_RecordTakePenalty();
@@ -2445,11 +2487,16 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         if (ammoCount == 0) TargetsHandler_RecordExhaustAmmo();
                     }
 
-                    /* A single-magazine Level 1 ends when its 30 rounds are spent,
+                    /* A single-magazine L1-L4 level ends when its 30 rounds are spent,
                      * even if a distance refire would otherwise be pending. */
                     if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
                         (targetsComplete || ammoCount == 0)) {
                         levelCompleted = targetsComplete;
+                        /* Out of ammo: hits of the unfinished/failed group
+                         * attempt are not shown or counted in the Summary. */
+                        if (!targetsComplete) {
+                            RestoreDistanceGroupCheckpoint(&groupCheckpoint, &state.sessionScore);
+                        }
                         state.finalShotValid = TRUE;
                         state.finalShotHitSnap = lastShotHit;
                         state.finalShotScoreSnap = lastShotScore;
@@ -2467,7 +2514,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                                 state.sessionScore > 0
                                     ? CalculateTimeBonus(totalTime, outSummary->accuracy)
                                     : 0;
-                            /* Level 1 has no simultaneous targets, so no tactical penalties. */
+                            /* L1-L4 have no simultaneous targets, so no tactical penalties. */
                             outSummary->penalties = 0;
                             outSummary->summaryLastShotHit = state.finalShotHitSnap;
                             outSummary->summaryLastShotScore = state.finalShotScoreSnap;
@@ -2545,7 +2592,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                      * timestamp by the entire preceding reload duration. */
                     TargetsHandler_SetPaused(FALSE);
                     TargetsHandler_RecordStartPhaseDelayed(recordPhase, 2 * 50);
-                    TargetScoring_SaveRecordCheckpoint();
+                    TargetScoring_SaveCheckpoint();
                     recordHitsAtStart = GetHitCount();
                     recordScoreAtStart = state.sessionScore;
                     recordPenaltiesAtStart = recordPenalties;
@@ -2556,6 +2603,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
             if (!roundEnding) {
                 TargetsHandler_Tick();
+                /* An expired presentation is recorded inside Tick() and may
+                 * complete (pass) a distance group as well. */
+                SyncDistanceGroupCheckpoint(&groupCheckpoint, state.sessionScore);
                 /* Timed target expiration is a missed presentation, not a fired shot.
                  * End normally when the last target expires. */
                 if (!LevelManager_GetConfig()->untimedTargets) {
@@ -2596,7 +2646,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 TargetsHandler_RecordPhaseComplete()) {
                 UWORD phaseHits = (UWORD)(GetHitCount() - recordHitsAtStart);
                 if (phaseHits < 15) {
-                    TargetScoring_RestoreRecordCheckpoint();
+                    TargetScoring_RestoreCheckpoint();
                     gHitCount = recordHitsAtStart;
                     state.sessionScore = recordScoreAtStart;
                     recordPenalties = recordPenaltiesAtStart;

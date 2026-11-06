@@ -36,8 +36,11 @@ BOOL TargetScoring_GetExcellentPoint(UWORD distance, WORD *outX, WORD *outY);
 WORD TargetScoring_GetParallaxOffset(UWORD distance, WORD sightOffsetPx);
 UBYTE TargetScoring_GetScore(UWORD distance, WORD localX, WORD localY);
 void TargetScoring_Reset(void);
-void TargetScoring_SaveRecordCheckpoint(void);
-void TargetScoring_RestoreRecordCheckpoint(void);
+/* Scoring checkpoint (hit maps and per-distance scores).  Saved at the start
+ * of every attempt which may be refired (L1-L4 distance group, L5 phase) and
+ * restored on refire, so only hits from passed attempts are counted. */
+void TargetScoring_SaveCheckpoint(void);
+void TargetScoring_RestoreCheckpoint(void);
 UWORD TargetScoring_GetTotalScore(void);
 UWORD TargetScoring_GetPerformance(UWORD distance);
 const UWORD *TargetScoring_GetHitMap050(UWORD *outWidth, UWORD *outHeight);

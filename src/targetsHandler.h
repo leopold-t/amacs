@@ -60,6 +60,11 @@ void TargetsHandler_RecordShot(BOOL hit);
 UWORD TargetsHandler_GetPresentedCount(void);
 BOOL TargetsHandler_RefirePromptReady(void);
 void TargetsHandler_AcknowledgeRefire(void);
+/* L1-L4: index of the current distance group (0..5, 6 when completed). */
+UWORD TargetsHandler_GetDistanceGroupIndex(void);
+/* L1-L4: drop the presentations of the current (failed or unfinished) distance
+ * group attempt from the presented-target count used for Summary scaling. */
+void TargetsHandler_DiscardDistanceGroupAttempt(void);
 UWORD TargetsHandler_GetSlotCount(TargetDistance distance);
 BOOL TargetsHandler_SelectSlot(TargetDistance distance, UWORD slotIndex);
 BOOL TargetsHandler_GetTargetInfo(TargetDistance distance, TargetInfo *outInfo);
@@ -73,7 +78,7 @@ void TargetsHandler_RecordExhaustAmmo(void);
 BOOL TargetsHandler_RecordPhaseComplete(void);
 UWORD TargetsHandler_RecordTakePenalty(void);
 
-/* Consume presentations which expired without a shot in Level 2. */
+/* Consume presentations which expired without a shot (timed levels L3-L5). */
 UWORD TargetsHandler_ConsumeExpiredPresentations(void);
 
 #endif

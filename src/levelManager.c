@@ -15,7 +15,7 @@ static const LevelConfig gDemoConfig = {10, 10, 5, 2, FALSE, TRUE, "TEN SHOT CHA
 static const LevelConfig gLevel1Config = {18, 12, 30, 1, TRUE, TRUE, "LEVEL 1"};
 static const LevelConfig gLevel2Config = {18, 12, 30, 1, TRUE, TRUE, "LEVEL 2"};
 static const LevelConfig gLevel3Config = {24, 18, 30, 1, TRUE, FALSE, "LEVEL 3"};
-/* 30 rounds in the first magazine, 10 in the second (40 total). */
+/* One 30-round magazine, as Levels 1-3. */
 static const LevelConfig gLevel4Config = {24, 16, 30, 1, TRUE, FALSE, "LEVEL 4"};
 static const LevelConfig gLevel5Config = {40, 30, 20, 1, FALSE, FALSE, "LEVEL 5"};
 

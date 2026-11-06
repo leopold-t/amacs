@@ -119,6 +119,8 @@ static UWORD gLevel1HitsAtDistance = 0;
 static BOOL gLevel1Failed = FALSE;
 static BOOL gLevel1Completed = FALSE;
 static BOOL gLevel1RefirePending = FALSE;
+/* gSpawnedTargets at the start of the current L1-L4 distance group attempt. */
+static UWORD gLevel1GroupStartSpawned = 0;
 static UWORD gExpiredPresentations = 0;
 /* Record Fire I: fixed 7/7/7/7/6/6 distribution, shuffled for each attempt.
  * A presentation is consumed by a hit or timeout, never by a missed shot. */
@@ -945,6 +947,7 @@ BOOL TargetsHandler_Init(void) {
     gLevel1HitsAtDistance = 0;
     gLevel1Failed = FALSE;
     gLevel1Completed = FALSE;
+    gLevel1GroupStartSpawned = 0;
     gLevel1RefirePending = FALSE;
     gExpiredPresentations = 0;
     if (IsRecordFire()) {
@@ -1030,6 +1033,7 @@ void TargetsHandler_Reset(void) {
     gLevel1HitsAtDistance = 0;
     gLevel1Failed = FALSE;
     gLevel1Completed = FALSE;
+    gLevel1GroupStartSpawned = 0;
     gLevel1RefirePending = FALSE;
     gExpiredPresentations = 0;
     if (IsRecordFire()) {
@@ -1293,7 +1297,8 @@ BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffset
 
     return FALSE;
 }
-/* Called exactly once for each fired round in Level 1, including misses. */
+/* L1-L4: called exactly once for each fired round, including misses, and
+ * once for each timed presentation which expired without a shot. */
 void TargetsHandler_RecordShot(BOOL hit) {
     TargetSeries *current;
     if (!gReady || !LevelManager_GetConfig()->sequentialDistances ||
@@ -1320,6 +1325,9 @@ void TargetsHandler_RecordShot(BOOL hit) {
              !(LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4 &&
                gLevel1DistanceIndex >= 4) ? 3 : 2)) {
             gLevel1DistanceIndex++;
+            /* The next group attempt starts here; a later refire of that
+             * group rewinds the presented count back to this point. */
+            gLevel1GroupStartSpawned = gSpawnedTargets;
             if (gLevel1DistanceIndex >= 6) {
                 gLevel1Completed = TRUE;
                 gLevel1PendingSpawn = FALSE;
@@ -1350,6 +1358,16 @@ BOOL TargetsHandler_RefirePromptReady(void) {
         !gLevel1RefirePending) return FALSE;
     current = GetLevel1Series(gLevel1DistanceIndex);
     return (BOOL)(current && !current->hit);
+}
+
+UWORD TargetsHandler_GetDistanceGroupIndex(void) {
+    return gLevel1DistanceIndex;
+}
+
+void TargetsHandler_DiscardDistanceGroupAttempt(void) {
+    if (gReady && LevelManager_GetConfig()->sequentialDistances) {
+        gSpawnedTargets = gLevel1GroupStartSpawned;
+    }
 }
 
 void TargetsHandler_AcknowledgeRefire(void) {
