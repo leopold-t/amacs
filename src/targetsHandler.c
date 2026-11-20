@@ -1223,6 +1223,43 @@ void TargetsHandler_SetPaused(BOOL paused) {
     gPaused = FALSE;
 }
 
+/* Level 5 shot marker: use the same per-distance ballistic corrections as
+ * CheckSeriesHit(). With two targets, choose the active target whose visible
+ * rectangle is nearest to the corrected impact (without changing scoring).
+ * The coordinates may be off-screen; the renderer clips the marker. */
+void TargetsHandler_GetShotImpact(WORD x, WORD y, WORD sightOffsetX,
+                                  WORD sightOffsetY, WORD *outX, WORD *outY) {
+    TargetSeries *series[6] = {&gSeries050, &gSeries100, &gSeries150,
+                               &gSeries200, &gSeries250, &gSeries300};
+    LONG bestDistance = 0x7FFFFFFFL;
+    WORD bestX = x, bestY = y;
+    UWORD i;
+    for (i = 0; i < 6; ++i) {
+        WORD left, top, width, height, bx, by;
+        LONG dx = 0, dy = 0, distance;
+        UWORD meters;
+        if (!GetSeriesVisibleRect(series[i], &left, &top, &width, &height))
+            continue;
+        meters = (UWORD)GetDistanceForSeries(series[i]);
+        bx = (WORD)(x + TargetScoring_GetParallaxOffset(meters, sightOffsetX)
+                    + TargetsHandler_GetWindDriftOffset(meters));
+        by = (WORD)(y + TargetScoring_GetParallaxOffset(meters, sightOffsetY)
+                    - TargetScoring_GetZeroOffset(meters));
+        if (bx < left) dx = (LONG)left - bx;
+        else if (bx >= left + width) dx = (LONG)bx - (left + width - 1);
+        if (by < top) dy = (LONG)top - by;
+        else if (by >= top + height) dy = (LONG)by - (top + height - 1);
+        distance = dx * dx + dy * dy;
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            bestX = bx;
+            bestY = by;
+        }
+    }
+    if (outX) *outX = bestX;
+    if (outY) *outY = bestY;
+}
+
 BOOL TargetsHandler_CheckHit(WORD x, WORD y, WORD sightOffsetX, WORD sightOffsetY,
                              UWORD *hitDelayTicks, UBYTE *hitScore, UBYTE *hitVolume) {
     if (!gReady) {

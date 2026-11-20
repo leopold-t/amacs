@@ -16,19 +16,17 @@
 #include "soundHandler.h"
 #include "targetScoring.h"
 #include "targetsHandler.h"
-#include "levelManager.h"
 
 extern BOOL Input_Left(void);
 extern BOOL Input_Right(void);
 extern BOOL Input_Up(void);
 extern BOOL Input_Down(void);
 
-
 #define RAWKEY_J 0x26
 #define RAWKEY_K 0x27
 #define RAWKEY_M 0x37
 #define RAWKEY_L 0x28
-#define RAWKEY_PLUS 0x5E /* Numeric keypad + */
+#define RAWKEY_PLUS 0x5E  /* Numeric keypad + */
 #define RAWKEY_MINUS 0x0B /* Main keyboard - */
 #define RAWKEY_KP_MINUS 0x4A
 #define RAWKEY_EQUALS 0x0C /* Main keyboard = / shifted + */
@@ -52,30 +50,37 @@ void Range_SetPrimaryControl(RangeControlMode mode) {
     }
 }
 
-RangePositionMode Range_GetPositionMode(void) { return gPositionMode; }
+RangePositionMode Range_GetPositionMode(void) {
+    return gPositionMode;
+}
 void Range_SetPositionMode(RangePositionMode mode) {
-    if (mode <= RANGE_POSITION_UNSUPPORTED) gPositionMode = mode;
+    if (mode <= RANGE_POSITION_UNSUPPORTED)
+        gPositionMode = mode;
 }
 const char *Range_PositionModeName(RangePositionMode mode) {
-    return mode == RANGE_POSITION_SUPPORTED ? "SUPPORTED" :
-           mode == RANGE_POSITION_UNSUPPORTED ? "UNSUPPORTED" : "AS TRAINED";
+    return mode == RANGE_POSITION_SUPPORTED     ? "SUPPORTED"
+           : mode == RANGE_POSITION_UNSUPPORTED ? "UNSUPPORTED"
+                                                : "AS TRAINED";
 }
-BOOL Range_GetSupportedPosition(void) { return gSupportedPosition; }
+BOOL Range_GetSupportedPosition(void) {
+    return gSupportedPosition;
+}
 void Range_SetSupportedPosition(BOOL supported) {
     Range_SetPositionMode(supported ? RANGE_POSITION_SUPPORTED : RANGE_POSITION_UNSUPPORTED);
 }
 /* Manual selection overrides the position prescribed by the course. */
 static void UpdateEffectivePosition(void) {
     LevelManagerMode level = LevelManager_GetMode();
-    BOOL trainedSupported = (level == LEVEL_MANAGER_MODE_LEVEL1 ||
-                             level == LEVEL_MANAGER_MODE_LEVEL3 ||
-                             (level == LEVEL_MANAGER_MODE_LEVEL5 &&
-                              TargetsHandler_GetPresentedCount() <= 20));
+    BOOL trainedSupported =
+        (level == LEVEL_MANAGER_MODE_LEVEL1 || level == LEVEL_MANAGER_MODE_LEVEL3 ||
+         (level == LEVEL_MANAGER_MODE_LEVEL5 && TargetsHandler_GetPresentedCount() <= 20));
     gSupportedPosition = gPositionMode == RANGE_POSITION_SUPPORTED ||
-        (gPositionMode == RANGE_POSITION_AS_TRAINED && trainedSupported);
+                         (gPositionMode == RANGE_POSITION_AS_TRAINED && trainedSupported);
 }
 
-UWORD Range_GetMouseSensitivity(void) { return gMouseSensitivity; }
+UWORD Range_GetMouseSensitivity(void) {
+    return gMouseSensitivity;
+}
 
 void Range_SetMouseSensitivity(UWORD percent) {
     if (percent >= 5 && percent <= 100 && (percent % 5) == 0)
@@ -87,7 +92,8 @@ UWORD Range_GetWindSpeed(void) {
 }
 
 void Range_SetWindSpeed(UWORD mph) {
-    if (mph <= 30 && (mph % 10) == 0) gWindSpeed = mph;
+    if (mph <= 30 && (mph % 10) == 0)
+        gWindSpeed = mph;
 }
 
 RangeWindDirection Range_GetWindDirection(void) {
@@ -100,39 +106,54 @@ void Range_SetWindDirection(RangeWindDirection direction) {
 }
 
 static BOOL RangeControlLeft(void) {
-    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyLeft();
-    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED) return Input_KeyboardLeft();
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK)
+        return Input_JoyLeft();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED)
+        return Input_KeyboardLeft();
     return FALSE;
 }
 static BOOL RangeControlRight(void) {
-    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyRight();
-    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED) return Input_KeyboardRight();
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK)
+        return Input_JoyRight();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED)
+        return Input_KeyboardRight();
     return FALSE;
 }
 static BOOL RangeControlUp(void) {
-    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyUp();
-    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED) return Input_KeyboardUp();
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK)
+        return Input_JoyUp();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED)
+        return Input_KeyboardUp();
     return FALSE;
 }
 static BOOL RangeControlDown(void) {
-    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyDown();
-    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED) return Input_KeyboardDown();
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK)
+        return Input_JoyDown();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD || gPrimaryControl == RANGE_CONTROL_LINKED)
+        return Input_KeyboardDown();
     return FALSE;
 }
 static BOOL RangeControlFirePressed(void) {
-    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyFirePressed();
-    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardFirePressed();
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK)
+        return Input_JoyFirePressed();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD)
+        return Input_KeyboardFirePressed();
     return Input_MouseFirePressed();
 }
 static BOOL RangeControlFireDown(void) {
-    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK) return Input_JoyFireDown();
-    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD) return Input_KeyboardFireDown();
+    if (gPrimaryControl == RANGE_CONTROL_JOYSTICK)
+        return Input_JoyFireDown();
+    if (gPrimaryControl == RANGE_CONTROL_KEYBOARD)
+        return Input_KeyboardFireDown();
     return Input_MouseFireDown();
 }
 static void RangeDiscardInactiveFireEdges(void) {
-    if (gPrimaryControl != RANGE_CONTROL_JOYSTICK) (void)Input_JoyFirePressed();
-    if (gPrimaryControl != RANGE_CONTROL_KEYBOARD) (void)Input_KeyboardFirePressed();
-    if (gPrimaryControl != RANGE_CONTROL_MOUSE && gPrimaryControl != RANGE_CONTROL_LINKED) (void)Input_MouseFirePressed();
+    if (gPrimaryControl != RANGE_CONTROL_JOYSTICK)
+        (void)Input_JoyFirePressed();
+    if (gPrimaryControl != RANGE_CONTROL_KEYBOARD)
+        (void)Input_KeyboardFirePressed();
+    if (gPrimaryControl != RANGE_CONTROL_MOUSE && gPrimaryControl != RANGE_CONTROL_LINKED)
+        (void)Input_MouseFirePressed();
 }
 
 #define FRONTSIGHT_RAW "gfx/FrontSight.raw"
@@ -356,8 +377,10 @@ static void InitRangeSessionState(RangeSessionState *state, BOOL isNewGameSessio
 
     state->ringX = (SCR_W - REARSIGHT_W) / 2;
     state->ringY = (SCR_H - REARSIGHT_H) / 2;
-    state->ammoCount = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ? 20 :
-        LevelManager_GetConfig()->magazineSize * LevelManager_GetConfig()->magazineCount;
+    state->ammoCount =
+        LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5
+            ? 20
+            : LevelManager_GetConfig()->magazineSize * LevelManager_GetConfig()->magazineCount;
     state->reloadState = RELOAD_STATE_NONE;
     state->reloadNeedsNeutral = FALSE;
     state->reloadSpeechStampValid = FALSE;
@@ -703,7 +726,8 @@ static void SyncDistanceGroupCheckpoint(DistanceGroupCheckpoint *cp, UWORD sessi
 }
 
 static void RestoreDistanceGroupCheckpoint(const DistanceGroupCheckpoint *cp, UWORD *sessionScore) {
-    if (!LevelManager_GetConfig()->sequentialDistances) return;
+    if (!LevelManager_GetConfig()->sequentialDistances)
+        return;
     TargetScoring_RestoreCheckpoint();
     TargetsHandler_DiscardDistanceGroupAttempt();
     gHitCount = cp->hitCount;
@@ -1144,9 +1168,7 @@ static WORD RearRecoilOffsetY(WORD frontRecoilY, WORD *history) {
  * special palette modes is active.  The shape is intentionally hard-edged:
  * it is drawn last, above sights/HUD, so moving optics can pass underneath it. */
 static void DrawSpecialModeVignette(struct RastPort *rp) {
-    static const UBYTE cornerWidth[17] = {
-        17, 15, 12, 11, 10, 9, 7, 6, 6, 5, 4, 3, 2, 2, 2, 1, 1
-    };
+    static const UBYTE cornerWidth[17] = {17, 15, 12, 11, 10, 9, 7, 6, 6, 5, 4, 3, 2, 2, 2, 1, 1};
     UWORD y;
 
     if (!rp || !(Gfx_IsNightVisionEnabled() || Gfx_IsRedRoomEnabled() || Gfx_IsAmberEnabled())) {
@@ -1179,6 +1201,52 @@ static void DrawResultFlash(struct RastPort *rp, UWORD colorIndex) {
     RectFill(rp, 0, SCR_H - RESULT_FLASH_THICKNESS, SCR_W - 1, SCR_H - 1);
     RectFill(rp, 0, 0, RESULT_FLASH_THICKNESS - 1, SCR_H - 1);
     RectFill(rp, SCR_W - RESULT_FLASH_THICKNESS, 0, SCR_W - 1, SCR_H - 1);
+}
+
+/* 17x15 shot marker, centered on the corrected impact. One-pixel gaps
+ * separate the white center from the black 7px/5px arms. */
+static void DrawShotImpactMarker(struct RastPort *rp, WORD x, WORD y) {
+    if (!rp)
+        return;
+    SetAPen(rp, 0);
+    if (y >= 0 && y < SCR_H) {
+        WORD a = (WORD)(x - 8), b = (WORD)(x - 2);
+        if (a < 0)
+            a = 0;
+        if (b >= SCR_W)
+            b = SCR_W - 1;
+        if (a <= b)
+            RectFill(rp, a, y, b, y);
+        a = (WORD)(x + 2);
+        b = (WORD)(x + 8);
+        if (a < 0)
+            a = 0;
+        if (b >= SCR_W)
+            b = SCR_W - 1;
+        if (a <= b)
+            RectFill(rp, a, y, b, y);
+    }
+    if (x >= 0 && x < SCR_W) {
+        WORD a = (WORD)(y - 6), b = (WORD)(y - 2);
+        if (a < 0)
+            a = 0;
+        if (b >= SCR_H)
+            b = SCR_H - 1;
+        if (a <= b)
+            RectFill(rp, x, a, x, b);
+        a = (WORD)(y + 2);
+        b = (WORD)(y + 6);
+        if (a < 0)
+            a = 0;
+        if (b >= SCR_H)
+            b = SCR_H - 1;
+        if (a <= b)
+            RectFill(rp, x, a, x, b);
+    }
+    if (x >= 0 && x < SCR_W && y >= 0 && y < SCR_H) {
+        SetAPen(rp, HUD_SHADOW_PEN);
+        WritePixel(rp, x, y);
+    }
 }
 
 static void DrawTextWithShadowEx(struct RastPort *rp, struct TextFont *font, WORD x, WORD y,
@@ -1218,8 +1286,8 @@ static void DrawHitCounter(struct RastPort *rp, struct TextFont *font) {
 static void DrawLevelTitle(struct RastPort *rp, struct TextFont *font) {
     const char *gLevelTitle = LevelManager_GetConfig()->title;
     if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5) {
-        gLevelTitle = TargetsHandler_RecordGetPhase() == 0
-            ? "LEVEL 5 - PHASE I" : "LEVEL 5 - PHASE II";
+        gLevelTitle =
+            TargetsHandler_RecordGetPhase() == 0 ? "LEVEL 5 - PHASE I" : "LEVEL 5 - PHASE II";
     }
     UWORD len;
     WORD width;
@@ -1269,7 +1337,7 @@ static void DrawPrimaryControl(struct RastPort *rp, struct TextFont *font) {
         SetFont(rp, font);
     }
 
-    blockWidth = TextLength(rp, (STRPTR)"[\x7F]", 3);
+    blockWidth = TextLength(rp, (STRPTR) "[\x7F]", 3);
     rightBlockX = (WORD)(SCR_W - HUD_MARGIN_RIGHT - blockWidth - 15);
     x = (WORD)(rightBlockX - TextLength(rp, (STRPTR)text, len));
 
@@ -1314,8 +1382,7 @@ static void DrawAmmoBlocks(struct RastPort *rp, struct TextFont *font, UWORD amm
      * former left-hand magazine is stacked directly below it. */
     for (i = 0; i < LevelManager_GetConfig()->magazineCount; i++) {
         const char *block = (i < blocksVisible) ? gFullBlock : gEmptyBlock;
-        DrawTextWithShadow(rp, font, x, (WORD)(HUD_AMMO_Y + (i * 13)), HUD_TEXT_PEN,
-                           block, len);
+        DrawTextWithShadow(rp, font, x, (WORD)(HUD_AMMO_Y + (i * 13)), HUD_TEXT_PEN, block, len);
     }
 }
 
@@ -1332,12 +1399,15 @@ static void DrawWindStatus(struct RastPort *rp, struct TextFont *font) {
         return;
     }
 
-    prefixText = (gWindDirection == RANGE_WIND_FULL_RIGHT ||
-                  gWindDirection == RANGE_WIND_HALF_RIGHT) ? "<- " : "";
-    suffixText = (gWindDirection == RANGE_WIND_FULL_LEFT ||
-                  gWindDirection == RANGE_WIND_HALF_LEFT) ? " ->" : "";
-    valueText = (gWindDirection == RANGE_WIND_FULL_LEFT ||
-                 gWindDirection == RANGE_WIND_FULL_RIGHT) ? "FULL WIND " : "HALF WIND ";
+    prefixText =
+        (gWindDirection == RANGE_WIND_FULL_RIGHT || gWindDirection == RANGE_WIND_HALF_RIGHT) ? "<- "
+                                                                                             : "";
+    suffixText = (gWindDirection == RANGE_WIND_FULL_LEFT || gWindDirection == RANGE_WIND_HALF_LEFT)
+                     ? " ->"
+                     : "";
+    valueText = (gWindDirection == RANGE_WIND_FULL_LEFT || gWindDirection == RANGE_WIND_FULL_RIGHT)
+                    ? "FULL WIND "
+                    : "HALF WIND ";
 
     text[0] = '\0';
     strcat(text, prefixText);
@@ -1568,7 +1638,8 @@ static void DrawCenteredTextWithShadow(struct RastPort *rp, struct TextFont *fon
 static void DrawRangeRefirePrompt(struct RastPort *rp, struct TextFont *font) {
     /* 278x136 panel, centered on the 320x256 range.  Range palette:
      * pen 4 = light grey, pen 31 = near-white, pen 26 = dark grey. */
-    if (!rp) return;
+    if (!rp)
+        return;
     SetDrMd(rp, JAM1);
     SetAPen(rp, 0);
     RectFill(rp, 21, 60, 298, 195);
@@ -1586,7 +1657,8 @@ static void DrawRangeRefirePrompt(struct RastPort *rp, struct TextFont *font) {
 }
 
 static void DrawRangePhaseTransitionPrompt(struct RastPort *rp, struct TextFont *font) {
-    if (!rp) return;
+    if (!rp)
+        return;
     SetDrMd(rp, JAM1);
     SetAPen(rp, 0);
     RectFill(rp, 21, 60, 298, 195);
@@ -1618,21 +1690,25 @@ static void SightReplay_Add(SightReplay *replay, WORD x, WORD y) {
     replay->points[replay->next].x = x;
     replay->points[replay->next].y = y;
     replay->next = (UWORD)((replay->next + 1) % SIGHT_REPLAY_SAMPLES);
-    if (replay->count < SIGHT_REPLAY_SAMPLES) replay->count++;
+    if (replay->count < SIGHT_REPLAY_SAMPLES)
+        replay->count++;
 }
 
 static void SightReplay_Freeze(SightReplay *replay) {
-    replay->first = (UWORD)((replay->next + SIGHT_REPLAY_SAMPLES - replay->count) % SIGHT_REPLAY_SAMPLES);
+    replay->first =
+        (UWORD)((replay->next + SIGHT_REPLAY_SAMPLES - replay->count) % SIGHT_REPLAY_SAMPLES);
     replay->playback = 0;
 }
 
 static void SightReplay_Advance(SightReplay *replay) {
-    if (replay->playback + 1 < replay->count) replay->playback++;
+    if (replay->playback + 1 < replay->count)
+        replay->playback++;
 }
 
 static const SightReplayPoint *SightReplay_Current(const SightReplay *replay) {
     UWORD index;
-    if (!replay->count) return NULL;
+    if (!replay->count)
+        return NULL;
     index = (UWORD)((replay->first + replay->playback) % SIGHT_REPLAY_SAMPLES);
     return &replay->points[index];
 }
@@ -1643,22 +1719,20 @@ typedef struct ShotSightSnapshot {
     BOOL valid;
     UWORD distance;
     WORD targetX, targetY, targetW, targetH;
-    WORD sightX, sightY; /* front sight tip in original range coordinates */
+    WORD sightX, sightY;     /* front sight tip in original range coordinates */
     WORD correctX, correctY; /* ideal sight tip, captured at shot time */
     BOOL correctValid;
 } ShotSightSnapshot;
 
 static const UWORD kShotDistances[6] = {50, 100, 150, 200, 250, 300};
-static const char *kShotTargetRaw[6] = {
-    "gfx/Target050.raw", "gfx/Target100.raw", "gfx/Target150.raw",
-    "gfx/Target200.raw", "gfx/Target250.raw", "gfx/Target300.raw"
-};
-static const char *kShotTargetMask[6] = {
-    "gfx/Target050.mask", "gfx/Target100.mask", "gfx/Target150.mask",
-    "gfx/Target200.mask", "gfx/Target250.mask", "gfx/Target300.mask"
-};
-static const UWORD kShotTargetW[6] = {T050_W,T100_W,T150_W,T200_W,T250_W,T300_W};
-static const UWORD kShotTargetH[6] = {T050_H,T100_H,T150_H,T200_H,T250_H,T300_H};
+static const char *kShotTargetRaw[6] = {"gfx/Target050.raw", "gfx/Target100.raw",
+                                        "gfx/Target150.raw", "gfx/Target200.raw",
+                                        "gfx/Target250.raw", "gfx/Target300.raw"};
+static const char *kShotTargetMask[6] = {"gfx/Target050.mask", "gfx/Target100.mask",
+                                         "gfx/Target150.mask", "gfx/Target200.mask",
+                                         "gfx/Target250.mask", "gfx/Target300.mask"};
+static const UWORD kShotTargetW[6] = {T050_W, T100_W, T150_W, T200_W, T250_W, T300_W};
+static const UWORD kShotTargetH[6] = {T050_H, T100_H, T150_H, T200_H, T250_H, T300_H};
 
 static void CaptureShotSight(ShotSightSnapshot *snap, WORD tipX, WORD tipY) {
     UWORD i;
@@ -1683,9 +1757,9 @@ static void CaptureShotSight(ShotSightSnapshot *snap, WORD tipX, WORD tipY) {
                      * impact = sight + wind (X), sight - BZO (Y).
                      * Ideal placement is the selected 5-point impact pixel. */
                     snap->correctX = (WORD)(info.x + excellentX -
-                                             TargetsHandler_GetWindDriftOffset(kShotDistances[i]));
+                                            TargetsHandler_GetWindDriftOffset(kShotDistances[i]));
                     snap->correctY = (WORD)(info.y + excellentY +
-                                             TargetScoring_GetZeroOffset(kShotDistances[i]));
+                                            TargetScoring_GetZeroOffset(kShotDistances[i]));
                     snap->correctValid = TRUE;
                 }
             }
@@ -1702,9 +1776,11 @@ static void DrawShotSightDiagram(struct RastPort *rp, const ShotSightSnapshot *s
     WORD targetCenterX, targetCenterY, originX, originY;
     WORD sx, sy, tx, ty, cx, cy;
     const AmacsBob *target;
-    if (!rp || !snap->valid || !sight || !sight->mask || !targets) return;
+    if (!rp || !snap->valid || !sight || !sight->mask || !targets)
+        return;
     target = &targets[snap->distance];
-    if (!target->mask) return;
+    if (!target->mask)
+        return;
     targetCenterX = (WORD)(snap->targetX + snap->targetW / 2);
     targetCenterY = (WORD)(snap->targetY + snap->targetH / 2);
     originX = (WORD)(160 - targetCenterX);
@@ -1736,14 +1812,14 @@ static void DrawShotSightDiagram(struct RastPort *rp, const ShotSightSnapshot *s
 
 /* Share the exact end-of-round status with the final shot feedback. */
 static const char *GetEndRoundStatusText(BOOL levelCompleted) {
-    return levelCompleted ? "LEVEL COMPLETED" :
-           (TargetsHandler_IsUnqualified() ? "UNQUALIFIED" : "OUT OF AMMO");
+    return levelCompleted ? "LEVEL COMPLETED"
+                          : (TargetsHandler_IsUnqualified() ? "UNQUALIFIED" : "OUT OF AMMO");
 }
 
 /* Full Course shot-by-shot instruction.  Keep the normal HUD and palette
  * untouched; the notice uses existing range pens and the draw buffer. */
-static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
-                               BOOL breathOK, BOOL positionStable, UBYTE shotScore,
+static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font, BOOL breathOK,
+                               BOOL positionStable, UBYTE shotScore,
                                const ShotSightSnapshot *snapshot, const AmacsBob *sight,
                                const AmacsBob *targets, const SightReplayPoint *replayPoint,
                                const char *endRoundStatus) {
@@ -1756,7 +1832,8 @@ static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
     UWORD shotPen = (shotScore == SCORE_MISS) ? 31 : GetScoreTextPen(shotScore);
     WORD x, labelWidth, ratingWidth, ratingX;
 
-    if (!rp) return;
+    if (!rp)
+        return;
     if (!shotRating) {
         shotRating = "MISS";
         shotPen = 31; /* White text for MISS on the black feedback panel. */
@@ -1770,7 +1847,8 @@ static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
     RectFill(rp, 24, 11, 25, 242);
     RectFill(rp, 294, 11, 295, 242);
 
-    if (font) SetFont(rp, font);
+    if (font)
+        SetFont(rp, font);
     /* Keep SHOT LOCATION in its original centered position.  Align the
      * other two colons and rating starts with that reference line. */
     labelWidth = TextLength(rp, (STRPTR)shotLabel, TextLen(shotLabel));
@@ -1779,35 +1857,35 @@ static void DrawBreathFeedback(struct RastPort *rp, struct TextFont *font,
     ratingX = (WORD)(x + labelWidth);
 
     labelWidth = TextLength(rp, (STRPTR)positionLabel, TextLen(positionLabel));
-    DrawTextWithShadowEx(rp, font, (WORD)(ratingX - labelWidth), 30, 31, 26,
-                         positionLabel, TextLen(positionLabel));
+    DrawTextWithShadowEx(rp, font, (WORD)(ratingX - labelWidth), 30, 31, 26, positionLabel,
+                         TextLen(positionLabel));
     DrawTextWithShadowEx(rp, font, ratingX, 30,
-                         positionStable ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR,
-                         26, positionRating, TextLen(positionRating));
+                         positionStable ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR, 26,
+                         positionRating, TextLen(positionRating));
 
     labelWidth = TextLength(rp, (STRPTR)breathLabel, TextLen(breathLabel));
-    DrawTextWithShadowEx(rp, font, (WORD)(ratingX - labelWidth), 46, 31, 26,
-                         breathLabel, TextLen(breathLabel));
+    DrawTextWithShadowEx(rp, font, (WORD)(ratingX - labelWidth), 46, 31, 26, breathLabel,
+                         TextLen(breathLabel));
     DrawTextWithShadowEx(rp, font, ratingX, 46,
-                         breathOK ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR,
-                         26, breathRating, TextLen(breathRating));
+                         breathOK ? SCORE_FLASH_GOOD_COLOR : SCORE_FLASH_POOR_COLOR, 26,
+                         breathRating, TextLen(breathRating));
 
-    DrawTextWithShadowEx(rp, font, x, 62, 31, 26,
-                         shotLabel, TextLen(shotLabel));
-    DrawTextWithShadowEx(rp, font, ratingX, 62, shotPen, 26,
-                         shotRating, TextLen(shotRating));
+    DrawTextWithShadowEx(rp, font, x, 62, 31, 26, shotLabel, TextLen(shotLabel));
+    DrawTextWithShadowEx(rp, font, ratingX, 62, shotPen, 26, shotRating, TextLen(shotRating));
     if (endRoundStatus) {
         DrawCenteredTextWithShadow(rp, font, 78, 31, 26, endRoundStatus);
     }
     DrawShotSightDiagram(rp, snapshot, sight, targets, replayPoint);
     /* Legend squares centred vertically on the text line, not above it. */
-    SetAPen(rp, SCORE_FLASH_GOOD_COLOR); RectFill(rp, 56, 208, 63, 215);
+    SetAPen(rp, SCORE_FLASH_GOOD_COLOR);
+    RectFill(rp, 56, 208, 63, 215);
     DrawTextWithShadowEx(rp, font, 69, 209, 31, 26, "= CORRECT", 9);
-    SetAPen(rp, SCORE_FLASH_AVERAGE_COLOR); RectFill(rp, 164, 208, 171, 215);
+    SetAPen(rp, SCORE_FLASH_AVERAGE_COLOR);
+    RectFill(rp, 164, 208, 171, 215);
     DrawTextWithShadowEx(rp, font, 177, 209, 31, 26, "= YOUR SIGHT", 12);
     /* SNES-style replay caption, right-aligned above YOUR SIGHT. */
-    DrawTextWithShadowEx(rp, font, (WORD)(274 - TextLength(rp, (STRPTR)"REPLAY", 6)),
-                             193, SCORE_FLASH_AVERAGE_COLOR, 26, "REPLAY", 6);
+    DrawTextWithShadowEx(rp, font, (WORD)(274 - TextLength(rp, (STRPTR) "REPLAY", 6)), 193,
+                         SCORE_FLASH_AVERAGE_COLOR, 26, "REPLAY", 6);
     DrawCenteredTextWithShadow(rp, font, 226, 31, 26, "PULL TRIGGER TO CONTINUE");
 }
 
@@ -1929,12 +2007,14 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     memset(&shotSnapshot, 0, sizeof(shotSnapshot));
     if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
         LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5) {
-        if (Bob_LoadRawAndMask(&feedbackSight, "gfx/FrontSightZero.raw",
-                               "gfx/FrontSightZero.mask", 84, 57, 5)) {
+        if (Bob_LoadRawAndMask(&feedbackSight, "gfx/FrontSightZero.raw", "gfx/FrontSightZero.mask",
+                               84, 57, 5)) {
             for (feedbackIndex = 0; feedbackIndex < 6; ++feedbackIndex) {
                 if (!Bob_LoadRawAndMask(&feedbackTargets[feedbackIndex],
-                                        kShotTargetRaw[feedbackIndex], kShotTargetMask[feedbackIndex],
-                                        kShotTargetW[feedbackIndex], kShotTargetH[feedbackIndex], 5)) break;
+                                        kShotTargetRaw[feedbackIndex],
+                                        kShotTargetMask[feedbackIndex], kShotTargetW[feedbackIndex],
+                                        kShotTargetH[feedbackIndex], 5))
+                    break;
                 feedbackTargetLoaded++;
             }
             feedbackGraphicsReady = (feedbackTargetLoaded == 6);
@@ -2053,9 +2133,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 }
 
                 Bob_Free(&feedbackSight);
-        for (feedbackIndex = 0; feedbackIndex < feedbackTargetLoaded; ++feedbackIndex)
-            Bob_Free(&feedbackTargets[feedbackIndex]);
-        Bob_Free(&frontSight);
+                for (feedbackIndex = 0; feedbackIndex < feedbackTargetLoaded; ++feedbackIndex)
+                    Bob_Free(&feedbackTargets[feedbackIndex]);
+                Bob_Free(&frontSight);
                 Bob_Free(&rearSight);
                 return FALSE;
             }
@@ -2076,6 +2156,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     /* Refire is a modal range overlay, not a firing-range shot. */
     BOOL rangeRefireModal = FALSE;
     BOOL rangeRefireArmed = FALSE;
+    BOOL shotMarkerModal = FALSE;
+    BOOL shotMarkerArmed = FALSE;
+    WORD shotMarkerX = 0, shotMarkerY = 0;
     BOOL breathFeedbackModal = FALSE;
     BOOL breathFeedbackArmed = FALSE;
     BOOL breathFeedbackOK = FALSE;
@@ -2116,8 +2199,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             } else if (Input_KeyPressed(RAWKEY_L) && !forcePassKey) {
                 gPrimaryControl = RANGE_CONTROL_LINKED;
             }
-            if (forcePassKey && LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
-                !roundEnding && !breathFeedbackModal && !rangeRefireModal) {
+            if (forcePassKey && LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO && !roundEnding &&
+                !breathFeedbackModal && !rangeRefireModal) {
                 if (outSummary) {
                     memset(outSummary, 0, sizeof(*outSummary));
                     outSummary->levelQualified = TRUE;
@@ -2136,16 +2219,53 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
         /* Live mouse sensitivity shortcuts, shared by both game modes. */
         if (gPrimaryControl == RANGE_CONTROL_MOUSE) {
             if (Input_KeyPressed(RAWKEY_PLUS) || Input_KeyPressed(RAWKEY_EQUALS)) {
-                if (gMouseSensitivity < 100) gMouseSensitivity += 5;
+                if (gMouseSensitivity < 100)
+                    gMouseSensitivity += 5;
             }
             if (Input_KeyPressed(RAWKEY_MINUS) || Input_KeyPressed(RAWKEY_KP_MINUS)) {
-                if (gMouseSensitivity > 5) gMouseSensitivity -= 5;
+                if (gMouseSensitivity > 5)
+                    gMouseSensitivity -= 5;
             }
         }
         RangeDiscardInactiveFireEdges();
 
         /* The shot which opened this modal is never its acknowledgement.
          * One fresh Fire edge after release advances, as on Summary. */
+        /* L5: static impact feedback. No simulation or target timers advance
+         * until a fresh trigger press after release. Audio remains live. */
+        if (shotMarkerModal) {
+            BOOL down, pressed;
+            struct RastPort *rp;
+            Sound_Update();
+            UpdateBirdAmbient(&state);
+            Sound_UpdateWindAmbient();
+            down = RangeControlFireDown();
+            pressed = RangeControlFirePressed();
+            if (!shotMarkerArmed && !down)
+                shotMarkerArmed = TRUE;
+            if (shotMarkerArmed && down && pressed) {
+                shotMarkerModal = FALSE;
+                shotNeedsRelease = TRUE;
+                (void)RangeControlFirePressed();
+                TargetsHandler_SetPaused(FALSE);
+            } else {
+                rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
+                if (rp) {
+                    if (haveBg) {
+                        WaitBlit();
+                        BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, SCR_W, SCR_H, 0xC0, 0xFF, NULL);
+                        WaitBlit();
+                    }
+                    TargetsHandler_Draw(rp);
+                    DrawShotImpactMarker(rp, shotMarkerX, shotMarkerY);
+                    if (useDBuf)
+                        Gfx_SwapBuffers();
+                }
+                WaitTOF();
+                continue;
+            }
+        }
+
         if (breathFeedbackModal) {
             /* Freeze range simulation, not audio: pending target-hit SFX and
              * Speech_Hit need Sound_Update(), and ambient must keep running
@@ -2167,17 +2287,16 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 TargetsHandler_SetPaused(FALSE);
                 Sound_SetPaused(FALSE);
             } else {
-                struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort()
-                                              : &Gfx_GetScreen()->RastPort;
+                struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
                 if (rp) {
                     if (haveBg) {
                         WaitBlit();
-                        BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0,
-                                  SCR_W, SCR_H, 0xC0, 0xFF, NULL);
+                        BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, SCR_W, SCR_H, 0xC0, 0xFF, NULL);
                         WaitBlit();
                     }
-                    DrawBreathFeedback(rp, hudFont, breathFeedbackOK, positionFeedbackStable, lastShotScore,
-                                       &shotSnapshot, feedbackGraphicsReady ? &feedbackSight : NULL,
+                    DrawBreathFeedback(rp, hudFont, breathFeedbackOK, positionFeedbackStable,
+                                       lastShotScore, &shotSnapshot,
+                                       feedbackGraphicsReady ? &feedbackSight : NULL,
                                        feedbackGraphicsReady ? feedbackTargets : NULL,
                                        SightReplay_Current(&sightReplay),
                                        roundEnding ? GetEndRoundStatusText(levelCompleted) : NULL);
@@ -2190,7 +2309,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         replayEndSoundPlayed = TRUE;
                     }
                     SightReplay_Advance(&sightReplay);
-                    if (useDBuf) Gfx_SwapBuffers();
+                    if (useDBuf)
+                        Gfx_SwapBuffers();
                 }
                 WaitTOF();
                 continue;
@@ -2244,18 +2364,19 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                  * every range frame.  Never write to the visible Screen RP
                  * while double buffering: that caused flicker and invisible
                  * modal prompts after buffer flips. */
-                struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort()
-                                              : &Gfx_GetScreen()->RastPort;
+                struct RastPort *rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
                 if (rp) {
                     if (haveBg) {
                         WaitBlit();
-                        BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0,
-                                  SCR_W, SCR_H, 0xC0, 0xFF, NULL);
+                        BltBitMap(&bg, 0, 0, rp->BitMap, 0, 0, SCR_W, SCR_H, 0xC0, 0xFF, NULL);
                         WaitBlit();
                     }
-                    if (recordPhaseNotice) DrawRangePhaseTransitionPrompt(rp, hudFont);
-                    else DrawRangeRefirePrompt(rp, hudFont);
-                    if (useDBuf) Gfx_SwapBuffers();
+                    if (recordPhaseNotice)
+                        DrawRangePhaseTransitionPrompt(rp, hudFont);
+                    else
+                        DrawRangeRefirePrompt(rp, hudFont);
+                    if (useDBuf)
+                        Gfx_SwapBuffers();
                 }
                 WaitTOF();
                 continue;
@@ -2295,10 +2416,12 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             if (!wasPaused) {
                 if (reloadPauseStampValid) {
                     if (reloadState != RELOAD_STATE_NONE && reloadSpeechStampValid) {
-                        AddTicksToDateStamp(&reloadSpeechStamp, ElapsedTicksSince(&reloadPauseStamp));
+                        AddTicksToDateStamp(&reloadSpeechStamp,
+                                            ElapsedTicksSince(&reloadPauseStamp));
                     }
                     if (reloadState == RELOAD_STATE_FINISHING && reloadFinishStampValid) {
-                        AddTicksToDateStamp(&reloadFinishStamp, ElapsedTicksSince(&reloadPauseStamp));
+                        AddTicksToDateStamp(&reloadFinishStamp,
+                                            ElapsedTicksSince(&reloadPauseStamp));
                     }
                     reloadPauseStampValid = FALSE;
                 }
@@ -2346,10 +2469,12 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             if (!wasPaused) {
                 if (reloadPauseStampValid) {
                     if (reloadState != RELOAD_STATE_NONE && reloadSpeechStampValid) {
-                        AddTicksToDateStamp(&reloadSpeechStamp, ElapsedTicksSince(&reloadPauseStamp));
+                        AddTicksToDateStamp(&reloadSpeechStamp,
+                                            ElapsedTicksSince(&reloadPauseStamp));
                     }
                     if (reloadState == RELOAD_STATE_FINISHING && reloadFinishStampValid) {
-                        AddTicksToDateStamp(&reloadFinishStamp, ElapsedTicksSince(&reloadPauseStamp));
+                        AddTicksToDateStamp(&reloadFinishStamp,
+                                            ElapsedTicksSince(&reloadPauseStamp));
                     }
                     reloadPauseStampValid = FALSE;
                 }
@@ -2390,7 +2515,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
              * control's press edge each frame; a held Fire must be released
              * after resuming before another shot can be accepted. */
             (void)RangeControlFirePressed();
-            if (RangeControlFireDown()) shotNeedsRelease = TRUE;
+            if (RangeControlFireDown())
+                shotNeedsRelease = TRUE;
         }
 
         if (!paused) {
@@ -2425,7 +2551,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
                         LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5) {
                         breathFeedbackOK = (state.breathPhase == BREATH_PHASE_REST);
-                        positionFeedbackStable = (gSupportedPosition || state.handSwayPhase == HAND_SWAY_PHASE_REST);
+                        positionFeedbackStable =
+                            (gSupportedPosition || state.handSwayPhase == HAND_SWAY_PHASE_REST);
                         breathFeedbackModal = TRUE;
                         breathFeedbackArmed = FALSE;
                         TargetsHandler_SetPaused(TRUE);
@@ -2456,6 +2583,13 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         SightReplay_Freeze(&sightReplay);
                         replayEndSoundPlayed = FALSE;
                     }
+                    if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5) {
+                        TargetsHandler_GetShotImpact(aimX, aimY, sightOffsetX, sightOffsetY,
+                                                     &shotMarkerX, &shotMarkerY);
+                        shotMarkerModal = TRUE;
+                        shotMarkerArmed = FALSE;
+                        TargetsHandler_SetPaused(TRUE);
+                    }
                     if (TargetsHandler_CheckHit(aimX, aimY, sightOffsetX, sightOffsetY,
                                                 &hitDelayTicks, &hitScore, &hitVolume)) {
                         RegisterHit();
@@ -2484,7 +2618,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         recordPenalties += TargetsHandler_RecordTakePenalty();
                         /* No further shots are possible: account for remaining
                          * targets as misses instead of waiting for empty exposures. */
-                        if (ammoCount == 0) TargetsHandler_RecordExhaustAmmo();
+                        if (ammoCount == 0)
+                            TargetsHandler_RecordExhaustAmmo();
                     }
 
                     /* A single-magazine L1-L4 level ends when its 30 rounds are spent,
@@ -2511,7 +2646,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                             /* Full Course levels do not award time bonuses. */
                             outSummary->timeBonus =
                                 LevelManager_GetMode() == LEVEL_MANAGER_MODE_DEMO &&
-                                state.sessionScore > 0
+                                        state.sessionScore > 0
                                     ? CalculateTimeBonus(totalTime, outSummary->accuracy)
                                     : 0;
                             /* L1-L4 have no simultaneous targets, so no tactical penalties. */
@@ -2610,29 +2745,30 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                  * End normally when the last target expires. */
                 if (!LevelManager_GetConfig()->untimedTargets) {
                     UWORD expired = TargetsHandler_ConsumeExpiredPresentations();
-                    if (expired != 0) Sound_PlayTargetTimeout();
+                    if (expired != 0)
+                        Sound_PlayTargetTimeout();
                     if (expired != 0 && LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
                         TargetsHandler_IsComplete()) {
-                    levelCompleted = TRUE;
-                    state.finalShotValid = TRUE;
-                    state.finalShotHitSnap = FALSE;
-                    state.finalShotScoreSnap = SCORE_MISS;
-                    if (outSummary) {
-                        UWORD totalTime = (UWORD)ElapsedSecondsSince(&state.roundStartStamp);
-                        outSummary->levelQualified = TRUE;
-                        outSummary->score = ScaleSummaryScore(state.sessionScore);
-                        outSummary->accuracy = CalculateAccuracyPercent(state.sessionScore);
-                        outSummary->totalTime = totalTime;
-                        outSummary->timeBonus = 0;
-                        outSummary->penalties = 0;
-                        outSummary->summaryLastShotHit = FALSE;
-                        outSummary->summaryLastShotScore = SCORE_MISS;
-                    }
-                    StopBirdAmbient(&state);
-                    roundEnding = TRUE;
-                    sessionComplete = TRUE;
-                    DateStamp(&finalScoreStamp);
-                    finalScoreStampValid = TRUE;
+                        levelCompleted = TRUE;
+                        state.finalShotValid = TRUE;
+                        state.finalShotHitSnap = FALSE;
+                        state.finalShotScoreSnap = SCORE_MISS;
+                        if (outSummary) {
+                            UWORD totalTime = (UWORD)ElapsedSecondsSince(&state.roundStartStamp);
+                            outSummary->levelQualified = TRUE;
+                            outSummary->score = ScaleSummaryScore(state.sessionScore);
+                            outSummary->accuracy = CalculateAccuracyPercent(state.sessionScore);
+                            outSummary->totalTime = totalTime;
+                            outSummary->timeBonus = 0;
+                            outSummary->penalties = 0;
+                            outSummary->summaryLastShotHit = FALSE;
+                            outSummary->summaryLastShotScore = SCORE_MISS;
+                        }
+                        StopBirdAmbient(&state);
+                        roundEnding = TRUE;
+                        sessionComplete = TRUE;
+                        DateStamp(&finalScoreStamp);
+                        finalScoreStampValid = TRUE;
                     }
                 }
             }
@@ -2640,9 +2776,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             /* Level 5: check the 15/20 standard separately for each phase.
              * No intermediate SUMMARY is displayed. A failed phase starts
              * REFIRE through the normal manual Reload procedure. */
-            if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 &&
-                !roundEnding && !showFinalScore && !recordReloadPending &&
-                reloadState == RELOAD_STATE_NONE &&
+            if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 && !roundEnding &&
+                !showFinalScore && !recordReloadPending && reloadState == RELOAD_STATE_NONE &&
                 TargetsHandler_RecordPhaseComplete()) {
                 UWORD phaseHits = (UWORD)(GetHitCount() - recordHitsAtStart);
                 if (phaseHits < 15) {
@@ -2703,8 +2838,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                  * the same acceleration, inertia and deceleration used by
                  * joystick and keyboard aiming. */
                 Input_GetMouseDelta(&mouseDX, &mouseDY);
-                mouseMoving = (gPrimaryControl == RANGE_CONTROL_MOUSE &&
-                               (mouseDX != 0 || mouseDY != 0)) ? TRUE : FALSE;
+                mouseMoving =
+                    (gPrimaryControl == RANGE_CONTROL_MOUSE && (mouseDX != 0 || mouseDY != 0))
+                        ? TRUE
+                        : FALSE;
 
                 if (gPrimaryControl == RANGE_CONTROL_MOUSE) {
                     /* Filter mouse pulses before the existing sight-motion
@@ -2720,11 +2857,15 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     mouseDX = (WORD)sx;
                     mouseDY = (WORD)sy;
                     mouseMoving = (mouseDX != 0 || mouseDY != 0) ? TRUE : FALSE;
-                    if (mouseDX < 0) dirX = -1;
-                    else if (mouseDX > 0) dirX = 1;
+                    if (mouseDX < 0)
+                        dirX = -1;
+                    else if (mouseDX > 0)
+                        dirX = 1;
 
-                    if (mouseDY < 0) dirY = -1;
-                    else if (mouseDY > 0) dirY = 1;
+                    if (mouseDY < 0)
+                        dirY = -1;
+                    else if (mouseDY > 0)
+                        dirY = 1;
                 }
 
                 if (dirX != 0) {
@@ -2937,12 +3078,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             frontY = (WORD)(ringY - RING_OFFSET_Y + (leadY / 256) + frontRecoilY);
             /* Record only live aiming frames, not recoil, pause or overlays.
              * FRONT_AIM is the same tip origin used when resolving a shot. */
-            if (!paused && !roundEnding && !showFinalScore &&
-                reloadState == RELOAD_STATE_NONE && !recoilActive &&
-                LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
+            if (!paused && !roundEnding && !showFinalScore && reloadState == RELOAD_STATE_NONE &&
+                !recoilActive && LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
                 LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5) {
-                SightReplay_Add(&sightReplay,
-                                (WORD)(frontX + FRONT_AIM_X),
+                SightReplay_Add(&sightReplay, (WORD)(frontX + FRONT_AIM_X),
                                 (WORD)(frontY + FRONT_AIM_Y));
             }
 
@@ -3069,9 +3208,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     }
 
     Bob_Free(&feedbackSight);
-        for (feedbackIndex = 0; feedbackIndex < feedbackTargetLoaded; ++feedbackIndex)
-            Bob_Free(&feedbackTargets[feedbackIndex]);
-        Bob_Free(&frontSight);
+    for (feedbackIndex = 0; feedbackIndex < feedbackTargetLoaded; ++feedbackIndex)
+        Bob_Free(&feedbackTargets[feedbackIndex]);
+    Bob_Free(&frontSight);
     Bob_Free(&rearSight);
 
 #undef ringX
