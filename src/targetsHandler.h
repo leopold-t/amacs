@@ -51,6 +51,8 @@ void TargetsHandler_Reset(void);
 void TargetsHandler_ToggleSlot(UWORD slot);
 void TargetsHandler_Tick(void);
 void TargetsHandler_Draw(struct RastPort *rp);
+void TargetsHandler_DrawFeedbackHit(struct RastPort *rp);
+void TargetsHandler_ClearFeedbackHit(void);
 void TargetsHandler_SetPaused(BOOL paused);
 void TargetsHandler_GetShotImpact(WORD x, WORD y, WORD sightOffsetX,
                                   WORD sightOffsetY, WORD *outX, WORD *outY);

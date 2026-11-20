@@ -2247,6 +2247,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 shotMarkerModal = FALSE;
                 shotNeedsRelease = TRUE;
                 (void)RangeControlFirePressed();
+                TargetsHandler_ClearFeedbackHit();
                 TargetsHandler_SetPaused(FALSE);
             } else {
                 rp = useDBuf ? Gfx_GetDrawRastPort() : &Gfx_GetScreen()->RastPort;
@@ -2257,6 +2258,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         WaitBlit();
                     }
                     TargetsHandler_Draw(rp);
+                    TargetsHandler_DrawFeedbackHit(rp);
                     DrawShotImpactMarker(rp, shotMarkerX, shotMarkerY);
                     if (useDBuf)
                         Gfx_SwapBuffers();
@@ -2553,10 +2555,13 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         breathFeedbackOK = (state.breathPhase == BREATH_PHASE_REST);
                         positionFeedbackStable =
                             (gSupportedPosition || state.handSwayPhase == HAND_SWAY_PHASE_REST);
-                        breathFeedbackModal = TRUE;
-                        breathFeedbackArmed = FALSE;
-                        TargetsHandler_SetPaused(TRUE);
-                        /* Feedback pauses gameplay only; audio keeps running. */
+                        /* L3/L4 select Replay or the static marker after hit scoring. */
+                        if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL1 ||
+                            LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2) {
+                            breathFeedbackModal = TRUE;
+                            breathFeedbackArmed = FALSE;
+                            TargetsHandler_SetPaused(TRUE);
+                        }
                     }
 
                     ammoCount--;
@@ -2574,7 +2579,11 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     sightOffsetX = (WORD)(leadX / 256);
                     sightOffsetY = (WORD)(leadY / 256);
 
-                    if (breathFeedbackModal) {
+                    if (breathFeedbackModal ||
+                        LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ||
+                        LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4) {
+                        /* Capture while the shot target is still active.  On L3/L4
+                         * the decision to show Replay is made after hit scoring. */
                         CaptureShotSight(&shotSnapshot, (WORD)(aimX + sightOffsetX),
                                          (WORD)(aimY + sightOffsetY));
                         /* The final sample must be the exact impact-calculation
@@ -2583,12 +2592,17 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         SightReplay_Freeze(&sightReplay);
                         replayEndSoundPlayed = FALSE;
                     }
-                    if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5) {
+                    TargetsHandler_ClearFeedbackHit();
+                    if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ||
+                        LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ||
+                        LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4) {
                         TargetsHandler_GetShotImpact(aimX, aimY, sightOffsetX, sightOffsetY,
                                                      &shotMarkerX, &shotMarkerY);
-                        shotMarkerModal = TRUE;
-                        shotMarkerArmed = FALSE;
-                        TargetsHandler_SetPaused(TRUE);
+                        if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5) {
+                            shotMarkerModal = TRUE;
+                            shotMarkerArmed = FALSE;
+                            TargetsHandler_SetPaused(TRUE);
+                        }
                     }
                     if (TargetsHandler_CheckHit(aimX, aimY, sightOffsetX, sightOffsetY,
                                                 &hitDelayTicks, &hitScore, &hitVolume)) {
@@ -2610,6 +2624,24 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         Sound_PlaySpeechMiss();
                     }
 
+                    if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3 ||
+                        LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4) {
+                        /* Manual: POOR in any category or BELOW AVG location.
+                         * Misses always use the static crosshair, never Replay. */
+                        BOOL badHit = lastShotHit &&
+                            (!breathFeedbackOK || !positionFeedbackStable ||
+                             lastShotScore <= SCORE_BELOW_AVG);
+                        if (badHit) {
+                            breathFeedbackModal = TRUE;
+                            breathFeedbackArmed = FALSE;
+                            /* Snapshot and Replay samples were captured before
+                             * TargetsHandler_CheckHit removed the struck target. */
+                        } else {
+                            shotMarkerModal = TRUE;
+                            shotMarkerArmed = FALSE;
+                        }
+                        TargetsHandler_SetPaused(TRUE);
+                    }
                     resultFlashTicks = RESULT_FLASH_TICKS;
                     TargetsHandler_RecordShot(lastShotHit);
                     SyncDistanceGroupCheckpoint(&groupCheckpoint, state.sessionScore);

@@ -107,6 +107,10 @@ typedef struct TargetSeries {
 
 static BOOL gInited = FALSE;
 static BOOL gReady = FALSE;
+/* Retain the struck target bitmap only while the post-shot crosshair is shown.
+ * Its live state still changes immediately for scoring and target scheduling. */
+static TargetSeries *gFeedbackHitSeries = NULL;
+static WORD gFeedbackHitX, gFeedbackHitY, gFeedbackHitW, gFeedbackHitH;
 static BOOL gPaused = FALSE;
 static struct DateStamp gPauseStamp;
 static ULONG gRandomState = 1;
@@ -802,6 +806,12 @@ static BOOL CheckSeriesHit(TargetSeries *s, WORD x, WORD y, WORD sightOffsetX, W
         *hitScore = TargetScoring_GetScore(distance, localX, localY);
     }
 
+    /* Capture the visible sprite before CheckHit marks it invisible. */
+    gFeedbackHitSeries = s;
+    gFeedbackHitX = left;
+    gFeedbackHitY = top;
+    gFeedbackHitW = width;
+    gFeedbackHitH = visibleH;
     gKilledTargets++;
     if (IsRecordFire() && gRecordPairActive && !gRecordPairFirstHit) {
         UWORD hitDistance = GetDistanceForSeries(s);
@@ -1153,6 +1163,17 @@ void TargetsHandler_Tick(void) {
             SpawnSeries(next, 0);
         }
     }
+}
+
+void TargetsHandler_ClearFeedbackHit(void) {
+    gFeedbackHitSeries = NULL;
+}
+
+void TargetsHandler_DrawFeedbackHit(struct RastPort *rp) {
+    if (rp && gFeedbackHitSeries && gFeedbackHitSeries->loaded)
+        BltMaskClipped(&gFeedbackHitSeries->bob.bm, gFeedbackHitSeries->bob.mask,
+                       rp, 0, 0, gFeedbackHitX, gFeedbackHitY,
+                       gFeedbackHitW, gFeedbackHitH);
 }
 
 void TargetsHandler_Draw(struct RastPort *rp) {
