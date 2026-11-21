@@ -2338,10 +2338,12 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
         const char *number = level == LEVEL_MANAGER_MODE_LEVEL1 ? "LEVEL 1" :
                              level == LEVEL_MANAGER_MODE_LEVEL2 ? "LEVEL 2" :
                              level == LEVEL_MANAGER_MODE_LEVEL3 ? "LEVEL 3" :
-                             level == LEVEL_MANAGER_MODE_LEVEL4 ? "LEVEL 4" : "LEVEL 5";
+                             level == LEVEL_MANAGER_MODE_LEVEL4 ? "LEVEL 4" :
+                             level == LEVEL_MANAGER_MODE_LEVEL5 ? "LEVEL 5" : "LEVEL 6";
         const char *subtitle1 = level == LEVEL_MANAGER_MODE_LEVEL1 ||
                                 level == LEVEL_MANAGER_MODE_LEVEL2 ? "INTRODUCTION" :
                                 level == LEVEL_MANAGER_MODE_LEVEL5 ? "PRACTICE RECORD FIRE I" :
+                                level == LEVEL_MANAGER_MODE_LEVEL6 ? "PRACTICE RECORD FIRE II" :
                                 "TIMED TARGETS";
         const char *subtitle2 = level == LEVEL_MANAGER_MODE_LEVEL1 ? "TO SUPPORTED POSITION" :
                                 level == LEVEL_MANAGER_MODE_LEVEL2 ? "TO UNSUPPORTED POSITION" :
@@ -2354,7 +2356,7 @@ static BOOL ShowLevelInfoScreen(BOOL fullCoursePreview) {
                                        LEVEL_INFO_SHADOW_PEN, number);
         DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE1_Y, LEVEL_INFO_TEXT_PEN,
                                        LEVEL_INFO_SHADOW_PEN, subtitle1);
-        if (level == LEVEL_MANAGER_MODE_LEVEL5) {
+        if (level == LEVEL_MANAGER_MODE_LEVEL5 || level == LEVEL_MANAGER_MODE_LEVEL6) {
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE2_Y, LEVEL_INFO_TEXT_PEN,
                                            LEVEL_INFO_SHADOW_PEN, "EXPOSURE TIME: 8 SEC");
             DrawCenteredTextWithShadowMain(rp, font, LEVEL_INFO_LINE3_Y, LEVEL_INFO_TEXT_PEN,
@@ -2611,7 +2613,8 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
      * The overall shooting rank remains exclusive to TEN SHOT CHALLENGE. */
     fullCourseStandardMet = (summary && summary->forceLevelPass) ||
         (summary && summary->levelQualified &&
-                             hitsTotal >= (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ? 30 : 1) &&
+                             hitsTotal >= ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ||
+                              LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL6) ? 30 : 1) &&
                              (ULONG)perfTotal * 100UL >
                                  (ULONG)hitsTotal * 5UL * 40UL);
 
@@ -2940,7 +2943,7 @@ static BOOL ShowSummaryScreen(const RangeSummaryData *summary, BOOL fullCoursePr
         }
 
         if (fullCoursePreview && fullCourseStandardMet &&
-            LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5) {
+            LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6) {
             /* Continue directly to the next Full Course level. */
             Gfx_FadeOutCurrentScreenToBlack(SummaryPaletteRGB4, 32);
         } else if (fullCoursePreview && fullCourseStandardMet) {
@@ -5418,7 +5421,7 @@ show_title:
                 }
 
                 if (fullCoursePreview && summaryData.debugJumpLevel >= 1 &&
-                    summaryData.debugJumpLevel <= 5) {
+                    summaryData.debugJumpLevel <= 6) {
                     /* Skip Summary and start the selected level at its briefing. */
                     LevelManager_SetMode((LevelManagerMode)summaryData.debugJumpLevel);
                     IS_NEW_GAME_SESSION = TRUE;
@@ -5450,14 +5453,16 @@ show_title:
                         goto exit_ok;
                     }
                     if (fullCoursePreview && standardMet &&
-                        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5) {
+                        LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6) {
                         priorLevelScoreCarry = (UWORD)(priorLevelScoreCarry + summaryData.score);
                         LevelManager_SetMode(LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL1
                             ? LEVEL_MANAGER_MODE_LEVEL2 :
                             (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2
                                 ? LEVEL_MANAGER_MODE_LEVEL3 :
                                 (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL3
-                                    ? LEVEL_MANAGER_MODE_LEVEL4 : LEVEL_MANAGER_MODE_LEVEL5)));
+                                    ? LEVEL_MANAGER_MODE_LEVEL4 :
+                                    (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4
+                                        ? LEVEL_MANAGER_MODE_LEVEL5 : LEVEL_MANAGER_MODE_LEVEL6))));
                         IS_NEW_GAME_SESSION = TRUE;
                         for (int i = 0; i < 32; i++) currentLoPal[i] = PerformancePaletteRGB4[i];
                         goto retry_full_course_level;

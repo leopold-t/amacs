@@ -138,7 +138,8 @@ static BOOL gRecordPairActive = FALSE;
 static BOOL gRecordPairFirstHit = FALSE;
 static UWORD gRecordPenaltyPending = 0;
 static BOOL IsRecordFire(void) {
-    return LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5;
+    return LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ||
+           LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL6;
 }
 static void BuildRecordOrder(void) {
     UWORD i, j;
@@ -1244,7 +1245,7 @@ void TargetsHandler_SetPaused(BOOL paused) {
     gPaused = FALSE;
 }
 
-/* Level 5 shot marker: use the same per-distance ballistic corrections as
+/* Record Fire shot marker: use the same per-distance ballistic corrections as
  * CheckSeriesHit(). With two targets, choose the active target whose visible
  * rectangle is nearest to the corrected impact (without changing scoring).
  * The coordinates may be off-screen; the renderer clips the marker. */

@@ -149,7 +149,7 @@ static LONG mouseDeltaY = 0;
 #define RAWKEY_Q 0x10
 #define RAWKEY_L 0x28
 #define RAWKEY_1 0x01
-#define RAWKEY_5 0x05
+#define RAWKEY_6 0x06
 #ifndef IEQUALIFIER_LSHIFT
 #define IEQUALIFIER_LSHIFT 0x0001
 #endif
@@ -260,8 +260,8 @@ void Input_PollWindow(struct Window *win) {
                     (msg->Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))) {
                     forceLevelPassEdge = TRUE;
                 }
-                /* Secret range shortcut: Amiga + Shift + main-row 1..5. */
-                if (code >= RAWKEY_1 && code <= RAWKEY_5 && !keyDown[code] &&
+                /* Secret range shortcut: Amiga + Shift + main-row 1..6. */
+                if (code >= RAWKEY_1 && code <= RAWKEY_6 && !keyDown[code] &&
                     IsAmigaQualifier(msg->Qualifier) &&
                     (msg->Qualifier & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))) {
                     debugLevelJumpEdge = code;
