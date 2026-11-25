@@ -237,10 +237,10 @@ static void RangeDiscardInactiveFireEdges(void) {
 /* GYRO MOUSE assessment.  The sight position of the last frames before the
  * shot is kept; the spread of the real motion replaces the simulated
  * breathing/hand-sway phases.  Values are in lores pixels and can be tuned. */
-#define GYRO_HISTORY_FRAMES 12              /* ~0.25 s at 50 Hz */
-#define GYRO_BREATH_MAX_PX 2                /* vertical spread for BREATH CONTROL: OK */
-#define GYRO_STEADY_MAX_PX 2                /* horizontal spread, unsupported position */
-#define GYRO_STEADY_SUPPORTED_MAX_PX 4      /* horizontal spread, supported position */
+#define GYRO_HISTORY_FRAMES 12         /* ~0.25 s at 50 Hz */
+#define GYRO_BREATH_MAX_PX 2           /* vertical spread for BREATH CONTROL: OK */
+#define GYRO_STEADY_MAX_PX 2           /* horizontal spread, unsupported position */
+#define GYRO_STEADY_SUPPORTED_MAX_PX 4 /* horizontal spread, supported position */
 
 static WORD GyroHistorySpan(const WORD *history, UWORD count) {
     WORD lo, hi;
@@ -251,8 +251,10 @@ static WORD GyroHistorySpan(const WORD *history, UWORD count) {
     }
     lo = hi = history[0];
     for (i = 1; i < count; i++) {
-        if (history[i] < lo) lo = history[i];
-        if (history[i] > hi) hi = history[i];
+        if (history[i] < lo)
+            lo = history[i];
+        if (history[i] > hi)
+            hi = history[i];
     }
     return (WORD)(hi - lo);
 }
@@ -1326,10 +1328,11 @@ static void DrawLevelTitle(struct RastPort *rp, struct TextFont *font) {
     const char *gLevelTitle = LevelManager_GetConfig()->title;
     if ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ||
          LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL6)) {
-        gLevelTitle =
-            LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL6
-                ? (TargetsHandler_RecordGetPhase() == 0 ? "LEVEL 6 - PHASE I" : "LEVEL 6 - PHASE II")
-                : (TargetsHandler_RecordGetPhase() == 0 ? "LEVEL 5 - PHASE I" : "LEVEL 5 - PHASE II");
+        gLevelTitle = LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL6
+                          ? (TargetsHandler_RecordGetPhase() == 0 ? "LEVEL 6 - PHASE I"
+                                                                  : "LEVEL 6 - PHASE II")
+                          : (TargetsHandler_RecordGetPhase() == 0 ? "LEVEL 5 - PHASE I"
+                                                                  : "LEVEL 5 - PHASE II");
     }
     UWORD len;
     WORD width;
@@ -1712,7 +1715,7 @@ static void DrawRangePhaseTransitionPrompt(struct RastPort *rp, struct TextFont 
     RectFill(rp, 24, 191, 295, 192);
     RectFill(rp, 24, 63, 25, 192);
     RectFill(rp, 294, 63, 295, 192);
-    DrawCenteredTextWithShadow(rp, font, 105, 31, 26, "PHASE I COMPLETE");
+    DrawCenteredTextWithShadow(rp, font, 105, 31, 26, "PHASE I COMPLETED");
     DrawCenteredTextWithShadow(rp, font, 120, 31, 26, "PREPARE FOR PHASE II");
     DrawCenteredTextWithShadow(rp, font, 160, 31, 26, "PULL TRIGGER TO CONTINUE");
 }
@@ -2629,7 +2632,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                      * no extra timing model or change to the sight motion. */
                     if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
                         (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
-         LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6)) {
+                         LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6)) {
                         if (gPrimaryControl == RANGE_CONTROL_GYRO) {
                             /* GYRO MOUSE: judge the shooter's real motion just
                              * before the shot instead of the simulated phases.
@@ -2724,9 +2727,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL4) {
                         /* Manual: POOR in any category or BELOW AVG location.
                          * Misses always use the static crosshair, never Replay. */
-                        BOOL badHit = lastShotHit &&
-                            (!breathFeedbackOK || !positionFeedbackStable ||
-                             lastShotScore <= SCORE_BELOW_AVG);
+                        BOOL badHit =
+                            lastShotHit && (!breathFeedbackOK || !positionFeedbackStable ||
+                                            lastShotScore <= SCORE_BELOW_AVG);
                         if (badHit) {
                             breathFeedbackModal = TRUE;
                             breathFeedbackArmed = FALSE;
@@ -2743,7 +2746,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     SyncDistanceGroupCheckpoint(&groupCheckpoint, state.sessionScore);
                     targetsComplete = TargetsHandler_IsComplete();
                     if ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ||
-         LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL6)) {
+                         LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL6)) {
                         recordPenalties += TargetsHandler_RecordTakePenalty();
                         /* No further shots are possible: account for remaining
                          * targets as misses instead of waiting for empty exposures. */
@@ -2754,7 +2757,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     /* A single-magazine L1-L4 level ends when its 30 rounds are spent,
                      * even if a distance refire would otherwise be pending. */
                     if ((LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
-         LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6) &&
+                         LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6) &&
                         (targetsComplete || ammoCount == 0)) {
                         levelCompleted = targetsComplete;
                         /* Out of ammo: hits of the unfinished/failed group
@@ -2792,7 +2795,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         DateStamp(&finalScoreStamp);
                         finalScoreStampValid = TRUE;
                     } else if ((LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
-         LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6) &&
+                                LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6) &&
                                (ammoCount % LevelManager_GetConfig()->magazineSize) == 0) {
                         StartReloadPrompt(&state);
                         shotNeedsRelease = TRUE;
@@ -2814,7 +2817,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 (void)reloadMouseDX;
                 reloadUp = RangeControlUp();
                 reloadDown = RangeControlDown();
-                if (gPrimaryControl == RANGE_CONTROL_MOUSE || gPrimaryControl == RANGE_CONTROL_GYRO) {
+                if (gPrimaryControl == RANGE_CONTROL_MOUSE ||
+                    gPrimaryControl == RANGE_CONTROL_GYRO) {
                     reloadUp = (reloadMouseDY < 0) ? TRUE : FALSE;
                     reloadDown = (reloadMouseDY > 0) ? TRUE : FALSE;
                 }
@@ -2878,8 +2882,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     UWORD expired = TargetsHandler_ConsumeExpiredPresentations();
                     if (expired != 0)
                         Sound_PlayTargetTimeout();
-                    if (expired != 0 && (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
-         LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6) &&
+                    if (expired != 0 &&
+                        (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
+                         LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6) &&
                         TargetsHandler_IsComplete()) {
                         levelCompleted = TRUE;
                         state.finalShotValid = TRUE;
@@ -2909,9 +2914,9 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
              * No intermediate SUMMARY is displayed. A failed phase starts
              * REFIRE through the normal manual Reload procedure. */
             if ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ||
-         LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL6) && !roundEnding &&
-                !showFinalScore && !recordReloadPending && reloadState == RELOAD_STATE_NONE &&
-                TargetsHandler_RecordPhaseComplete()) {
+                 LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL6) &&
+                !roundEnding && !showFinalScore && !recordReloadPending &&
+                reloadState == RELOAD_STATE_NONE && TargetsHandler_RecordPhaseComplete()) {
                 UWORD phaseHits = (UWORD)(GetHitCount() - recordHitsAtStart);
                 if (phaseHits < 15) {
                     TargetScoring_RestoreCheckpoint();
@@ -3257,7 +3262,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             if (!paused && !roundEnding && !showFinalScore && reloadState == RELOAD_STATE_NONE &&
                 !recoilActive && LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
                 (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
-         LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6)) {
+                 LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6)) {
                 SightReplay_Add(&sightReplay, (WORD)(frontX + FRONT_AIM_X),
                                 (WORD)(frontY + FRONT_AIM_Y));
             }
