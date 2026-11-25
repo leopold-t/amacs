@@ -26,16 +26,19 @@ extern BOOL Input_Down(void);
 #define RAWKEY_K 0x27
 #define RAWKEY_M 0x37
 #define RAWKEY_L 0x28
+#define RAWKEY_G 0x24
+#define RAWKEY_C 0x33
 #define RAWKEY_PLUS 0x5E  /* Numeric keypad + */
 #define RAWKEY_MINUS 0x0B /* Main keyboard - */
 #define RAWKEY_KP_MINUS 0x4A
 #define RAWKEY_EQUALS 0x0C /* Main keyboard = / shifted + */
 
-/* Persistent for the lifetime of AMACS.  Both Settings and the J/K/M
+/* Persistent for the lifetime of AMACS.  Both Settings and the J/K/M/L/G
  * shortcuts on the firing range operate on this same value. */
 static RangeControlMode gPrimaryControl = RANGE_CONTROL_JOYSTICK;
 static UWORD gWindSpeed = 0;
 static UWORD gMouseSensitivity = 100;
+static UWORD gGyroSensitivity = 200; /* GYRO MOUSE gain, see RANGE_GYRO_SENSITIVITY_* */
 static RangePositionMode gPositionMode = RANGE_POSITION_AS_TRAINED;
 static BOOL gSupportedPosition = FALSE; /* Effective position, not the menu setting. */
 static RangeWindDirection gWindDirection = RANGE_WIND_FULL_LEFT;
@@ -45,7 +48,7 @@ RangeControlMode Range_GetPrimaryControl(void) {
 }
 
 void Range_SetPrimaryControl(RangeControlMode mode) {
-    if (mode >= RANGE_CONTROL_JOYSTICK && mode <= RANGE_CONTROL_LINKED) {
+    if (mode >= RANGE_CONTROL_JOYSTICK && mode <= RANGE_CONTROL_GYRO) {
         gPrimaryControl = mode;
     }
 }
@@ -86,6 +89,16 @@ UWORD Range_GetMouseSensitivity(void) {
 void Range_SetMouseSensitivity(UWORD percent) {
     if (percent >= 5 && percent <= 100 && (percent % 5) == 0)
         gMouseSensitivity = percent;
+}
+
+UWORD Range_GetGyroSensitivity(void) {
+    return gGyroSensitivity;
+}
+
+void Range_SetGyroSensitivity(UWORD percent) {
+    if (percent >= RANGE_GYRO_SENSITIVITY_MIN && percent <= RANGE_GYRO_SENSITIVITY_MAX &&
+        (percent % RANGE_GYRO_SENSITIVITY_STEP) == 0)
+        gGyroSensitivity = percent;
 }
 
 UWORD Range_GetWindSpeed(void) {
@@ -153,7 +166,8 @@ static void RangeDiscardInactiveFireEdges(void) {
         (void)Input_JoyFirePressed();
     if (gPrimaryControl != RANGE_CONTROL_KEYBOARD)
         (void)Input_KeyboardFirePressed();
-    if (gPrimaryControl != RANGE_CONTROL_MOUSE && gPrimaryControl != RANGE_CONTROL_LINKED)
+    if (gPrimaryControl != RANGE_CONTROL_MOUSE && gPrimaryControl != RANGE_CONTROL_LINKED &&
+        gPrimaryControl != RANGE_CONTROL_GYRO)
         (void)Input_MouseFirePressed();
 }
 
@@ -219,6 +233,29 @@ static void RangeDiscardInactiveFireEdges(void) {
 #define HAND_SWAY_MOVE_TICKS (DOS_TICKS_PER_SEC / 2)
 #define HAND_SWAY_AMPLITUDE_PX 3
 #define HAND_SWAY_LEAD_FP (3 * 256)
+
+/* GYRO MOUSE assessment.  The sight position of the last frames before the
+ * shot is kept; the spread of the real motion replaces the simulated
+ * breathing/hand-sway phases.  Values are in lores pixels and can be tuned. */
+#define GYRO_HISTORY_FRAMES 12              /* ~0.25 s at 50 Hz */
+#define GYRO_BREATH_MAX_PX 2                /* vertical spread for BREATH CONTROL: OK */
+#define GYRO_STEADY_MAX_PX 2                /* horizontal spread, unsupported position */
+#define GYRO_STEADY_SUPPORTED_MAX_PX 4      /* horizontal spread, supported position */
+
+static WORD GyroHistorySpan(const WORD *history, UWORD count) {
+    WORD lo, hi;
+    UWORD i;
+
+    if (!history || count == 0) {
+        return 0;
+    }
+    lo = hi = history[0];
+    for (i = 1; i < count; i++) {
+        if (history[i] < lo) lo = history[i];
+        if (history[i] > hi) hi = history[i];
+    }
+    return (WORD)(hi - lo);
+}
 
 #define RELOAD_STATE_NONE 0
 #define RELOAD_STATE_WAIT_PUSH 1
@@ -1321,6 +1358,8 @@ static const char *GetPrimaryControlHudText(void) {
             return "MSE";
         case RANGE_CONTROL_LINKED:
             return "K+L";
+        case RANGE_CONTROL_GYRO:
+            return "GYR";
         case RANGE_CONTROL_JOYSTICK:
         default:
             return "JOY";
@@ -2171,6 +2210,11 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     BOOL breathFeedbackArmed = FALSE;
     BOOL breathFeedbackOK = FALSE;
     BOOL positionFeedbackStable = FALSE;
+    WORD gyroHistX[GYRO_HISTORY_FRAMES];
+    WORD gyroHistY[GYRO_HISTORY_FRAMES];
+    UWORD gyroHistCount = 0;
+    UWORD gyroHistPos = 0;
+    BOOL gyroRecenterPending = FALSE;
 
     /* Keep the notice visible for at least ~0.5 s at 50 Hz. */
     for (;;) {
@@ -2193,7 +2237,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             (void)Input_TakeDebugLevelJump();
         }
 
-        /* Range control is exclusive. J/K/M/L changes the persistent primary
+        /* Range control is exclusive. J/K/M/L/G changes the persistent primary
          * device immediately; menus and all non-Range screens keep their
          * existing parallel joystick/keyboard handling. */
         {
@@ -2206,6 +2250,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 gPrimaryControl = RANGE_CONTROL_MOUSE;
             } else if (Input_KeyPressed(RAWKEY_L) && !forcePassKey) {
                 gPrimaryControl = RANGE_CONTROL_LINKED;
+            } else if (Input_KeyPressed(RAWKEY_G)) {
+                gPrimaryControl = RANGE_CONTROL_GYRO;
             }
             if (forcePassKey && LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO && !roundEnding &&
                 !breathFeedbackModal && !rangeRefireModal) {
@@ -2224,7 +2270,8 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 finalScoreStampValid = TRUE;
             }
         }
-        /* Live mouse sensitivity shortcuts, shared by both game modes. */
+        /* Live mouse sensitivity shortcuts, shared by both game modes and
+         * by both mouse-based controls (MOUSE and GYRO MOUSE). */
         if (gPrimaryControl == RANGE_CONTROL_MOUSE) {
             if (Input_KeyPressed(RAWKEY_PLUS) || Input_KeyPressed(RAWKEY_EQUALS)) {
                 if (gMouseSensitivity < 100)
@@ -2233,6 +2280,28 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
             if (Input_KeyPressed(RAWKEY_MINUS) || Input_KeyPressed(RAWKEY_KP_MINUS)) {
                 if (gMouseSensitivity > 5)
                     gMouseSensitivity -= 5;
+            }
+        }
+        /* GYRO MOUSE re-centring: an air mouse is a relative device and
+         * drifts away from the replica's own sights.  Aim the replica at the
+         * screen centre and press RMB (Return on most air mice) or C to snap
+         * the sight back to the centre.  The edges are consumed in every
+         * mode so a stale press cannot fire later. */
+        {
+            BOOL recenter = Input_MouseRightPressed();
+            if (Input_KeyPressed(RAWKEY_C))
+                recenter = TRUE;
+            if (recenter && gPrimaryControl == RANGE_CONTROL_GYRO)
+                gyroRecenterPending = TRUE;
+        }
+        if (gPrimaryControl == RANGE_CONTROL_GYRO) {
+            if (Input_KeyPressed(RAWKEY_PLUS) || Input_KeyPressed(RAWKEY_EQUALS)) {
+                if (gGyroSensitivity < RANGE_GYRO_SENSITIVITY_MAX)
+                    gGyroSensitivity += RANGE_GYRO_SENSITIVITY_STEP;
+            }
+            if (Input_KeyPressed(RAWKEY_MINUS) || Input_KeyPressed(RAWKEY_KP_MINUS)) {
+                if (gGyroSensitivity > RANGE_GYRO_SENSITIVITY_MIN)
+                    gGyroSensitivity -= RANGE_GYRO_SENSITIVITY_STEP;
             }
         }
         RangeDiscardInactiveFireEdges();
@@ -2561,9 +2630,21 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     if (LevelManager_GetMode() != LEVEL_MANAGER_MODE_DEMO &&
                         (LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL5 &&
          LevelManager_GetMode() != LEVEL_MANAGER_MODE_LEVEL6)) {
-                        breathFeedbackOK = (state.breathPhase == BREATH_PHASE_REST);
-                        positionFeedbackStable =
-                            (gSupportedPosition || state.handSwayPhase == HAND_SWAY_PHASE_REST);
+                        if (gPrimaryControl == RANGE_CONTROL_GYRO) {
+                            /* GYRO MOUSE: judge the shooter's real motion just
+                             * before the shot instead of the simulated phases.
+                             * Vertical drift = breathing, horizontal = steadiness. */
+                            WORD spanX = GyroHistorySpan(gyroHistX, gyroHistCount);
+                            WORD spanY = GyroHistorySpan(gyroHistY, gyroHistCount);
+                            breathFeedbackOK = (spanY <= GYRO_BREATH_MAX_PX);
+                            positionFeedbackStable =
+                                (spanX <= (gSupportedPosition ? GYRO_STEADY_SUPPORTED_MAX_PX
+                                                              : GYRO_STEADY_MAX_PX));
+                        } else {
+                            breathFeedbackOK = (state.breathPhase == BREATH_PHASE_REST);
+                            positionFeedbackStable =
+                                (gSupportedPosition || state.handSwayPhase == HAND_SWAY_PHASE_REST);
+                        }
                         /* L3/L4 select Replay or the static marker after hit scoring. */
                         if (LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL1 ||
                             LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL2) {
@@ -2733,7 +2814,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                 (void)reloadMouseDX;
                 reloadUp = RangeControlUp();
                 reloadDown = RangeControlDown();
-                if (gPrimaryControl == RANGE_CONTROL_MOUSE) {
+                if (gPrimaryControl == RANGE_CONTROL_MOUSE || gPrimaryControl == RANGE_CONTROL_GYRO) {
                     reloadUp = (reloadMouseDY < 0) ? TRUE : FALSE;
                     reloadDown = (reloadMouseDY > 0) ? TRUE : FALSE;
                 }
@@ -2920,6 +3001,41 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         dirY = 1;
                 }
 
+                if (gPrimaryControl == RANGE_CONTROL_GYRO) {
+                    /* GYRO MOUSE: the air/gyro mouse already carries the
+                     * shooter's real tremor and breathing, so its counts move
+                     * the sight directly (scaled by the GYRO sensitivity, which
+                     * may exceed 100 % for small wrist angles), without
+                     * the joystick acceleration/inertia model and without the
+                     * simulated hand sway and breathing (held at rest below,
+                     * so they resume as soon as another control is chosen). */
+                    static LONG gyroFractionX = 0, gyroFractionY = 0;
+                    LONG gx, gy;
+                    gyroFractionX += (LONG)mouseDX * gGyroSensitivity;
+                    gyroFractionY += (LONG)mouseDY * gGyroSensitivity;
+                    gx = gyroFractionX / 100;
+                    gy = gyroFractionY / 100;
+                    gyroFractionX -= gx * 100;
+                    gyroFractionY -= gy * 100;
+                    ringX = (WORD)(ringX + gx);
+                    ringY = (WORD)(ringY + gy);
+                    if (gyroRecenterPending) {
+                        /* Same centred position as at the start of a session. */
+                        ringX = (SCR_W - REARSIGHT_W) / 2;
+                        ringY = (SCR_H - REARSIGHT_H) / 2;
+                        leadX = 0;
+                        leadY = 0;
+                        gyroHistCount = 0; /* the jump is not shooter motion */
+                        gyroHistPos = 0;
+                        gyroRecenterPending = FALSE;
+                    }
+                    dirX = 0;
+                    dirY = 0;
+                    vx = 0;
+                    vy = 0;
+                    mouseMoving = TRUE; /* keeps sway/breathing at rest */
+                }
+
                 if (dirX != 0) {
                     if (prevDirX == 0 || dirX != prevDirX) {
                         ringX += (WORD)dirX;
@@ -3076,6 +3192,14 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
 
             if (ringY > SCR_H - REARSIGHT_H + OVERSCAN_Y) {
                 ringY = (SCR_H - REARSIGHT_H + OVERSCAN_Y);
+            }
+
+            /* Recent sight positions for the GYRO MOUSE assessment. */
+            gyroHistX[gyroHistPos] = ringX;
+            gyroHistY[gyroHistPos] = ringY;
+            gyroHistPos = (UWORD)((gyroHistPos + 1) % GYRO_HISTORY_FRAMES);
+            if (gyroHistCount < GYRO_HISTORY_FRAMES) {
+                gyroHistCount++;
             }
 
             {

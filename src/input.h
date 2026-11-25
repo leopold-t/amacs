@@ -38,6 +38,8 @@ BOOL Input_JoyFireDown(void);
 BOOL Input_KeyboardFirePressed(void);
 BOOL Input_KeyboardFireDown(void);
 BOOL Input_MouseFirePressed(void);
+/* Right mouse button (MENUDOWN, the window traps RMB): edge, consumed on read. */
+BOOL Input_MouseRightPressed(void);
 BOOL Input_MouseFireDown(void);
 void Input_GetMouseDelta(WORD *dx, WORD *dy);
 void Input_PeekMouseDelta(WORD *dx, WORD *dy);

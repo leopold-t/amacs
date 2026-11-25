@@ -1423,7 +1423,7 @@ static void HiScore_ParseMetadata(char *line, HiScoreEntry *entry) {
     *sep = '\0';
     p = sep + 1;
     while (*p == ' ' || *p == '\t') p++;
-    if (*p != 'J' && *p != 'K' && *p != 'M' && *p != 'L') return;
+    if (*p != 'J' && *p != 'K' && *p != 'M' && *p != 'L' && *p != 'G') return;
     entry->control = *p++;
     while (*p == ' ' || *p == '\t') p++;
 
@@ -1674,7 +1674,8 @@ static BOOL HiScore_Save(void) {
             !Dos_WriteChar(fh, ' ') ||
             !Dos_WriteChar(fh, (gHiScores[i].control == 'K' ||
                                 gHiScores[i].control == 'M' ||
-                                gHiScores[i].control == 'L') ? gHiScores[i].control : 'J')) {
+                                gHiScores[i].control == 'L' ||
+                                gHiScores[i].control == 'G') ? gHiScores[i].control : 'J')) {
             ok = FALSE;
             break;
         }
@@ -1744,6 +1745,7 @@ static BOOL HiScore_InsertIfQualified(UWORD score, const char *name) {
         case RANGE_CONTROL_KEYBOARD: gHiScores[insertAt].control = 'K'; break;
         case RANGE_CONTROL_MOUSE: gHiScores[insertAt].control = 'M'; break;
         case RANGE_CONTROL_LINKED: gHiScores[insertAt].control = 'L'; break;
+        case RANGE_CONTROL_GYRO: gHiScores[insertAt].control = 'G'; break;
         default: gHiScores[insertAt].control = 'J'; break;
     }
     gHiScores[insertAt].zeroRange = TargetScoring_GetZeroRange();
@@ -4247,6 +4249,7 @@ static const char *PrimaryControlName(RangeControlMode mode) {
         case RANGE_CONTROL_KEYBOARD: return "KEYBOARD";
         case RANGE_CONTROL_MOUSE: return "MOUSE";
         case RANGE_CONTROL_LINKED: return "KBD+LMB";
+        case RANGE_CONTROL_GYRO: return "GYRO MOUSE";
         case RANGE_CONTROL_JOYSTICK:
         default: return "JOYSTICK";
     }
@@ -4264,8 +4267,11 @@ static const char *PrimaryControlName(RangeControlMode mode) {
 #define SETTINGS_PANEL_Y1 49
 #define SETTINGS_PANEL_Y2 207
 #define SETTINGS_RETURN_PROMPT_Y 184
-#define SETTINGS_LEFT_X 68
-#define SETTINGS_ARROW_X 52
+/* "PRIMARY CONTROL: GYRO MOUSE" is the longest row: 27 topaz-8 glyphs plus
+ * the bold smear and the shadow = 218 px.  It must end inside the restorable
+ * text area (x <= 280), or blinking leaves its last pixels on screen. */
+#define SETTINGS_LEFT_X 62
+#define SETTINGS_ARROW_X 46
 #define SETTINGS_DISABLED_PEN 27
 #define SETTINGS_DISABLED_SHADOW_PEN 7
 
@@ -4294,15 +4300,25 @@ static void BuildSettingsLine(char *dst, const char *label, const char *value) {
     strcat(dst, value);
 }
 
+/* MOUSE SENSITIVITY applies to both mouse-based controls. */
+static BOOL SensitivityApplies(RangeControlMode control) {
+    return (control == RANGE_CONTROL_MOUSE || control == RANGE_CONTROL_GYRO) ? TRUE : FALSE;
+}
+
 static void MouseSensitivityName(char *out, UWORD value) {
-    if (value == 100) {
-        strcpy(out, "100%");
-    } else {
-        out[0] = (char)('0' + value / 10);
-        out[1] = (char)('0' + value % 10);
-        out[2] = '%';
-        out[3] = '\0';
-    }
+    /* 5..400 %: two or three digits. Two-digit values keep their historic
+     * zero padding (e.g. 05%). */
+    UWORD i = 0;
+    if (value >= 100) out[i++] = (char)('0' + (value / 100) % 10);
+    out[i++] = (char)('0' + (value / 10) % 10);
+    out[i++] = (char)('0' + value % 10);
+    out[i++] = '%';
+    out[i] = '\0';
+}
+
+/* The settings row shows the sensitivity of the selected mouse-based control. */
+static const char *SensitivityLabel(RangeControlMode control) {
+    return control == RANGE_CONTROL_GYRO ? "GYRO SENSITIVITY: " : "MOUSE SENSITIVITY: ";
 }
 
 static void DrawSettingsText(struct RastPort *rp, struct TextFont *font, WORD y,
@@ -4357,8 +4373,8 @@ static void DrawSettingsRow(struct RastPort *rp, struct TextFont *font,
         BuildSettingsLine(line, "PRIMARY CONTROL: ", PrimaryControlName(control));
     } else if (selected == 2) {
         MouseSensitivityName(sens, sensitivity);
-        BuildSettingsLine(line, "MOUSE SENSITIVITY: ", sens);
-        if (control != RANGE_CONTROL_MOUSE) {
+        BuildSettingsLine(line, SensitivityLabel(control), sens);
+        if (!SensitivityApplies(control)) {
             pen = SETTINGS_DISABLED_PEN;
             shadow = SETTINGS_DISABLED_SHADOW_PEN;
         }
@@ -4399,10 +4415,10 @@ static void DrawSettingsScreen(struct RastPort *rp, struct TextFont *font,
     }
     if (selected != 2 || selectedVisible) {
         MouseSensitivityName(sens, sensitivity);
-        BuildSettingsLine(line, "MOUSE SENSITIVITY: ", sens);
+        BuildSettingsLine(line, SensitivityLabel(control), sens);
         DrawSettingsText(rp, font, SETTINGS_MOUSE_Y,
-                         control == RANGE_CONTROL_MOUSE ? MENU_TEXT_PEN : SETTINGS_DISABLED_PEN,
-                         control == RANGE_CONTROL_MOUSE ? MENU_SHADOW_PEN : SETTINGS_DISABLED_SHADOW_PEN,
+                         SensitivityApplies(control) ? MENU_TEXT_PEN : SETTINGS_DISABLED_PEN,
+                         SensitivityApplies(control) ? MENU_SHADOW_PEN : SETTINGS_DISABLED_SHADOW_PEN,
                          selected == 2, line);
     }
     DrawCenteredTextWithShadowMain(rp, font, SETTINGS_WIND_Y, MENU_TEXT_PEN,
@@ -4435,6 +4451,9 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     RangeControlMode pendingControl = Range_GetPrimaryControl();
     UWORD pendingSpeed = Range_GetWindSpeed();
     UWORD pendingSensitivity = Range_GetMouseSensitivity();
+    UWORD pendingGyroSensitivity = Range_GetGyroSensitivity();
+#define SHOWN_SENSITIVITY() \
+    (pendingControl == RANGE_CONTROL_GYRO ? pendingGyroSensitivity : pendingSensitivity)
     RangePositionMode pendingPosition = Range_GetPositionMode();
     RangeWindDirection pendingDirection = Range_GetWindDirection();
     UWORD black[32] = {0};
@@ -4481,7 +4500,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
     }
 
     DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                       pendingPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                       pendingPosition, SHOWN_SENSITIVITY(), pendingSpeed, pendingDirection, &background);
     WaitBlit();
     SettleDisplay(1);
     Gfx_FadeInCurrentScreenFromBlack(TrainingInfoPaletteRGB4, 32);
@@ -4512,14 +4531,14 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             do {
                 if (downNow && !prevDown) next = (UWORD)((next + 1) % 5);
                 else next = (UWORD)((next + 4) % 5);
-            } while ((next == 2 && pendingControl != RANGE_CONTROL_MOUSE) ||
+            } while ((next == 2 && !SensitivityApplies(pendingControl)) ||
                      (next == 4 && pendingSpeed == 0));
             selected = next;
             selectedVisible = TRUE;
             blinkTicks = MENU_VISIBLE_TICKS;
             WaitTOF();
             DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                               pendingPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                               pendingPosition, SHOWN_SENSITIVITY(), pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
 
@@ -4531,9 +4550,15 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
                     pendingPosition = (RangePositionMode)((pendingPosition + 2) % 3);
             } else if (selected == 1) {
                 if (rightNow && !prevRight)
-                    pendingControl = (pendingControl == RANGE_CONTROL_LINKED) ? RANGE_CONTROL_JOYSTICK : (RangeControlMode)(pendingControl + 1);
+                    pendingControl = (pendingControl == RANGE_CONTROL_GYRO) ? RANGE_CONTROL_JOYSTICK : (RangeControlMode)(pendingControl + 1);
                 else
-                    pendingControl = (pendingControl == RANGE_CONTROL_JOYSTICK) ? RANGE_CONTROL_LINKED : (RangeControlMode)(pendingControl - 1);
+                    pendingControl = (pendingControl == RANGE_CONTROL_JOYSTICK) ? RANGE_CONTROL_GYRO : (RangeControlMode)(pendingControl - 1);
+            } else if (selected == 2 && pendingControl == RANGE_CONTROL_GYRO) {
+                if (rightNow && !prevRight) {
+                    if (pendingGyroSensitivity < RANGE_GYRO_SENSITIVITY_MAX)
+                        pendingGyroSensitivity += RANGE_GYRO_SENSITIVITY_STEP;
+                } else if (pendingGyroSensitivity > RANGE_GYRO_SENSITIVITY_MIN)
+                    pendingGyroSensitivity -= RANGE_GYRO_SENSITIVITY_STEP;
             } else if (selected == 2 && pendingControl == RANGE_CONTROL_MOUSE) {
                 if (rightNow && !prevRight) {
                     if (pendingSensitivity < 100) pendingSensitivity += 5;
@@ -4552,7 +4577,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             blinkTicks = MENU_VISIBLE_TICKS;
             WaitTOF();
             DrawSettingsScreen(rp, font, selected, selectedVisible, pendingControl,
-                               pendingPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                               pendingPosition, SHOWN_SENSITIVITY(), pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
         prevLeft = leftNow; prevRight = rightNow;
@@ -4562,6 +4587,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             Range_SetPositionMode(pendingPosition);
             Range_SetPrimaryControl(pendingControl);
             Range_SetMouseSensitivity(pendingSensitivity);
+            Range_SetGyroSensitivity(pendingGyroSensitivity);
             Range_SetWindSpeed(pendingSpeed);
             Range_SetWindDirection(pendingDirection);
             WaitForAdvanceRelease();
@@ -4576,7 +4602,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
             blinkTicks = selectedVisible ? MENU_VISIBLE_TICKS : MENU_HIDDEN_TICKS;
             WaitTOF();
             DrawSettingsRow(rp, font, selected, selectedVisible, pendingControl,
-                            pendingPosition, pendingSensitivity, pendingSpeed, pendingDirection, &background);
+                            pendingPosition, SHOWN_SENSITIVITY(), pendingSpeed, pendingDirection, &background);
             WaitBlit();
         }
 
@@ -4584,6 +4610,7 @@ static BOOL ShowSettingsScreen(const UWORD *fromPal, UWORD fromColors) {
         WaitTOF();
     }
 }
+#undef SHOWN_SENSITIVITY
 
 static MenuResult ShowMainMenuScreen(const UWORD *fromPal, UWORD fromColors) {
     struct Screen *screen = Gfx_GetScreen();

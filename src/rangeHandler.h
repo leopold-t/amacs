@@ -7,7 +7,8 @@ typedef enum RangeControlMode {
     RANGE_CONTROL_JOYSTICK = 0,
     RANGE_CONTROL_KEYBOARD,
     RANGE_CONTROL_MOUSE,
-    RANGE_CONTROL_LINKED
+    RANGE_CONTROL_LINKED,
+    RANGE_CONTROL_GYRO /* Air/gyro mouse: direct movement, no simulated sway or breathing */
 } RangeControlMode;
 
 RangeControlMode Range_GetPrimaryControl(void);
@@ -24,6 +25,12 @@ BOOL Range_GetSupportedPosition(void);
 void Range_SetSupportedPosition(BOOL supported);
 UWORD Range_GetMouseSensitivity(void);
 void Range_SetMouseSensitivity(UWORD percent);
+/* GYRO MOUSE has its own, wider gain range (25-400 %, step 25, default 200 %). */
+#define RANGE_GYRO_SENSITIVITY_MIN 25
+#define RANGE_GYRO_SENSITIVITY_MAX 400
+#define RANGE_GYRO_SENSITIVITY_STEP 25
+UWORD Range_GetGyroSensitivity(void);
+void Range_SetGyroSensitivity(UWORD percent);
 
 typedef enum RangeWindDirection {
     RANGE_WIND_FULL_LEFT = 0,

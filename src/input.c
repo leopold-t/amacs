@@ -128,6 +128,7 @@ static UBYTE keyPressed[256];
 static BOOL joyFirePressedEdge = FALSE;
 static BOOL keyboardFirePressedEdge = FALSE;
 static BOOL mouseFirePressedEdge = FALSE;
+static BOOL mouseRightPressedEdge = FALSE;
 static BOOL quitPressedEdge = FALSE;
 static BOOL forceLevelPassEdge = FALSE;
 static UBYTE debugLevelJumpEdge = 0;
@@ -191,6 +192,7 @@ BOOL Input_Init(void) {
     joyFirePressedEdge = FALSE;
     keyboardFirePressedEdge = FALSE;
     mouseFirePressedEdge = FALSE;
+    mouseRightPressedEdge = FALSE;
     quitPressedEdge = FALSE;
     forceLevelPassEdge = FALSE;
     debugLevelJumpEdge = 0;
@@ -324,6 +326,10 @@ void Input_PollWindow(struct Window *win) {
                 mouseFireDown = TRUE;
             } else if (msg->Code == SELECTUP) {
                 mouseFireDown = FALSE;
+            } else if (msg->Code == MENUDOWN) {
+                /* RMB is trapped by the window (WA_RMBTrap). Used by the
+                 * GYRO MOUSE sight re-centring on the firing range. */
+                mouseRightPressedEdge = TRUE;
             }
         }
 
@@ -373,6 +379,11 @@ BOOL Input_KeyboardFirePressed(void) {
 
 BOOL Input_MouseFirePressed(void) {
     if (mouseFirePressedEdge) { mouseFirePressedEdge = FALSE; return TRUE; }
+    return FALSE;
+}
+
+BOOL Input_MouseRightPressed(void) {
+    if (mouseRightPressedEdge) { mouseRightPressedEdge = FALSE; return TRUE; }
     return FALSE;
 }
 
@@ -433,6 +444,7 @@ void Input_ResetState(void) {
     joyFirePressedEdge = FALSE;
     keyboardFirePressedEdge = FALSE;
     mouseFirePressedEdge = FALSE;
+    mouseRightPressedEdge = FALSE;
     quitPressedEdge = FALSE;
     forceLevelPassEdge = FALSE;
     debugLevelJumpEdge = 0;
