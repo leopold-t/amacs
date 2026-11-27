@@ -2208,6 +2208,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
     BOOL rangeRefireArmed = FALSE;
     BOOL shotMarkerModal = FALSE;
     BOOL shotMarkerArmed = FALSE;
+    const char *shotMarkerEndStatus = NULL;
     WORD shotMarkerX = 0, shotMarkerY = 0;
     BOOL breathFeedbackModal = FALSE;
     BOOL breathFeedbackArmed = FALSE;
@@ -2340,6 +2341,10 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     TargetsHandler_Draw(rp);
                     TargetsHandler_DrawFeedbackHit(rp);
                     DrawShotImpactMarker(rp, shotMarkerX, shotMarkerY);
+                    DrawCenteredTextWithShadow(rp, hudFont, ENDROUND_TITLE_Y,
+                                               HUD_TEXT_PEN, HUD_SHADOW_PEN,
+                                               roundEnding ? GetEndRoundStatusText(levelCompleted)
+                                                           : shotMarkerEndStatus);
                     if (useDBuf)
                         Gfx_SwapBuffers();
                 }
@@ -2657,6 +2662,7 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                         }
                     }
 
+                    shotMarkerEndStatus = NULL;
                     ammoCount--;
                     Sound_PlayShot();
                     Sound_StopBirdAmbient(FALSE);
@@ -2748,6 +2754,17 @@ BOOL RunRangeWithFrontSight(BOOL useDBuf, RangeSummaryData *outSummary) {
                     if ((LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL5 ||
                          LevelManager_GetMode() == LEVEL_MANAGER_MODE_LEVEL6)) {
                         recordPenalties += TargetsHandler_RecordTakePenalty();
+                        /* Capture the actual phase status before ammo exhaustion
+                         * accounts for unpresented targets as misses. */
+                        if (shotMarkerModal) {
+                            if (TargetsHandler_RecordPhaseResolved()) {
+                                if ((UWORD)(GetHitCount() - recordHitsAtStart) >= 15)
+                                    shotMarkerEndStatus = recordPhase == 0
+                                        ? "PHASE I COMPLETED" : "LEVEL COMPLETED";
+                            } else if (ammoCount == 0) {
+                                shotMarkerEndStatus = "OUT OF AMMO";
+                            }
+                        }
                         /* No further shots are possible: account for remaining
                          * targets as misses instead of waiting for empty exposures. */
                         if (ammoCount == 0)

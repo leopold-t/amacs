@@ -80,6 +80,7 @@ void TargetsHandler_RecordStartPhaseDelayed(UWORD phase, ULONG delayTicks);
 UWORD TargetsHandler_RecordGetPhase(void);
 void TargetsHandler_RecordExhaustAmmo(void);
 BOOL TargetsHandler_RecordPhaseComplete(void);
+BOOL TargetsHandler_RecordPhaseResolved(void);
 UWORD TargetsHandler_RecordTakePenalty(void);
 
 /* Consume presentations which expired without a shot (timed levels L3-L5). */

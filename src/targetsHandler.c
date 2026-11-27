@@ -520,6 +520,17 @@ void TargetsHandler_RecordExhaustAmmo(void) {
     gRecordPairActive = FALSE;
 }
 
+/* Read-only check for feedback: a struck target is already resolved,
+ * even while its normal hit-delay animation is still pending. */
+BOOL TargetsHandler_RecordPhaseResolved(void) {
+    UWORD i;
+    TargetSeries *all[6] = {&gSeries050, &gSeries100, &gSeries150,
+                            &gSeries200, &gSeries250, &gSeries300};
+    if (!IsRecordFire() || gRecordNext < (gRecordPhase + 1) * 20) return FALSE;
+    for (i = 0; i < 6; ++i) if (all[i]->visible) return FALSE;
+    return TRUE;
+}
+
 BOOL TargetsHandler_RecordPhaseComplete(void) {
     UWORD i;
     TargetSeries *all[6] = {&gSeries050, &gSeries100, &gSeries150,
